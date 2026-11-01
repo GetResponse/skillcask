@@ -16,7 +16,7 @@ change fails until both are updated.
 | Id | Screen |
 |---|---|
 | S1 | Scope Overview: health strip and cards (Health, Updates, Security, Sources, Policy, Agents) |
-| S2 | Skills list: rows with status dot, filter chips, search, sort; empty, no matches, refreshing, offline |
+| S2 | Skills list: rows with status dot, filter chips, search, sort; empty, no matches, refreshing (not a live refresh: quiet, no fade, no Checking line), offline |
 | S3 | Skill detail: header with state and actions, tabs; project, dependency, not managed, abandoned |
 | S4 | Contents tab: SKILL.md front matter as a table and the body as read-only Markdown |
 | S5 | Security tab: audit findings grouped by rule, reach as chip groups, changed-on-disk actions |

@@ -65,6 +65,7 @@ public struct MainWindow: View {
         .onChange(of: app.scopes) { app.dropOrphanedPresentation() }
         .background { onboarding }
         .modifier(AppUpdateHost(app: app, updates: updates))
+        .modifier(LiveRefreshHost(app: app))
         .task { await app.boot() }
     }
 
@@ -231,5 +232,41 @@ private struct AppUpdateHost: ViewModifier {
                 },
                 message: { alert in Text(alert.message) }
             )
+    }
+}
+
+/// Live refresh's part of the window: the stream follows the selected scope (`LiveRefresh.follow`, again whenever
+/// the selection, the CLI, the environment or a snapshot changes), stops with the last window (each window attaches
+/// and detaches; a tab's window shares the one `LiveRefresh`), and the app's activation refreshes a stale scope
+/// silently.
+private struct LiveRefreshHost: ViewModifier {
+    let app: AppStore
+
+    /// What the plan is built from; a new value asks `follow()`, which restarts the stream only if the plan moved.
+    private struct Followed: Hashable {
+        let scope: Scope?
+        /// A store rebuilt over a new CLI is followed anew.
+        let store: ObjectIdentifier?
+        let isReady: Bool
+        let environment: EnvironmentPolicy
+        let checkedAt: Date?
+        let targets: [String]?
+    }
+
+    private var followed: Followed {
+        let store = app.selectedStore
+        return Followed(
+            scope: app.selectedScope, store: store.map(ObjectIdentifier.init), isReady: app.isReady,
+            environment: app.environment, checkedAt: store?.checkedAt, targets: store?.snapshot?.targets?.dirs)
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { app.liveRefresh.attach() }
+            .onChange(of: followed) { app.liveRefresh.follow() }
+            .onDisappear { app.liveRefresh.detach() }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                Task { await app.liveRefresh.activated() }
+            }
     }
 }

@@ -24,6 +24,11 @@ the user says yes once in the sidebar card; Settings › Updates switches it and
 check. The app shows the Homebrew command or the release page; it never installs anything. A run
 without a bundle version (`swift run`), the sample data and `smoke-app.sh` check nothing.
 
+Live refresh: the selected scope's manifest, lock, `config.toml`, store and agent directories are
+watched (FSEvents), so a change made in a terminal or by an agent shows within about a second, and
+returning to the app reads a scope older than a minute again; these refreshes are quiet (no fade),
+run no network command and add no Activity row.
+
 ## Build the app
 
 `bundle.sh` builds the app (one universal SwiftPM build) and the CLI (one cargo build per
