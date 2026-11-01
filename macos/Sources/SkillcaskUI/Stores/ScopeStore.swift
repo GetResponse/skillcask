@@ -50,6 +50,9 @@ import SkillcaskDomain
     // MARK: - State
 
     public private(set) var snapshot: ScopeSnapshot?
+    /// Which agents see each row of `snapshot`, built once whenever the snapshot or the `doctor` outcome changes
+    /// (`reindexAgents()`), so the list's rows only look it up.
+    public private(set) var agentIndex = AgentIndex.empty
     public private(set) var presentation: Presentation = .loading
     /// The selected row's id (`SkillEntry.ID`); bound to the list's selection.
     public var selection: SkillEntry.ID?
@@ -145,6 +148,24 @@ import SkillcaskDomain
     /// The skills that require a dependency row (`ScopeSnapshot.requirerSkills(of:)`).
     public func requirerSkills(for entry: SkillEntry) -> [String] {
         snapshot?.requirerSkills(of: entry) ?? []
+    }
+
+    /// Which agents see `entry` (`agentIndex`); no claim before the first snapshot.
+    public func agentReach(for entry: SkillEntry) -> AgentReach {
+        agentIndex.reach(of: entry)
+    }
+
+    /// How far `doctor` can be trusted for the snapshot: failed in the last refresh (an older document kept for
+    /// Health is not trusted for links), not answered yet, or current.
+    var linkCheck: AgentIndex.LinkCheck {
+        if partialFailure?.failed.contains(.doctor) == true {
+            return .failed
+        }
+        return snapshot?.doctor == nil ? .pending : .current
+    }
+
+    private func reindexAgents() {
+        agentIndex = snapshot.map { AgentIndex(snapshot: $0, isGlobal: scope.isPersonal, check: linkCheck) } ?? .empty
     }
 
     // MARK: - Refresh
@@ -266,6 +287,7 @@ import SkillcaskDomain
     private func forgetDocuments() {
         documents = Documents()
         snapshot = nil
+        agentIndex = .empty
         partialFailure = nil
         selection = nil
         detail = nil
@@ -334,6 +356,7 @@ import SkillcaskDomain
         presentation: Presentation = .ready, isRefreshing: Bool = false
     ) {
         self.snapshot = snapshot
+        reindexAgents()
         self.selection = selection
         self.detail = detail
         // Counted from now, not from the snapshot's own date: a seeded scope is fresh, so opening it does not start
@@ -346,6 +369,7 @@ import SkillcaskDomain
     /// Previews: the warning of a refresh that read `status` but not `audit` or `doctor`.
     func preload(partialFailure: PartialFailure) {
         self.partialFailure = partialFailure
+        reindexAgents()
     }
 
     private func rebuild() {
@@ -354,6 +378,7 @@ import SkillcaskDomain
             status: status, audit: documents.audit, doctor: documents.repair ?? documents.doctor,
             outdated: documents.outdated)
         snapshot = built
+        reindexAgents()
         checkedAt = built.checkedAt
         presentation = .ready
         if selection != nil, built.entry(id: selection) == nil {

@@ -177,6 +177,12 @@ public enum DoctorItem: Hashable, Sendable {
         guard case .link(let path, _) = self, let slash = path.lastIndex(of: "/") else { return nil }
         return String(path[..<slash])
     }
+
+    /// A path of a `doctor` line relative to the scope root: the global scope prints `~/.claude/skills/x`
+    /// (`Scope::show`), a project `.claude/skills/x`, which is kept as printed.
+    public static func scopeRelative(_ path: String, isGlobal: Bool) -> String {
+        isGlobal && path.hasPrefix("~/") ? String(path.dropFirst(2)) : path
+    }
 }
 
 extension ScopeSnapshot.Doctor {

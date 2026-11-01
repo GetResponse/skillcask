@@ -75,7 +75,7 @@ private struct CardsSample: View {
             .controlSize(.small)
         } content: {
             CardLine(symbol: "xmark.circle", severity: .error) {
-                Text(".cursor/skills/pdf").font(Font.Token.monoSmall)
+                Text(".claude/skills/pdf").font(Font.Token.monoSmall)
                 Text("link points elsewhere")
             } trailing: {
                 Text("Repair fixes this")
@@ -206,15 +206,14 @@ private struct CardsSample: View {
                     }
                 }
             }
-            Footnote("14 skills are linked into both. One Cursor link is wrong — see Health.")
+            Footnote("14 skills are linked into both. One Claude Code link is wrong — see Health.")
         }
     }
 
-    /// The api scope's targets paired with the board's agent names.
+    /// The api scope's targets with their directories (Cursor reads the store, D29).
     private var agentRows: [(name: String, directory: String, from: String)] {
-        let targets = DesignFixtures.api.targets
-        let names = ["Claude Code", "Cursor"]
-        return zip(names, targets?.dirs ?? []).map { ($0, $1, targets?.from ?? "") }
+        let from = DesignFixtures.api.targets?.from ?? ""
+        return AgentsCard.targets(DesignFixtures.agentIndex(DesignFixtures.api)).map { ($0.agent, $0.directory, from) }
     }
 
     private func typeName(_ type: String) -> String {
@@ -323,7 +322,7 @@ private struct VariantsSample: View {
                 .controlSize(.small)
             } content: {
                 CardLine(symbol: "xmark.circle", severity: .error) {
-                    Text(".cursor/skills/pdf").font(Font.Token.monoSmall)
+                    Text(".claude/skills/pdf").font(Font.Token.monoSmall)
                     Text("link points elsewhere")
                 } trailing: {
                     Text("Repair fixes this")

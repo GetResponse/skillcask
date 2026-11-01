@@ -1,0 +1,12 @@
+{
+  "ok": false,
+  "passed": [
+    "targets: no links left in former target directories",
+    "git index: no managed paths committed",
+    ".gitignore: managed block up to date",
+    "installed: 3 skill(s) match skills.lock"
+  ],
+  "problems": [".claude/skills/changelog: link missing"],
+  "fixed": [],
+  "warnings": []
+}

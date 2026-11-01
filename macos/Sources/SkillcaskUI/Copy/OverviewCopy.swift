@@ -446,9 +446,13 @@ public enum OverviewCopy {
         "Not linked: \(skills.joined(separator: ", "))."
     }
 
-    /// `One Cursor link is wrong — see Health.`; the plural is invented.
-    public static func brokenLinks(_ count: Int, agent: String) -> String {
-        count == 1 ? "One \(agent) link is wrong — see Health." : "\(count) \(agent) links are wrong — see Health."
+    /// `One Cursor link is wrong — see Health.`, `2 Kiro links are missing`, and `broken` when the states differ
+    /// (or a file skillcask did not create blocks one); the plural is invented.
+    public static func brokenLinks(_ states: [AgentReach.State], agent: String) -> String {
+        let word =
+            Set(states) == [.wrong] ? "wrong" : Set(states) == [.missing] ? "missing" : "broken"
+        return states.count == 1
+            ? "One \(agent) link is \(word) — see Health." : "\(states.count) \(agent) links are \(word) — see Health."
     }
 
     // MARK: - Marks

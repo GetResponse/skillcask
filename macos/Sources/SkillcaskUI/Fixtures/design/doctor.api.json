@@ -6,10 +6,8 @@
   ],
   "problems": [
     ".claude/skills/jira-syntax: link missing",
-    ".cursor/skills/jira-syntax: link missing",
-    ".cursor/skills/pdf: link wrong",
+    ".claude/skills/pdf: link wrong",
     ".claude/skills/sql-review: link missing",
-    ".cursor/skills/sql-review: link missing",
     ".gitignore: stale managed block",
     ".skillcask/skills/jira-syntax: not installed (netresearch/agent-jira-skill); run `skillcask install`",
     ".skillcask/skills/sql-review: not installed (acme/sql-review); run `skillcask install`"

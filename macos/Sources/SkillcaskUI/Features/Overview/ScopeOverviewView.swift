@@ -255,7 +255,7 @@ struct ScopeOverviewView: View {
                 }
                 row {
                     PolicyCard(snapshot: snapshot, isCompact: quiet)
-                    AgentsCard(snapshot: snapshot, isCompact: quiet)
+                    AgentsCard(snapshot: snapshot, agents: store.agentIndex, isCompact: quiet)
                 }
             }
         } else {
@@ -265,7 +265,7 @@ struct ScopeOverviewView: View {
                 row { security(snapshot) }
                 row { SourcesCard(snapshot: snapshot, isCompact: quiet) }
                 row { PolicyCard(snapshot: snapshot, isCompact: quiet) }
-                row { AgentsCard(snapshot: snapshot, isCompact: quiet) }
+                row { AgentsCard(snapshot: snapshot, agents: store.agentIndex, isCompact: quiet) }
             }
         }
     }

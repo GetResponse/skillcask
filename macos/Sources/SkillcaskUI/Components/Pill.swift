@@ -21,7 +21,14 @@ public struct Pill: View {
         case blocked(symbol: String)
         /// The selected item among plain pills: Iris on the soft accent (Main board "pdf · installed").
         case accent
+        /// A skill row's agent badge (`AgentBadges`): a monogram or a glyph, compact padding. A broken link adds
+        /// the warning glyph before it, strikes the monogram through and takes the warning tint, so it reads
+        /// without colour and on a selected row.
+        case agentBadge(symbol: String?, isProblem: Bool)
     }
+
+    /// The glyph before a broken agent badge.
+    static let problemSymbol = "exclamationmark.triangle.fill"
 
     public let text: String
     public let style: Style
@@ -69,33 +76,50 @@ public struct Pill: View {
 
     public var body: some View {
         HStack(spacing: Spacing.xs) {
+            if isProblem {
+                Image(systemName: Self.problemSymbol)
+                    .imageScale(.small)
+            }
             if let symbol {
                 Image(systemName: symbol)
                     .imageScale(.small)
             }
-            Text(text)
+            if !text.isEmpty {
+                Text(text)
+                    .strikethrough(isProblem)
+            }
         }
         .font(font)
         .foregroundStyle(textColor)
         .lineLimit(1)
         .fixedSize()
         .padding(.horizontal, paddingH)
-        .frame(height: height)
+        .frame(minWidth: isBadge ? height : nil, minHeight: isBadge ? height : nil)
+        .frame(height: isBadge ? nil : height)
         .background(fill, in: RoundedRectangle(cornerRadius: Radius.s, style: .continuous))
     }
 
     // MARK: - Derived
 
+    private var isBadge: Bool {
+        if case .agentBadge = style { true } else { false }
+    }
+
+    private var isProblem: Bool {
+        if case .agentBadge(_, true) = style { true } else { false }
+    }
+
     private var symbol: String? {
         switch style {
         case .source(let symbol), .blocked(let symbol): symbol
+        case .agentBadge(let symbol, _): symbol
         case .plain, .mono, .agent, .accent: nil
         }
     }
 
     private var font: Font {
         switch style {
-        case .plain, .source, .blocked, .accent: Font.Token.captionMedium
+        case .plain, .source, .blocked, .accent, .agentBadge: Font.Token.captionMedium
         case .mono: Font.Token.monoSmall
         case .agent: Font.Token.calloutMedium
         }
@@ -105,6 +129,9 @@ public struct Pill: View {
         switch style {
         case .blocked: Color.statusWarningText
         case .accent: Color.accent
+        case .agentBadge(_, let isProblem) where prominence == .increased || !isProblem:
+            prominence == .increased ? Self.onSelectionText : Color.pillText
+        case .agentBadge: Color.statusWarningText
         case .plain, .source, .mono, .agent: prominence == .increased ? Self.onSelectionText : Color.pillText
         }
     }
@@ -113,6 +140,9 @@ public struct Pill: View {
         switch style {
         case .blocked: Color.statusWarningTint
         case .accent: Color.accentSoft
+        case .agentBadge(_, let isProblem) where prominence == .increased || !isProblem:
+            prominence == .increased ? Self.onSelectionFill : Color.pillFill
+        case .agentBadge: Color.statusWarningTint
         case .plain, .source, .mono, .agent: prominence == .increased ? Self.onSelectionFill : Color.pillFill
         }
     }
@@ -121,13 +151,14 @@ public struct Pill: View {
         switch style {
         case .agent: Size.pillLarge
         case .mono: Size.reachChip
-        case .plain, .source, .blocked, .accent: Size.pill
+        case .plain, .source, .blocked, .accent, .agentBadge: Size.pill
         }
     }
 
     private var paddingH: CGFloat {
         switch style {
         case .agent: Spacing.s
+        case .agentBadge: Spacing.xs
         case .plain, .source, .mono, .blocked, .accent: Spacing.inline
         }
     }

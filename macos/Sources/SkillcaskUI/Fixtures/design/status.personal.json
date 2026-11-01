@@ -232,8 +232,7 @@
       "codex"
     ],
     "dirs": [
-      ".claude/skills",
-      ".codex/skills"
+      ".claude/skills"
     ],
     "from": "config.toml"
   },
