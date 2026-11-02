@@ -18,6 +18,24 @@ import Testing
         #expect(doc.repositories.allSatisfy { $0.allowed })
     }
 
+    @Test func targetsLocalIsReadWhenPrintedAndNilFromAnOlderCLI() throws {
+        let newer = try JSONDecoder()
+            .decode(
+                StatusDocument.Targets.self,
+                from: Data(
+                    #"{"entries":["claude"],"dirs":[".claude/skills"],"from":"default","local":"docs/skills"}"#.utf8))
+        #expect(newer.local == "docs/skills")
+        let global = try JSONDecoder()
+            .decode(
+                StatusDocument.Targets.self, from: Data(#"{"entries":[],"dirs":[],"from":"default","local":null}"#.utf8)
+            )
+        #expect(global.local == nil)
+        let older = try JSONDecoder()
+            .decode(
+                StatusDocument.Targets.self, from: Data(#"{"entries":[],"dirs":[],"from":"default"}"#.utf8))
+        #expect(older.local == nil)
+    }
+
     @Test(arguments: Fixture.versions) func emptyProjectHasNoEntries(version: String) throws {
         let doc = try Fixture.decode(StatusDocument.self, version, "status.empty")
         #expect(doc.ok && doc.entries.isEmpty && doc.targets != nil)

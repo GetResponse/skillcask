@@ -1,43 +1,48 @@
 import CoreServices
 import Foundation
+import os
 
 /// Says on the main actor that something relevant changed under a set of directories. `start` replaces whatever
-/// was watched before: `excluding` (at most eight, `WatchPlan.heavyDirectories`) are left out of the stream, and
-/// only a change at a path `isRelevant` accepts, or a rescan (events coalesced or dropped), is delivered;
-/// `isRelevant` may run on any thread. `resuming` picks up where the stream `stop` ended, so a change in between
-/// is not lost; otherwise only changes from now on count. `stop` ends delivery, and no callback arrives after it.
+/// was watched before with a stream from now on: `excluding` (at most eight, `WatchPlan.heavyDirectories`) are left
+/// out of it, and only an event `accepts` (a path, and whether it is a rescan: events coalesced or dropped) is
+/// delivered; `accepts` runs off the main actor. `retarget` swaps `accepts` of the running stream, from its next
+/// delivery on, for a plan whose roots and exclusions did not change, so no change is lost to a restart. `stop` ends
+/// delivery, and no callback arrives after it.
 @MainActor public protocol FileWatching: AnyObject {
     func start(
-        roots: [String], excluding: [String], resuming: Bool, isRelevant: @escaping @Sendable (String) -> Bool,
-        onChange: @escaping @MainActor () -> Void)
+        roots: [String], excluding: [String], accepts: @escaping WatchFilter, onChange: @escaping @MainActor () -> Void)
+    func retarget(_ accepts: @escaping WatchFilter)
     func stop()
 }
+
+/// Whether a reported path, rescan or not, is delivered (`WatchPlan.accepts`).
+public typealias WatchFilter = @Sendable (_ path: String, _ rescan: Bool) -> Bool
 
 /// Watches nothing: the fixture boot, previews and tests that drive no disk.
 @MainActor public final class NoFileWatcher: FileWatching {
     public init() {}
     public func start(
-        roots: [String], excluding: [String], resuming: Bool, isRelevant: @escaping @Sendable (String) -> Bool,
+        roots: [String], excluding: [String], accepts: @escaping WatchFilter,
         onChange: @escaping @MainActor () -> Void
     ) {}
+    public func retarget(_ accepts: @escaping WatchFilter) {}
     public func stop() {}
 }
 
 /// An FSEvents stream over `roots` (file-level events, the roots themselves watched for rename or removal),
 /// delivered after `latency` on a private serial queue, where the paths are bridged and filtered; only a delivery
-/// with a relevant path, or a rescan, hops to the main actor, so churn elsewhere in a project costs the window
-/// nothing. Coalescing flags (`MustScanSubDirs`, dropped events, a changed root) always deliver. The stream
-/// retains its handler through the context; `stop()` tears the stream down on its queue (no callback runs
-/// meanwhile) and disarms the main-actor side, so a hop already queued delivers nothing. `deinit` stops a stream
-/// the owner forgot.
+/// the filter accepts hops to the main actor, so churn elsewhere in a project costs the window nothing. The filter
+/// sits behind a lock, so `retarget` swaps it from the main actor while the queue reads it. The stream always starts
+/// from now, so it never replays history (no `HistoryDone` sentinel; one would be skipped anyway). The stream
+/// retains its handler through the context; `stop()` tears the stream down on its queue (no callback runs meanwhile)
+/// and disarms the main-actor side, so a hop already queued delivers nothing. `deinit` stops a stream the owner
+/// forgot.
 @MainActor public final class FSEventsWatcher: FileWatching {
     /// Seconds FSEvents gathers events before one delivery.
     public let latency: TimeInterval
     /// `nonisolated(unsafe)` only so `deinit` can tear it down; every other access is on the main actor.
     nonisolated(unsafe) private var stream: FSEventStreamRef?
-    private var delivery: Delivery?
-    /// The last event the stopped stream saw, where a resumed one starts.
-    private var lastEventID: FSEventStreamEventId?
+    private var handler: Handler?
     private let queue = DispatchQueue(label: "skillcask.live-refresh.fsevents")
 
     /// The main-actor end of one stream; disarmed by `stop()`.
@@ -49,10 +54,10 @@ import Foundation
 
     /// What the stream's context holds; retained and released by the stream.
     private final class Handler: Sendable {
-        let isRelevant: @Sendable (String) -> Bool
+        let accepts: OSAllocatedUnfairLock<WatchFilter>
         let delivery: Delivery
-        init(isRelevant: @escaping @Sendable (String) -> Bool, delivery: Delivery) {
-            self.isRelevant = isRelevant
+        init(accepts: @escaping WatchFilter, delivery: Delivery) {
+            self.accepts = OSAllocatedUnfairLock(initialState: accepts)
             self.delivery = delivery
         }
     }
@@ -68,17 +73,16 @@ import Foundation
     }
 
     public func start(
-        roots: [String], excluding: [String], resuming: Bool, isRelevant: @escaping @Sendable (String) -> Bool,
+        roots: [String], excluding: [String], accepts: @escaping WatchFilter,
         onChange: @escaping @MainActor () -> Void
     ) {
-        let since = resuming ? lastEventID : nil
         stop()
         guard !roots.isEmpty else { return }
-        let delivery = Delivery(onChange)
-        let handler = Unmanaged.passRetained(Handler(isRelevant: isRelevant, delivery: delivery))
-        defer { handler.release() }
+        let handler = Handler(accepts: accepts, delivery: Delivery(onChange))
+        let retained = Unmanaged.passRetained(handler)
+        defer { retained.release() }
         var context = FSEventStreamContext(
-            version: 0, info: handler.toOpaque(),
+            version: 0, info: retained.toOpaque(),
             retain: Self.retainHandler, release: Self.releaseHandler,
             copyDescription: nil)
         let flags = FSEventStreamCreateFlags(
@@ -86,7 +90,7 @@ import Foundation
         guard
             let stream = FSEventStreamCreate(
                 kCFAllocatorDefault, Self.callback, &context, roots as CFArray,
-                since ?? FSEventStreamEventId(kFSEventStreamEventIdSinceNow), latency, flags)
+                FSEventStreamEventId(kFSEventStreamEventIdSinceNow), latency, flags)
         else { return }
         if !excluding.isEmpty {
             _ = FSEventStreamSetExclusionPaths(stream, excluding as CFArray)
@@ -97,14 +101,17 @@ import Foundation
             return
         }
         self.stream = stream
-        self.delivery = delivery
+        self.handler = handler
+    }
+
+    public func retarget(_ accepts: @escaping WatchFilter) {
+        handler?.accepts.withLock { $0 = accepts }
     }
 
     public func stop() {
-        delivery?.isArmed = false
-        delivery = nil
+        handler?.delivery.isArmed = false
+        handler = nil
         if let stream {
-            lastEventID = FSEventStreamGetLatestEventId(stream)
             Self.tearDown(stream, on: queue)
             self.stream = nil
         }
@@ -134,11 +141,16 @@ import Foundation
         kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagUserDropped
             | kFSEventStreamEventFlagKernelDropped | kFSEventStreamEventFlagRootChanged)
 
-    /// Whether one delivery reaches the main actor: a rescan, or a relevant path.
+    /// Whether one delivery reaches the main actor: an event `accepts` takes, its path paired with its flags. A
+    /// `HistoryDone` sentinel is no change and is skipped.
     nonisolated static func delivers(
-        paths: [String], flags: [FSEventStreamEventFlags], isRelevant: (String) -> Bool
+        paths: [String], flags: [FSEventStreamEventFlags], accepts: (String, Bool) -> Bool
     ) -> Bool {
-        flags.contains { $0 & rescanFlags != 0 } || paths.contains(where: isRelevant)
+        zip(paths, flags)
+            .contains { path, flag in
+                flag & FSEventStreamEventFlags(kFSEventStreamEventFlagHistoryDone) == 0
+                    && accepts(path, flag & rescanFlags != 0)
+            }
     }
 
     /// Runs on the stream's private queue; hops to the main actor only with something to deliver.
@@ -147,7 +159,8 @@ import Foundation
         let handler = Unmanaged<Handler>.fromOpaque(info).takeUnretainedValue()
         let reported = unsafeBitCast(paths, to: NSArray.self) as? [String] ?? []
         let flags = Array(UnsafeBufferPointer(start: flags, count: count))
-        guard delivers(paths: reported, flags: flags, isRelevant: handler.isRelevant) else { return }
+        let accepts = handler.accepts.withLock { $0 }
+        guard delivers(paths: reported, flags: flags, accepts: accepts) else { return }
         let delivery = handler.delivery
         DispatchQueue.main.async {
             MainActor.assumeIsolated {

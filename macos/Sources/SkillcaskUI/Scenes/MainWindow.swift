@@ -237,8 +237,8 @@ private struct AppUpdateHost: ViewModifier {
 
 /// Live refresh's part of the window: the stream follows the selected scope (`LiveRefresh.follow`, again whenever
 /// the selection, the CLI, the environment or a snapshot changes), stops with the last window (each window attaches
-/// and detaches; a tab's window shares the one `LiveRefresh`), and the app's activation refreshes a stale scope
-/// silently.
+/// and detaches; a tab's window shares the one `LiveRefresh`). `LiveRefresh` observes the app's activation itself,
+/// once for all windows.
 private struct LiveRefreshHost: ViewModifier {
     let app: AppStore
 
@@ -250,14 +250,14 @@ private struct LiveRefreshHost: ViewModifier {
         let isReady: Bool
         let environment: EnvironmentPolicy
         let checkedAt: Date?
-        let targets: [String]?
+        let targets: StatusDocument.Targets?
     }
 
     private var followed: Followed {
         let store = app.selectedStore
         return Followed(
             scope: app.selectedScope, store: store.map(ObjectIdentifier.init), isReady: app.isReady,
-            environment: app.environment, checkedAt: store?.checkedAt, targets: store?.snapshot?.targets?.dirs)
+            environment: app.environment, checkedAt: store?.checkedAt, targets: store?.snapshot?.targets)
     }
 
     func body(content: Content) -> some View {
@@ -265,8 +265,5 @@ private struct LiveRefreshHost: ViewModifier {
             .onAppear { app.liveRefresh.attach() }
             .onChange(of: followed) { app.liveRefresh.follow() }
             .onDisappear { app.liveRefresh.detach() }
-            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-                Task { await app.liveRefresh.activated() }
-            }
     }
 }

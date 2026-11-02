@@ -5,7 +5,7 @@ import Testing
 @testable import SkillcaskCore
 
 /// `FSEventsWatcher` against the real FSEvents service on a temporary directory: a relevant file written under a
-/// root is delivered, and the relevance predicate runs off the main thread.
+/// root is delivered through a filter swapped in after the start, and the filter runs off the main thread.
 @Suite @MainActor struct FSEventsWatcherTests {
     /// What the predicate saw, from the stream's queue.
     final class Seen: @unchecked Sendable {
@@ -23,7 +23,7 @@ import Testing
         var snapshot: (paths: [String], onMain: Bool) { lock.withLock { (paths, onMain) } }
     }
 
-    @Test(.timeLimit(.minutes(1))) func aRelevantFileIsDeliveredAndFilteredOffMain() async throws {
+    @Test(.timeLimit(.minutes(1))) func aRetargetedFilterDeliversARelevantFileOffMain() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: "fsevents-\(UUID().uuidString)")
         let excluded = root.appending(path: "node_modules")
         try FileManager.default.createDirectory(at: excluded, withIntermediateDirectories: true)
@@ -35,15 +35,16 @@ import Testing
         let reported: Void? = await withCheckedContinuation { continuation in
             var resumed = false
             watcher.start(
-                roots: [canonical], excluding: [WatchPlan.canonical(excluded.path)], resuming: false,
-                isRelevant: { path in
-                    seen.record(path)
-                    return path == file
-                }
+                roots: [canonical], excluding: [WatchPlan.canonical(excluded.path)], accepts: { _, _ in false }
             ) {
                 guard !resumed else { return }
                 resumed = true
                 continuation.resume(returning: ())
+            }
+            // The plan moved but not its roots: the running stream takes the new filter.
+            watcher.retarget { path, _ in
+                seen.record(path)
+                return path == file
             }
             // Written once the stream runs; written again later in case the first write raced its start.
             Task { @MainActor in
@@ -65,11 +66,17 @@ import Testing
         #expect(paths.contains(file) && !onMain, "the predicate runs on the stream's queue")
     }
 
-    @Test func onlyARelevantPathOrARescanIsDelivered() {
-        let relevant: (String) -> Bool = { $0.hasSuffix("skills.lock") }
-        #expect(!FSEventsWatcher.delivers(paths: ["/p/a.rs", "/p/b.md"], flags: [0, 0], isRelevant: relevant))
-        #expect(FSEventsWatcher.delivers(paths: ["/p/a.rs", "/p/skills.lock"], flags: [0, 0], isRelevant: relevant))
+    @Test func onlyAnAcceptedEventIsDeliveredAndHistoryDoneNever() {
+        let accepts: (String, Bool) -> Bool = { path, rescan in
+            path.hasSuffix("skills.lock") || (rescan && path == "/p")
+        }
+        #expect(!FSEventsWatcher.delivers(paths: ["/p/a.rs", "/p/b.md"], flags: [0, 0], accepts: accepts))
+        #expect(FSEventsWatcher.delivers(paths: ["/p/a.rs", "/p/skills.lock"], flags: [0, 0], accepts: accepts))
         let dropped = FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs)
-        #expect(FSEventsWatcher.delivers(paths: ["/p/a.rs"], flags: [dropped], isRelevant: relevant))
+        #expect(FSEventsWatcher.delivers(paths: ["/p"], flags: [dropped], accepts: accepts))
+        #expect(!FSEventsWatcher.delivers(paths: ["/p"], flags: [0], accepts: accepts), "not a rescan")
+        let historyDone = FSEventStreamEventFlags(kFSEventStreamEventFlagHistoryDone)
+        #expect(!FSEventsWatcher.delivers(paths: ["/p/skills.lock"], flags: [historyDone], accepts: accepts))
+        #expect(!FSEventsWatcher.delivers(paths: [""], flags: [historyDone], accepts: { _, _ in true }))
     }
 }

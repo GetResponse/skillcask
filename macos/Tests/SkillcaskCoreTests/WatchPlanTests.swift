@@ -28,8 +28,8 @@ import Testing
         return relative.isEmpty ? path : (path as NSString).appendingPathComponent(relative)
     }
 
-    func projectPlan(targets: [String] = [".claude/skills"]) -> WatchPlan {
-        WatchPlan(scope: .project(project), configDirectory: config, targetDirs: targets, home: home)
+    func projectPlan(targets: [String] = [".claude/skills"], local: String? = nil) -> WatchPlan {
+        WatchPlan(scope: .project(project), configDirectory: config, targetDirs: targets, local: local, home: home)
     }
 
     @Test func whatAProjectReadsIsRelevant() {
@@ -87,9 +87,72 @@ import Testing
         #expect(!plan.isRelevant(reported(home, "Documents/notes.md")))
         #expect(!plan.isRelevant(reported(home, ".config")))
 
+        // `~/.agents` alone is not watched for the store either: it is picked up once it exists.
         try FileManager.default.createDirectory(at: home.appending(path: ".agents"), withIntermediateDirectories: true)
+        let before = WatchPlan(scope: .personal, configDirectory: config, targetDirs: [".claude/skills"], home: home)
+        #expect(!before.roots.contains(reported(home, ".agents")))
+        try FileManager.default.createDirectory(
+            at: home.appending(path: ".agents/skills"), withIntermediateDirectories: true)
         let later = WatchPlan(scope: .personal, configDirectory: config, targetDirs: [".claude/skills"], home: home)
-        #expect(later.roots.contains(reported(home, ".agents")))
+        #expect(later.roots.contains(reported(home, ".agents/skills")))
+    }
+
+    @Test func aMissingPersonalTargetIsNotWatchedThroughItsBusyParent() throws {
+        try FileManager.default.createDirectory(at: home.appending(path: ".claude"), withIntermediateDirectories: true)
+        let plan = WatchPlan(scope: .personal, configDirectory: config, targetDirs: [".claude/skills"], home: home)
+        #expect(plan.roots == [reported(config)], "not ~/.claude, which Claude Code writes to all the time")
+        #expect(plan.isRelevant(reported(home, ".claude/skills/foo")), "still relevant once it is watched")
+    }
+
+    @Test func aMissingTargetOutsideTheProjectWaitsUntilItExists() throws {
+        try FileManager.default.createDirectory(at: base.appending(path: "shared"), withIntermediateDirectories: true)
+        let plan = projectPlan(targets: ["../../shared/skills"])
+        #expect(plan.roots == [reported(config), reported(project)].sorted())
+    }
+
+    @Test func theProjectSkillsDirectoryIsTheOneStatusReports() {
+        let custom = projectPlan(local: "docs/skills")
+        #expect(custom.isRelevant(reported(project, "docs/skills/foo/SKILL.md")))
+        #expect(custom.isRelevant(reported(project, "docs")))
+        #expect(!custom.isRelevant(reported(project, ".skills/foo/SKILL.md")))
+        #expect(!custom.isRelevant(reported(project, "docs/guide.md")))
+        // An older CLI prints no `local`: the default.
+        for plan in [projectPlan(), projectPlan(local: "")] {
+            #expect(plan.isRelevant(reported(project, ".skills/foo/SKILL.md")))
+            #expect(!plan.isRelevant(reported(project, "docs/skills/foo/SKILL.md")))
+        }
+    }
+
+    @Test func anEmptyPathIsNeverRelevantNorInsideAnything() {
+        let plan = projectPlan()
+        #expect(!plan.isRelevant(""))
+        #expect(!plan.accepts("", rescan: false))
+        #expect(!WatchPlan.isInside("", "/a"))
+        #expect(!WatchPlan.isInside("/", ""))
+    }
+
+    @Test func aRescanIsAcceptedOnlyWhereItCanHideAChange() {
+        let plan = projectPlan()
+        for relative in [".venv/lib", ".next/cache", "Pods", ".gradle", "coverage", "src"] {
+            #expect(!plan.accepts(reported(project, relative), rescan: true), "\(relative)")
+        }
+        for relative in ["", ".agents", ".agents/skills/foo", ".claude", "skills.lock"] {
+            #expect(plan.accepts(reported(project, relative), rescan: true), "\(relative)")
+        }
+        #expect(plan.accepts("/", rescan: true))
+        #expect(plan.accepts("", rescan: true), "a rescan with no path could be anywhere")
+        #expect(!plan.accepts(reported(project), rescan: false), "the root itself is a boundary")
+    }
+
+    @Test func aTargetThatIsASymlinkIsAlsoMatchedByItsOwnName() throws {
+        let elsewhere = base.appending(path: "elsewhere/skills")
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            at: project.appending(path: ".cursor-skills"), withDestinationURL: elsewhere)
+        let plan = projectPlan(targets: [".cursor-skills"])
+        #expect(plan.isRelevant(reported(elsewhere, "foo/SKILL.md")), "what the link points to")
+        #expect(plan.isRelevant(reported(project, ".cursor-skills")), "the link itself, retargeted")
+        #expect(plan.roots.contains(reported(elsewhere)) && !plan.roots.contains(reported(project, ".cursor-skills")))
     }
 
     @Test func aSymlinkedSpellingOfTheProjectMatchesTheReportedPath() throws {

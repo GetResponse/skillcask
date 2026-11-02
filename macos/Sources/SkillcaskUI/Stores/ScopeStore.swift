@@ -372,7 +372,7 @@ import SkillcaskDomain
         guard mayRefreshQuietly, await queueIsIdle(), mayRefreshQuietly else { return }
         await refresh(keeping: nil, recording: nil, quiet: true)
         if selectedEntry != nil {
-            await loadDetail()
+            await loadDetail(showingProgress: false)
         }
     }
 
@@ -502,7 +502,9 @@ import SkillcaskDomain
     /// `info --json -- <skill>` (offline, milliseconds) and the SKILL.md, in parallel, under the detail generation:
     /// what `.task(id: store.selection)` runs. A not managed row has no info document; a row without a path has
     /// no file.
-    public func loadDetail() async {
+    /// - Parameter showingProgress: false for live refresh: the shown detail stays put, with no spinner, until the
+    ///   new one lands (a spinner already on from another load is still turned off).
+    public func loadDetail(showingProgress: Bool = true) async {
         detailGeneration += 1
         let mine = detailGeneration
         guard let entry = selectedEntry else {
@@ -513,7 +515,9 @@ import SkillcaskDomain
         if detail != nil, loadedDetailID != entry.id {
             detail = nil
         }
-        isLoadingDetail = true
+        if showingProgress {
+            isLoadingDetail = true
+        }
         async let info = infoResult(for: entry)
         async let text = textResult(for: entry)
         let (infoResult, textResult) = await (info, text)

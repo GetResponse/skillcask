@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SkillcaskCore
 
@@ -8,12 +9,15 @@ import SkillcaskCore
 /// no skills.toml, checks the manifests again too (`AppStore.refreshSetUp`), so `init` in a terminal turns the Set
 /// Up block into the list. The CLI's read-only commands write nothing, so a refresh never triggers itself.
 ///
-/// A change only restarts the debounce. A refresh, once started, is never cancelled by a change or by the stream
-/// restarting for a new plan (its own snapshot can move the plan; the new stream resumes at the old one's last
-/// event), only by following another store or by the last window closing. A change that arrives while any other
-/// refresh of the store runs (this one, ⌘R, the first open) marks the scope dirty, and one more refresh follows a
-/// debounce after it lands, so a user's refresh is never superseded and keeps its Activity row. A change during a
-/// mutation's refresh is the app's own write and is dropped (`ScopeStore.refreshAfterChange`).
+/// A change only restarts the debounce. A refresh, once started, is never cancelled by a change or by a new plan
+/// (its own snapshot can move the plan: the stream keeps running with the new filter, and restarts only when the
+/// roots or exclusions moved), only by following another store or by the last window closing. A change that
+/// arrives while any other refresh of the store runs (this one, ⌘R, the first open) marks the scope dirty, and one
+/// more refresh follows a debounce after it lands, so a user's refresh is never superseded and keeps its Activity
+/// row. A change during a mutation's refresh is the app's own write and is dropped (`ScopeStore.refreshAfterChange`).
+///
+/// It also observes the app's activation, once for all windows, while any window hosts it: returning to the app
+/// refreshes the selected scope if stale, quietly (`ScopeStore.refreshOnActivate`). The behaviour is D53.
 @MainActor public final class LiveRefresh {
     /// Quiet time after the last relevant change before the refresh: a `skillcask add` writes many files.
     public static let defaultDebounce: Duration = .milliseconds(700)
@@ -31,18 +35,35 @@ import SkillcaskCore
     private var running: Task<Void, Never>?
     /// A change arrived while a refresh ran: one more follows when it lands.
     private var isDirty = false
-    /// Windows hosting live refresh (`attach`/`detach`): the stream stops with the last.
+    /// Windows hosting live refresh (`attach`/`detach`): the stream stops with the last, and activation is ignored
+    /// without one.
     private var hosts = 0
-    /// An activation refresh is being asked for: every window observes activation, one asks.
-    private var isActivating = false
+    /// The refresh the last activation asked for.
+    private var activating: Task<Void, Never>?
+    private let notifications: NotificationCenter
+    /// `nonisolated(unsafe)` only so `deinit` can remove it; set once in `init`.
+    nonisolated(unsafe) private var activationObserver: (any NSObjectProtocol)?
 
+    /// - Parameter notifications: Where `NSApplication.didBecomeActiveNotification` is posted; tests post their own.
     public init(
         watcher: any FileWatching, debounce: Duration = LiveRefresh.defaultDebounce,
-        home: URL = FileManager.default.homeDirectoryForCurrentUser
+        home: URL = FileManager.default.homeDirectoryForCurrentUser, notifications: NotificationCenter = .default
     ) {
         self.watcher = watcher
         self.debounce = debounce
         self.home = home
+        self.notifications = notifications
+        activationObserver = notifications.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.becameActive() }
+        }
+    }
+
+    deinit {
+        if let activationObserver {
+            notifications.removeObserver(activationObserver)
+        }
     }
 
     /// A window that shows the selected scope appeared: follow it.
@@ -67,13 +88,17 @@ import SkillcaskCore
             stop()
             return
         }
+        let targets = store.snapshot?.targets
         let plan = WatchPlan(
-            scope: store.scope, configDirectory: app.configDirectory(),
-            targetDirs: store.snapshot?.targets?.dirs ?? [], home: home)
-        let resuming = followed?.store === store
-        if let followed, resuming {
+            scope: store.scope, configDirectory: app.configDirectory(), targetDirs: targets?.dirs ?? [],
+            local: targets?.local, home: home)
+        if let followed, followed.store === store {
             guard followed.plan != plan else { return }
             self.followed = (store, plan)
+            if followed.plan.roots == plan.roots, followed.plan.exclusions == plan.exclusions {
+                watcher.retarget(plan.accepts)
+                return
+            }
         } else {
             stop()
             followed = (store, plan)
@@ -82,9 +107,9 @@ import SkillcaskCore
                 self.refreshEnded(in: store)
             }
         }
-        watcher.start(
-            roots: plan.roots, excluding: plan.exclusions, resuming: resuming, isRelevant: plan.isRelevant
-        ) { [weak self] in self?.schedule() }
+        watcher.start(roots: plan.roots, excluding: plan.exclusions, accepts: plan.accepts) { [weak self] in
+            self?.schedule()
+        }
     }
 
     /// Ends the stream and drops the waiting and running refresh.
@@ -99,13 +124,18 @@ import SkillcaskCore
         followed = nil
     }
 
-    /// The app became active: the selected scope refreshes if stale, silently (`ScopeStore.refreshOnActivate`).
-    public func activated() async {
-        guard !isActivating, let app, let scope = app.selectedScope, app.isSetUp(scope),
-            let store = app.selectedStore
-        else { return }
-        isActivating = true
-        defer { isActivating = false }
+    /// The app became active (one notification, however many windows): refresh if a window shows the scope.
+    private func becameActive() {
+        guard hosts > 0 else { return }
+        activating = Task { [weak self] in
+            await self?.activated()
+        }
+    }
+
+    /// The selected scope refreshes if stale, silently (`ScopeStore.refreshOnActivate`, which also skips while a
+    /// refresh of the scope is in flight).
+    func activated() async {
+        guard let app, let scope = app.selectedScope, app.isSetUp(scope), let store = app.selectedStore else { return }
         await store.refreshOnActivate()
     }
 
@@ -116,6 +146,11 @@ import SkillcaskCore
                 await waiting.value
             } else if let running {
                 await running.value
+            } else if let activating {
+                await activating.value
+                if self.activating == activating {
+                    self.activating = nil
+                }
             } else {
                 return
             }
