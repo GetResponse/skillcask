@@ -6,16 +6,16 @@ import SwiftUI
 /// Healthy) it is one `Claude Code  .claude/skills  skills.toml` line per agent.
 struct AgentsCard: View {
     let snapshot: ScopeSnapshot
+    /// The scope's `AgentIndex` (`ScopeStore.agentIndex`): targets with their directories, and each skill's links.
+    let agents: AgentIndex
     /// Overview-States Healthy: the compact one-line form.
     let isCompact: Bool
 
-    /// Agent, directory: the CLI prints them as two parallel lists.
-    static func targets(_ snapshot: ScopeSnapshot) -> [(agent: String, directory: String)] {
-        guard let targets = snapshot.targets else { return [] }
-        return targets.entries.enumerated()
-            .map { index, entry in
-                (entry, index < targets.dirs.count ? targets.dirs[index] : "")
-            }
+    /// Agent, directory: `targets.entries` paired with `targets.dirs` by `AgentTarget.resolve` (the lists are not
+    /// parallel: an agent that reads the store has no directory of its own and shows the store's), `~/` in the
+    /// global scope.
+    static func targets(_ agents: AgentIndex) -> [(agent: String, directory: String)] {
+        agents.targets.map { (AgentCopy.name($0), $0.shownPath) }
     }
 
     /// The skills that have no links in the agent folders: not installed or not linked by `status`, or reported
@@ -33,33 +33,43 @@ struct AgentsCard: View {
             .sorted()
     }
 
-    /// `12 skills are linked into both. Not linked: jira-syntax, sql-review. One Cursor link is wrong — see
-    /// Health.` The linked count leaves out `unlinked`, so it agrees with doctor's missing links.
-    static func footnote(_ snapshot: ScopeSnapshot) -> String {
-        let targets = targets(snapshot)
+    /// `12 skills are linked into both. Not linked: jira-syntax, sql-review. One Claude Code link is wrong — see
+    /// Health.` The linked count leaves out `unlinked`, so it agrees with doctor's missing links. Broken links are
+    /// counted per agent with a directory of its own: a store agent has no link, and a broken store link (a
+    /// project skill `not linked`) is already named under "Not linked", once, however many agents read the store.
+    /// After a failed `doctor` the counts come from the document Health keeps (`AgentIndex.countedReaches`).
+    static func footnote(_ snapshot: ScopeSnapshot, agents: AgentIndex) -> String {
         let unlinked = unlinked(snapshot)
-        var sentences = [OverviewCopy.linked(skills: snapshot.entries.count - unlinked.count, agents: targets.count)]
+        var sentences = [
+            OverviewCopy.linked(skills: snapshot.entries.count - unlinked.count, agents: agents.targets.count)
+        ]
         if !unlinked.isEmpty {
             sentences.append(OverviewCopy.notLinked(unlinked))
         }
-        for target in targets {
-            let broken = snapshot.doctor?.brokenLinks(in: target.directory) ?? 0
-            if broken > 0 {
-                sentences.append(OverviewCopy.brokenLinks(broken, agent: ShellCopy.agentName(target.agent)))
+        let reaches = agents.countedReaches(in: snapshot)
+        for target in agents.targets where target.directory != nil {
+            let states = reaches.compactMap { reach in
+                reach.links.first {
+                    $0.target == target && ($0.state == .missing || $0.state == .wrong || $0.state == .blocked)
+                }?
+                .state
+            }
+            if !states.isEmpty {
+                sentences.append(OverviewCopy.brokenLinks(states, agent: AgentCopy.name(target)))
             }
         }
         return sentences.joined(separator: " ")
     }
 
     var body: some View {
-        let targets = Self.targets(snapshot)
+        let targets = Self.targets(agents)
         let from = snapshot.targets?.from ?? ""
         CardContainer(title: OverviewCopy.agents, isCollapsed: targets.isEmpty) {
             if isCompact {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     ForEach(targets, id: \.agent) { target in
                         HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
-                            Text(ShellCopy.agentName(target.agent))
+                            Text(target.agent)
                                 .font(Font.Token.calloutMedium)
                                 .foregroundStyle(Color.textPrimary)
                             Text(target.directory)
@@ -78,11 +88,11 @@ struct AgentsCard: View {
                         headers: [OverviewCopy.agent, OverviewCopy.directory, OverviewCopy.setIn],
                         rows: targets.map { target in
                             [
-                                .medium(ShellCopy.agentName(target.agent)), .monoSecondary(target.directory),
+                                .medium(target.agent), .monoSecondary(target.directory),
                                 .mono(from),
                             ]
                         })
-                    Text(Self.footnote(snapshot))
+                    Text(Self.footnote(snapshot, agents: agents))
                         .font(Font.Token.caption)
                         .foregroundStyle(Color.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)

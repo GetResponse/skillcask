@@ -75,6 +75,23 @@ public enum DesignFixtures {
     public static let apiRepaired = snapshot(
         status: "status.api", audit: "audit.api", doctor: "doctor.api-repaired", outdated: "outdated.api",
         checkedSecondsAgo: 2)
+    /// Per-skill agent badges (no board; `AgentIndex`): `status --json` and `doctor --json` exactly as the 0.10.2 CLI
+    /// printed them for a copy of the click-through demo (`[agents] targets = ["claude", "kiro", "codex",
+    /// "./tools/skills"]`; `codex` reads the store, so `dirs` has three entries). handy-notes (hand-written) reaches
+    /// every agent; review-notes misses its Kiro link; sql-style has a wrong Claude Code link; a folder skillcask did
+    /// not create blocks release-checklist in `tools/skills`; notes lost its store link (`not linked`, and `doctor`
+    /// then calls every target link wrong); jira-syntax is locked but not installed; acme/gone is a package-only row
+    /// with no claim. No audit or outdated.
+    public static let agents = snapshot(
+        status: "status.agents", audit: nil, doctor: "doctor.agents", outdated: nil, checkedSecondsAgo: 60)
+    /// `agents` before `doctor` answered (the first, status-only load): every link is unchecked.
+    public static let agentsUnchecked = snapshot(
+        status: "status.agents", audit: nil, doctor: nil, outdated: nil, checkedSecondsAgo: 0)
+    /// The healthy single-target website with changelog's Claude Code link missing: the one case a single-target
+    /// scope draws a badge.
+    public static let websiteLinkMissing = snapshot(
+        status: "status.website", audit: "audit.website", doctor: "doctor.website-link-missing",
+        outdated: "outdated.website", checkedSecondsAgo: 60)
     /// `List-States` empty after Set Up: skills.toml exists, no skills yet.
     public static let emptyAfterSetUp = snapshot(
         status: "status.empty", audit: nil, doctor: nil, outdated: nil, checkedSecondsAgo: 0)
@@ -120,6 +137,27 @@ public enum DesignFixtures {
     public static let personalPdf = entry("pdf", in: personal)
     /// `Versions-States` tag moved: caveman as a managed package.
     public static let managedCaveman = entry("caveman", in: apiTagMoved)
+
+    // MARK: - Agent badges (`agents`)
+
+    public static let agentsHandyNotes = entry("handy-notes", in: agents)
+    public static let agentsReviewNotes = entry("review-notes", in: agents)
+    public static let agentsSqlStyle = entry("sql-style", in: agents)
+    public static let agentsReleaseChecklist = entry("release-checklist", in: agents)
+    public static let agentsNotes = entry("notes", in: agents)
+    public static let agentsJiraSyntax = entry("jira-syntax", in: agents)
+
+    /// The project-scope `AgentIndex` of a fixture snapshot, as `ScopeStore` builds it.
+    public static func agentIndex(
+        _ snapshot: ScopeSnapshot, isGlobal: Bool = false, check: AgentIndex.LinkCheck? = nil
+    ) -> AgentIndex {
+        AgentIndex(snapshot: snapshot, isGlobal: isGlobal, check: check)
+    }
+
+    /// The reach of `entry` in a fixture snapshot, as `ScopeStore.agentReach(for:)` returns it.
+    public static func agentReach(of entry: SkillEntry, in snapshot: ScopeSnapshot, scope: Scope) -> AgentReach {
+        agentIndex(snapshot, isGlobal: scope.isPersonal).reach(of: entry)
+    }
 
     // MARK: - Updates (`Versions`, `Versions-States`, `ReviewUpdate`)
 
@@ -416,7 +454,7 @@ public enum DesignFixtures {
             "Downloading 1.4.0 (github)… 142 KB",
             "Verifying content hash… ok",
             "Writing skills.lock",
-            "Linking pdf → .claude/skills, .cursor/skills",
+            "Linking pdf → .claude/skills",
         ]
         public static let addJira = [
             "Resolving netresearch/agent-jira-skill (^4.2)… 4.2.0",
@@ -424,8 +462,8 @@ public enum DesignFixtures {
             "Downloading 4.2.0 (packagist)… 86 KB",
             "Verifying content hash… ok",
             "Writing skills.toml, skills.lock",
-            "Linking jira-syntax → .claude/skills, .cursor/skills",
-            "Linking jira-communication → .claude/skills, .cursor/skills",
+            "Linking jira-syntax → .claude/skills",
+            "Linking jira-communication → .claude/skills",
         ]
         public static let sync = ["Installing jira-syntax 4.2.0 (packagist)…", "Verifying content hash… ok"]
     }

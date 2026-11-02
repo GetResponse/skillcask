@@ -25,6 +25,22 @@ extension PreviewRegistry {
                 entry: DesignFixtures.standupSummary, info: nil, snapshot: DesignFixtures.personal, scope: .personal)
         },
         entry("abandoned") { DetailSample(entry: DesignFixtures.legacyLint, info: DesignFixtures.legacyLintInfo) },
+        entry("agentsLinkMissing") {
+            DetailSample(entry: DesignFixtures.agentsReviewNotes, info: nil, snapshot: DesignFixtures.agents)
+        },
+        entry("agentsBlocked") {
+            DetailSample(entry: DesignFixtures.agentsReleaseChecklist, info: nil, snapshot: DesignFixtures.agents)
+        },
+        entry("agentsStoreLink") {
+            DetailSample(entry: DesignFixtures.agentsNotes, info: nil, snapshot: DesignFixtures.agents)
+        },
+        entry("agentsNotInstalled") {
+            DetailSample(entry: DesignFixtures.agentsJiraSyntax, info: nil, snapshot: DesignFixtures.agents)
+        },
+        entry("agentsUnchecked") {
+            DetailSample(
+                entry: DesignFixtures.agentsReviewNotes, info: nil, snapshot: DesignFixtures.agents, check: .failed)
+        },
         entry("offline") {
             DetailSample(
                 entry: DesignFixtures.commitMessageOffline, info: nil, snapshot: DesignFixtures.apiOffline,
@@ -44,6 +60,7 @@ private struct DetailSample: View {
     var snapshot = DesignFixtures.api
     var scope = Boot.apiScope
     var offline = false
+    var check: AgentIndex.LinkCheck?
     @State private var tab = DetailTab.overview
 
     var body: some View {
@@ -53,7 +70,9 @@ private struct DetailSample: View {
                 allowedRange: info.flatMap { DetailOverviewCopy.allowedRange(why: $0.why) })
             OverviewTab(
                 content: OverviewContent(
-                    entry: entry, detail: detail, snapshot: snapshot, scope: scope, isOffline: offline),
+                    entry: entry, detail: detail, snapshot: snapshot, scope: scope, isOffline: offline,
+                    agents: DesignFixtures.agentIndex(snapshot, isGlobal: scope.isPersonal, check: check)
+                        .reach(of: entry)),
                 checkedAt: snapshot.checkedAt)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

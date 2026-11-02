@@ -61,13 +61,14 @@ struct SkillDetailView: View {
             OverviewTab(
                 content: OverviewContent(
                     entry: entry, detail: store.detail, snapshot: store.snapshot, scope: store.scope,
-                    isOffline: store.isOffline),
+                    isOffline: store.isOffline, agents: store.agentReach(for: entry)),
                 checkedAt: store.snapshot?.checkedAt,
                 onShowSkill: { store.selection = $0 },
                 onAddReplacement: { request(.addSkill(query: nil)) },
                 canAddReplacement: ToolbarRules.canAddSkill(store.snapshot, isBusy: runner.isRunning),
                 onRetry: { Task { await store.loadDetail() } },
                 onSeeSecurity: { tab = .security },
+                onSeeHealth: { store.clearSelection() },
                 onEmptyClick: { store.clearSelection() })
         case .contents:
             ContentsTab(

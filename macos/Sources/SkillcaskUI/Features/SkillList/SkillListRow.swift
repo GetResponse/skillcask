@@ -12,6 +12,8 @@ struct SkillListRow: View {
     let isSelected: Bool
     let isOffline: Bool
     let requiredBy: [String]
+    /// The agent badges (`ScopeStore.agentReach(for:)`).
+    let agents: AgentReach
     /// False while a window run is in flight in this scope: every mutation waits for it, so the hover offers none.
     let showsActions: Bool
 
@@ -21,13 +23,14 @@ struct SkillListRow: View {
     /// - Parameter hovering: Previews only: draws the row as hovered (a render has no pointer).
     init(
         entry: SkillEntry, scope: Scope, isSelected: Bool, isOffline: Bool, requiredBy: [String],
-        hovering: Bool = false, showsActions: Bool = true
+        agents: AgentReach = .none, hovering: Bool = false, showsActions: Bool = true
     ) {
         self.entry = entry
         self.scope = scope
         self.isSelected = isSelected
         self.isOffline = isOffline
         self.requiredBy = requiredBy
+        self.agents = agents
         self.showsActions = showsActions
         _isHovering = State(initialValue: hovering)
     }
@@ -39,7 +42,7 @@ struct SkillListRow: View {
     var body: some View {
         SkillRow(
             entry, isSelected: isSelected, isOffline: isOffline, requiredBy: requiredBy,
-            accessory: isHovering && showsActions ? AnyView(controls) : nil
+            accessory: isHovering && showsActions ? AnyView(controls) : nil, agents: agents
         )
         .contentShape(Rectangle())
         .listRowBackground(

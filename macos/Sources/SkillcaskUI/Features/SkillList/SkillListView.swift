@@ -195,7 +195,8 @@ struct SkillListView: View {
             ForEach(rows) { entry in
                 SkillListRow(
                     entry: entry, scope: store.scope, isSelected: entry.id == store.selection, isOffline: isOffline,
-                    requiredBy: store.requirerSkills(for: entry), hovering: entry.id == hoveredRow,
+                    requiredBy: store.requirerSkills(for: entry), agents: store.agentReach(for: entry),
+                    hovering: entry.id == hoveredRow,
                     showsActions: showsActions
                 )
                 .listRowInsets(EdgeInsets())

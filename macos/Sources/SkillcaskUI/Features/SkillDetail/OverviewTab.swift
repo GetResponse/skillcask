@@ -10,7 +10,7 @@ import SwiftUI
 /// Which rows each state shows is `OverviewContent.fields(for:)`, from the boards. Declared deviation: every state
 /// draws its rows in the Main board's bordered card, where Detail-States' small panels draw a bare label/value
 /// list; one card style keeps the tab one surface across states. The Main board's per-agent link table under
-/// "Available to" is one line of agent names, since no CLI document carries a per-skill link state.
+/// "Available to" is built from `status.targets` and `doctor`'s per-target link problems (`AgentIndex`).
 struct OverviewTab: View {
     let content: OverviewContent
     let checkedAt: Date?
@@ -24,6 +24,8 @@ struct OverviewTab: View {
     var onRetry: () -> Void = {}
     /// Switches to the Security tab.
     var onSeeSecurity: () -> Void = {}
+    /// Shows the Scope Overview, whose Health card lists the link problems (the agent hint's "See Health").
+    var onSeeHealth: () -> Void = {}
     var onEmptyClick: () -> Void = {}
 
     @Environment(\.openURL) private var openURL
@@ -158,6 +160,8 @@ struct OverviewTab: View {
                 monoPath(path)
                 link(DetailOverviewCopy.openFolder) { Workspace.revealFolder(url) }
             }
+        case .agents(let reach):
+            agentLines(reach)
         case .security(let severity, let text, let showsLink):
             HStack(alignment: .center, spacing: Spacing.cardGap) {
                 StatusDot(severity)
@@ -168,6 +172,64 @@ struct OverviewTab: View {
                     link(DetailOverviewCopy.seeSecurity, action: onSeeSecurity)
                 }
             }
+        }
+    }
+
+    /// `Claude Code  .claude/skills  linked`: the agent, the directory it reads in mono and the link state, a broken
+    /// one in the warning colour; the remedy hint below in caption.
+    private func agentLines(_ reach: AgentReach) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: Spacing.m, verticalSpacing: Spacing.xs) {
+                ForEach(reach.links) { link in
+                    GridRow {
+                        Text(AgentCopy.name(link.target))
+                            .font(Font.Token.body)
+                            .foregroundStyle(Color.textPrimary)
+                            .lineLimit(1)
+                        Text(link.target.shownPath)
+                            .font(Font.Token.mono)
+                            .foregroundStyle(Color.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        HStack(spacing: Spacing.xs) {
+                            if link.state.isProblem {
+                                Image(systemName: SkillRow.findingsSymbol)
+                                    .accessibilityHidden(true)
+                            }
+                            Text(AgentCopy.state(link.state, readsStore: link.target.directory == nil))
+                        }
+                        .font(link.state.isProblem ? Font.Token.calloutMedium : Font.Token.callout)
+                        .foregroundStyle(agentStateColor(link.state))
+                        .lineLimit(1)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            if let hint = AgentCopy.hint(reach) {
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.inline) {
+                    Text(hint.text)
+                        .font(Font.Token.caption)
+                        .foregroundStyle(Color.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if hint.seeHealth {
+                        Button(action: onSeeHealth) {
+                            Text(AgentCopy.seeHealth)
+                                .font(Font.Token.captionMedium)
+                                .foregroundStyle(Color.accent)
+                        }
+                        .buttonStyle(.plain)
+                        .fixedSize()
+                    }
+                }
+            }
+        }
+    }
+
+    private func agentStateColor(_ state: AgentReach.State) -> Color {
+        switch state {
+        case .missing, .wrong, .blocked, .storeLinkBroken, .storeBlocked: Color.statusWarningText
+        case .notInstalled: Color.statusErrorText
+        case .linked, .pending, .unknown: Color.textSecondary
         }
     }
 

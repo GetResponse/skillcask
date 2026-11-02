@@ -74,7 +74,13 @@ import Testing
             return
         }
         #expect(path == "~/work/api/.skillcask/skills/pdf")
-        #expect(value(DetailOverviewCopy.availableTo, in: content.place) == .text("Claude Code, Cursor", mono: nil))
+        guard case .agents(let reach) = value(DetailOverviewCopy.availableTo, in: content.place) else {
+            Issue.record("pdf has no Available to row")
+            return
+        }
+        // Claude Code's link is wrong (doctor.api); Cursor reads the store.
+        #expect(reach.links.map(\.target.entry) == ["claude", "cursor"])
+        #expect(reach.links.map(\.state) == [.wrong, .linked])
     }
 
     @Test func installedSiblingsOfThePackageAreMarkedInstalled() {
@@ -113,18 +119,19 @@ import Testing
             ])
         #expect(OverviewContent.fields(for: .project) == [.kind, .availableTo, .location])
         #expect(OverviewContent.fields(for: .local) == [.kind, .availableTo, .location])
-        #expect(OverviewContent.fields(for: .dependency) == [.requiredBy, .requires])
+        #expect(OverviewContent.fields(for: .dependency) == [.requiredBy, .requires, .availableTo])
         #expect(OverviewContent.fields(for: .notManaged) == [.foundIn, .security])
         #expect(OverviewContent.fields(for: .sourceUnknown) == [.foundIn, .security])
         #expect(OverviewContent.fields(for: .abandoned) == [.license, .newest])
         #expect(OverviewContent.fields(for: .offline) == [.availableTo, .plainLocation, .security])
     }
 
-    @Test func dependencyShowsOnlyWhoRequiresItAndWhatItRequires() {
+    /// Who requires it, what it requires, and which agents see it (a dependency is linked like any package).
+    @Test func dependencyShowsWhoRequiresItWhatItRequiresAndItsAgents() {
         let content = overview(DesignFixtures.safeRefactor, info: DesignFixtures.safeRefactorInfo)
         #expect(content.state == .dependency)
         #expect(content.facts.map(\.label) == [DetailOverviewCopy.requiredBy, DetailOverviewCopy.requires])
-        #expect(content.place.isEmpty)
+        #expect(content.place.map(\.label) == [DetailOverviewCopy.availableTo])
     }
 
     // MARK: - Header state line
@@ -161,9 +168,11 @@ import Testing
 
     @Test func offlineShowsTheStripAndKeepsStatusKnownRows() {
         let detail = SkillDetail(infoError: .failed(code: .network, message: "", hint: nil, stderr: ""))
+        let offlineReach = DesignFixtures.agentReach(
+            of: DesignFixtures.commitMessageOffline, in: DesignFixtures.apiOffline, scope: Boot.apiScope)
         let content = OverviewContent(
             entry: DesignFixtures.commitMessageOffline, detail: detail, snapshot: DesignFixtures.apiOffline,
-            scope: Boot.apiScope, isOffline: false)
+            scope: Boot.apiScope, isOffline: false, agents: offlineReach)
         #expect(content.banners == [.offline])
         #expect(content.facts.isEmpty)
         #expect(
@@ -180,11 +189,11 @@ import Testing
         // The app offline with no detail yet reads the same; online without an answer shows no strip.
         let waiting = OverviewContent(
             entry: DesignFixtures.commitMessageOffline, detail: nil, snapshot: DesignFixtures.apiOffline,
-            scope: Boot.apiScope, isOffline: true)
+            scope: Boot.apiScope, isOffline: true, agents: offlineReach)
         #expect(waiting.banners == [.offline])
         let online = OverviewContent(
             entry: DesignFixtures.commitMessageOffline, detail: nil, snapshot: DesignFixtures.apiOffline,
-            scope: Boot.apiScope, isOffline: false)
+            scope: Boot.apiScope, isOffline: false, agents: offlineReach)
         #expect(online.banners.isEmpty)
     }
 
@@ -217,7 +226,8 @@ import Testing
         scope: Scope = Boot.apiScope
     ) -> OverviewContent {
         OverviewContent(
-            entry: entry, detail: SkillDetail(info: info), snapshot: snapshot, scope: scope, isOffline: false)
+            entry: entry, detail: SkillDetail(info: info), snapshot: snapshot, scope: scope, isOffline: false,
+            agents: DesignFixtures.agentReach(of: entry, in: snapshot, scope: scope))
     }
 
     private func value(_ label: String, in rows: [OverviewContent.Row]) -> OverviewContent.Value? {

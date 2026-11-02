@@ -172,10 +172,10 @@ public enum DoctorItem: Hashable, Sendable {
         }
     }
 
-    /// The agent directory of a link item (`.cursor/skills` for `.cursor/skills/pdf`); nil for every other item.
-    public var linkDirectory: String? {
-        guard case .link(let path, _) = self, let slash = path.lastIndex(of: "/") else { return nil }
-        return String(path[..<slash])
+    /// A path of a `doctor` line relative to the scope root: the global scope prints `~/.claude/skills/x`
+    /// (`Scope::show`), a project `.claude/skills/x`, which is kept as printed.
+    public static func scopeRelative(_ path: String, isGlobal: Bool) -> String {
+        isGlobal && path.hasPrefix("~/") ? String(path.dropFirst(2)) : path
     }
 }
 
@@ -213,11 +213,5 @@ extension ScopeSnapshot.Doctor {
     /// Repair, with only a download left, the button is disabled).
     public var canRepair: Bool {
         (problemItems + warningItems).contains { remedy(of: $0) == .repair }
-    }
-
-    /// Links in `directory` that Repair would fix: the Agents card's "One Cursor link is wrong". A link to a skill
-    /// that is not installed is the missing skill's problem, which Health reports as such.
-    public func brokenLinks(in directory: String) -> Int {
-        problemItems.filter { $0.linkDirectory == directory && remedy(of: $0) == .repair }.count
     }
 }

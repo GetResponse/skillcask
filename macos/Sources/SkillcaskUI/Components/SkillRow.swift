@@ -23,19 +23,23 @@ public struct SkillRow: View {
     /// Drawn in place of the trailing slot when set: the list row's hover controls (Components board, "hover with
     /// actions").
     public let accessory: AnyView?
+    /// Which agents see the skill (`AgentIndex.reach(of:)`): badges under the trailing slot (or the hover
+    /// controls) when `AgentReach.showsOnRow`, so they line up at the row's trailing edge on every row.
+    public let agents: AgentReach
 
     @Environment(\.backgroundProminence) private var prominence
     @Environment(\.controlActiveState) private var controlActiveState
 
     public init(
         _ entry: SkillEntry, isSelected: Bool = false, isOffline: Bool = false, requiredBy: [String]? = nil,
-        accessory: AnyView? = nil
+        accessory: AnyView? = nil, agents: AgentReach = .none
     ) {
         self.entry = entry
         self.isSelected = isSelected
         self.isOffline = isOffline
         self.requiredBy = requiredBy
         self.accessory = accessory
+        self.agents = agents
     }
 
     /// The selected-row rule: white text and the translucent pill for a selected row in an active (key or main)
@@ -70,13 +74,18 @@ public struct SkillRow: View {
         HStack(spacing: Spacing.rowGap) {
             dot
             column
-            if let accessory {
-                accessory
-                    .fixedSize()
-                    .layoutPriority(1)
-            } else {
-                trailingSlot
+            VStack(alignment: .trailing, spacing: Spacing.xs) {
+                if let accessory {
+                    accessory
+                        .fixedSize()
+                } else {
+                    trailingSlot
+                }
+                if agents.showsOnRow {
+                    AgentBadges(reach: agents)
+                }
             }
+            .layoutPriority(1)
         }
         .padding(.leading, Self.leadingPadding)
         .padding(.trailing, Self.trailingPadding)
@@ -84,7 +93,7 @@ public struct SkillRow: View {
         .frame(height: Self.height)
         .environment(\.backgroundProminence, emphasized ? .increased : .standard)
         .accessibilityElement(children: .combine)
-        .accessibilityValue(secondary.text)
+        .accessibilityValue(accessibilityValue)
     }
 
     // MARK: - Derived
@@ -95,6 +104,13 @@ public struct SkillRow: View {
 
     var secondary: SkillRowSecondary {
         .resolve(entry, requiredBy: requiredBy)
+    }
+
+    /// The second line as text, then which agents the skill is available to when the row draws badges:
+    /// `anthropics/skills · GitHub; Available to Cursor; Claude Code link wrong`. The badges themselves are hidden
+    /// from VoiceOver, since a row draws at most `AgentBadges.limit` of them.
+    var accessibilityValue: String {
+        agents.showsOnRow ? "\(secondary.text); \(AgentCopy.summary(agents))" : secondary.text
     }
 
     private var emphasized: Bool {
@@ -155,6 +171,7 @@ public struct SkillRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// The location (or "Required by …") and the source pill; the text truncates first.
     @ViewBuilder private var secondaryLine: some View {
         switch secondary {
         case .location(let location, let source):

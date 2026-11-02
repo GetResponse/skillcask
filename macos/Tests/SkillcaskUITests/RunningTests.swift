@@ -174,15 +174,13 @@ import Testing
         let doctor = try #require(DesignFixtures.api.doctor)
         let report = HealthReport.resolve(doctor)
         #expect(report.severity == .error)
-        #expect(report.title == "Health · 8 problems")
+        #expect(report.title == "Health · 6 problems")
         #expect(report.groups.map(\.kind) == [.problems])
         #expect(report.groups.first?.label == "Problems · Repair or Sync fixes these")
         #expect(
             report.groups.first?.items.map(\.hint) == [
                 "Sync installs the skill and links it. Repair does not download.",
-                "Sync installs the skill and links it. Repair does not download.",
                 "Repair relinks it.",
-                "Sync installs the skill and links it. Repair does not download.",
                 "Sync installs the skill and links it. Repair does not download.",
                 "Repair rewrites the block.", "Sync installs it. Repair does not download.",
                 "Sync installs it. Repair does not download.",
@@ -196,11 +194,11 @@ import Testing
     @Test func afterRepairTheRepairedComeFirstAndOnlyADownloadIsLeft() throws {
         let doctor = try #require(DesignFixtures.apiRepaired.doctor)
         let report = HealthReport.resolve(doctor)
-        #expect(report.title == "Health · 6 problems")
+        #expect(report.title == "Health · 4 problems")
         #expect(report.groups.map(\.kind) == [.repaired, .problems])
         #expect(report.groups.map(\.label) == ["Repaired · 2", "Problems · Sync fixes these"])
-        #expect(report.groups[0].items.first?.line.sentence == "Relinked .cursor/skills/pdf to the installed copy.")
-        #expect(report.groups[1].items.map(\.hint) == Array(repeating: nil, count: 6), "the label already says Sync")
+        #expect(report.groups[0].items.first?.line.sentence == "Relinked .claude/skills/pdf to the installed copy.")
+        #expect(report.groups[1].items.map(\.hint) == Array(repeating: nil, count: 4), "the label already says Sync")
         #expect(!report.canRepair && report.secondary == .sync)
         #expect(report.footnote == "The remaining items need a download.")
     }
@@ -238,7 +236,9 @@ import Testing
         let doctor = try #require(DesignFixtures.api.doctor)
         #expect(doctor.remedy(of: DoctorItem(line: Self.missingLink)) == .sync)
         #expect(doctor.remedy(of: DoctorItem(line: ".cursor/skills/pdf: link wrong")) == .repair)
-        #expect(doctor.brokenLinks(in: ".cursor/skills") == 1, "the jira-syntax link is the missing skill's problem")
+        #expect(
+            doctor.remedy(of: DoctorItem(line: ".claude/skills/jira-syntax: link missing")) == .sync,
+            "the jira-syntax link is the missing skill's problem")
         let onlyDownload = try self.doctor(problems: [Self.missingLink, Self.notInstalled])
         #expect(!onlyDownload.canRepair)
         let report = HealthReport.resolve(onlyDownload)
@@ -292,7 +292,7 @@ import Testing
         let runner = ActionRunner(queue: MutationQueue())
         await runner.repair(in: store)
         let doctor = try #require(store.snapshot?.doctor)
-        #expect(doctor.fixed == [".cursor/skills/pdf: link wrong", ".gitignore: stale managed block"])
+        #expect(doctor.fixed == [".claude/skills/pdf: link wrong", ".gitignore: stale managed block"])
         let report = HealthReport.resolve(doctor)
         #expect(report.groups.map(\.kind) == [.repaired, .problems])
         #expect(report.footnote == "The remaining items need a download.")
@@ -303,7 +303,7 @@ import Testing
         await trio(after)
         await runner.check(in: store)
         #expect(store.snapshot?.doctor?.fixed.isEmpty == true, "the next check drops the repaired items")
-        #expect(store.snapshot?.doctor?.problems.count == 6)
+        #expect(store.snapshot?.doctor?.problems.count == 4)
     }
 
     /// A store refreshed once over the api trio, and the `doctor` answer that follows a Repair (open items only).
@@ -352,7 +352,7 @@ import Testing
         await gate.open()
         await repair.value
         #expect(store.snapshot?.doctor?.fixed.isEmpty == true, "the superseded follow-up does not land")
-        #expect(store.snapshot?.doctor?.problems.count == 6)
+        #expect(store.snapshot?.doctor?.problems.count == 4)
     }
 
     @Test func warningsAreTheirOwnGroupWithHints() throws {

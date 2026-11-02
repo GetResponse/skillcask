@@ -1,0 +1,23 @@
+{
+  "fixed": [],
+  "ok": false,
+  "passed": [
+    "targets: no links left in former target directories",
+    "git index: no managed paths committed"
+  ],
+  "problems": [
+    ".agents/skills/notes: link missing",
+    ".claude/skills/jira-syntax: link missing",
+    ".kiro/skills/jira-syntax: link missing",
+    "tools/skills/jira-syntax: link missing",
+    ".claude/skills/notes: link wrong",
+    ".kiro/skills/notes: link wrong",
+    "tools/skills/notes: link wrong",
+    "tools/skills/release-checklist: link foreign",
+    ".kiro/skills/review-notes: link missing",
+    ".claude/skills/sql-style: link wrong",
+    ".gitignore: stale managed block",
+    ".agents/skills/jira-syntax: not installed (netresearch/agent-jira-skill); run `skillcask install`"
+  ],
+  "warnings": []
+}

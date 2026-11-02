@@ -8,7 +8,7 @@
   },
   "targets": {
     "entries": ["claude", "cursor"],
-    "dirs": [".claude/skills", ".cursor/skills"],
+    "dirs": [".claude/skills"],
     "from": "skills.toml"
   },
   "repositories": [

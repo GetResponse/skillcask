@@ -95,13 +95,25 @@ public enum ShellCopy {
 
     // MARK: - Agents
 
-    /// The agent names the boards write for the CLI's target ids (`claude`, `cursor`, `codex`); an unknown id is
-    /// shown as the CLI prints it.
+    /// The product names of the CLI's agent presets (D29, `PRESETS` in `src/manifest.rs`); an unknown id or a path
+    /// target is shown as the CLI prints it.
     public static func agentName(_ target: String) -> String {
         switch target {
         case "claude": "Claude Code"
         case "cursor": "Cursor"
         case "codex": "Codex"
+        case "kiro": "Kiro"
+        case "junie": "Junie"
+        case "copilot": "Copilot"
+        case "gemini": "Gemini CLI"
+        case "opencode": "OpenCode"
+        case "amp": "Amp"
+        case "devin": "Devin"
+        case "roo": "Roo Code"
+        case "cline": "Cline"
+        case "goose": "Goose"
+        case "factory": "Factory"
+        case "vibe": "Vibe"
         default: target
         }
     }

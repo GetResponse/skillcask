@@ -1,0 +1,107 @@
+{
+  "entries": [
+    {
+      "adopt": null,
+      "ok": false,
+      "package": "netresearch/agent-jira-skill",
+      "skill": "jira-syntax",
+      "state": "not installed",
+      "version": "4.3.0",
+      "via": null
+    },
+    {
+      "adopt": null,
+      "ok": false,
+      "package": "acme/gone",
+      "skill": null,
+      "state": "not in skills.toml",
+      "version": "1.0.0",
+      "via": null
+    },
+    {
+      "adopt": null,
+      "ok": true,
+      "package": null,
+      "skill": "handy-notes",
+      "state": "hand-written",
+      "version": null,
+      "via": null
+    },
+    {
+      "adopt": null,
+      "ok": false,
+      "package": null,
+      "skill": "notes",
+      "state": "not linked",
+      "version": null,
+      "via": null
+    },
+    {
+      "adopt": null,
+      "ok": true,
+      "package": null,
+      "skill": "release-checklist",
+      "state": "project",
+      "version": null,
+      "via": null
+    },
+    {
+      "adopt": null,
+      "ok": true,
+      "package": null,
+      "skill": "review-notes",
+      "state": "project",
+      "version": null,
+      "via": null
+    },
+    {
+      "adopt": null,
+      "ok": true,
+      "package": null,
+      "skill": "sql-style",
+      "state": "project",
+      "version": null,
+      "via": null
+    }
+  ],
+  "ok": false,
+  "policy": {
+    "allow-ranges": {
+      "from": "skills.toml",
+      "value": true
+    },
+    "min-release-age": {
+      "from": "skills.toml",
+      "value": "72h"
+    }
+  },
+  "repositories": [
+    {
+      "allowed": true,
+      "name": "packagist",
+      "type": "composer",
+      "url": "https://repo.packagist.org/"
+    },
+    {
+      "allowed": true,
+      "name": "github",
+      "type": "github",
+      "url": "https://api.github.com/"
+    }
+  ],
+  "skills-sh": null,
+  "targets": {
+    "dirs": [
+      ".claude/skills",
+      ".kiro/skills",
+      "tools/skills"
+    ],
+    "entries": [
+      "claude",
+      "kiro",
+      "codex",
+      "./tools/skills"
+    ],
+    "from": "skills.toml"
+  }
+}

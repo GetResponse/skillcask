@@ -51,6 +51,33 @@ import Testing
         #expect(store.presentation == .ready)
     }
 
+    /// A `doctor` that fails after one that answered: Health keeps the older document, but the agent links are not
+    /// claimed from it (a skill added since would read "linked" without a check).
+    @Test(.timeLimit(.minutes(1))) func aFailedDoctorLeavesTheAgentLinksUnchecked() async throws {
+        let status =
+            #"{"ok":true,"entries":[{"package":"acme/pdf","skill":"pdf","version":"1.0.0","state":"ok","ok":true}],"policy":{},"targets":{"entries":["claude","cursor"],"dirs":[".claude/skills"],"from":"default"}}"#
+        await scriptTrio(status)
+        await client.json(.status, in: scope, status)
+        await client.json(.audit, in: scope, Self.emptyAudit)
+        await client.script(
+            .doctor(fix: false), in: scope,
+            .error(.failed(code: .other(1), message: "doctor broke", hint: nil, stderr: "")))
+        let store = store()
+        await store.refresh()
+        let pdf = try #require(store.snapshot?.entry(id: "pdf"))
+        #expect(store.agentReach(for: pdf).links.map(\.state) == [.linked, .linked])
+        await store.refresh()
+        #expect(store.snapshot?.doctor != nil, "Health keeps the last answer")
+        #expect(store.agentIndex.check == .failed)
+        #expect(store.agentReach(for: pdf).links.map(\.state) == [.unknown, .unknown])
+        // Nothing scripted: the whole refresh fails and clears the partial-failure strip, but the snapshot on screen
+        // keeps its older `doctor` answer, so its links stay unchecked.
+        await store.refresh()
+        #expect(store.lastError != nil && store.partialFailure == nil)
+        #expect(store.agentIndex.check == .failed)
+        #expect(store.agentReach(for: pdf).links.map(\.state) == [.unknown, .unknown])
+    }
+
     @Test(.timeLimit(.minutes(1))) func selectionSurvivesARefreshWithANewVersion() async {
         await scriptTrio(Self.status([("pdf", "1.2.0"), ("docx", "1.0.0")]))
         await scriptTrio(Self.status([("docx", "1.0.0"), ("pdf", "1.4.0")]))

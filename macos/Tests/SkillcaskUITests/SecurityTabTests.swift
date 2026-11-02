@@ -320,7 +320,8 @@ import Testing
             id: caveman.id, name: caveman.name, kind: caveman.kind, source: nil, version: nil, state: caveman.state,
             health: caveman.health, update: nil, findings: [], path: caveman.path, description: nil, reach: nil)
         let content = OverviewContent(
-            entry: unaudited, detail: nil, snapshot: DesignFixtures.api, scope: Boot.apiScope, isOffline: false)
+            entry: unaudited, detail: nil, snapshot: DesignFixtures.api, scope: Boot.apiScope, isOffline: false,
+            agents: DesignFixtures.agentReach(of: unaudited, in: DesignFixtures.api, scope: Boot.apiScope))
         let row = content.place.first { $0.label == DetailOverviewCopy.security }
         #expect(
             row?.value
@@ -331,7 +332,9 @@ import Testing
     @Test func overviewOfStandupSummaryMentionsTwoHosts() {
         let content = OverviewContent(
             entry: DesignFixtures.standupSummary, detail: nil, snapshot: DesignFixtures.personal, scope: .personal,
-            isOffline: false)
+            isOffline: false,
+            agents: DesignFixtures.agentReach(
+                of: DesignFixtures.standupSummary, in: DesignFixtures.personal, scope: .personal))
         let row = content.place.first { $0.label == DetailOverviewCopy.security }
         #expect(row?.value == .security(.warning, "1 finding · mentions 2 hosts", link: true))
     }

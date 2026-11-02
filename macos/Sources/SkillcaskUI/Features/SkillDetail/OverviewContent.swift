@@ -37,6 +37,9 @@ struct OverviewContent: Hashable {
         case folder(String, url: URL)
         /// The audit line: a dot, the text and, when `link`, "See Security".
         case security(Severity, String, link: Bool)
+        /// "Available to": one line per agent target (name, directory, link state from `doctor`), then the hint
+        /// of `AgentCopy.hint` when a link is broken or the skill is not installed.
+        case agents(AgentReach)
     }
 
     /// One label/value row of a card.
@@ -84,7 +87,7 @@ struct OverviewContent: Hashable {
         case .package:
             [.skills, .license, .requiredBy, .requires, .repository, .newest, .availableTo, .location, .security]
         case .project, .local: [.kind, .availableTo, .location]
-        case .dependency: [.requiredBy, .requires]
+        case .dependency: [.requiredBy, .requires, .availableTo]
         case .notManaged, .sourceUnknown: [.foundIn, .security]
         case .abandoned: [.license, .newest]
         case .offline: [.availableTo, .plainLocation, .security]
@@ -98,7 +101,11 @@ struct OverviewContent: Hashable {
     /// The place card (Main board's second card): kind, agents, location, security; always known offline.
     let place: [Row]
 
-    init(entry: SkillEntry, detail: SkillDetail?, snapshot: ScopeSnapshot?, scope: Scope, isOffline: Bool) {
+    /// - Parameter agents: The row's reach from the store's `AgentIndex` (`ScopeStore.agentReach(for:)`).
+    init(
+        entry: SkillEntry, detail: SkillDetail?, snapshot: ScopeSnapshot?, scope: Scope, isOffline: Bool,
+        agents: AgentReach
+    ) {
         let info = detail?.info?.package == nil ? nil : detail?.info
         let offline = entry.package != nil && info == nil && (isOffline || Self.isNetworkFailure(detail?.infoError))
         let state = Self.state(of: entry, info: info, offline: offline)
@@ -106,8 +113,10 @@ struct OverviewContent: Hashable {
         banners = Self.banners(entry: entry, info: info, snapshot: snapshot, offline: offline)
         let rows = Self.fields(for: state)
             .compactMap { field in
-                Self.row(field, entry: entry, info: info, snapshot: snapshot, scope: scope, offline: offline)
-                    .map { (field, $0) }
+                Self.row(
+                    field, entry: entry, info: info, snapshot: snapshot, scope: scope, offline: offline, agents: agents
+                )
+                .map { (field, $0) }
             }
         facts = rows.filter { $0.0.isPackageFact }.map(\.1)
         place = rows.filter { !$0.0.isPackageFact }.map(\.1)
@@ -172,7 +181,8 @@ struct OverviewContent: Hashable {
     }
 
     private static func row(
-        _ field: Field, entry: SkillEntry, info: InfoDocument?, snapshot: ScopeSnapshot?, scope: Scope, offline: Bool
+        _ field: Field, entry: SkillEntry, info: InfoDocument?, snapshot: ScopeSnapshot?, scope: Scope, offline: Bool,
+        agents: AgentReach
     ) -> Row? {
         switch field {
         case .skills:
@@ -222,10 +232,9 @@ struct OverviewContent: Hashable {
             case .package, .dependency, .packageOnly, .notManaged: return nil
             }
         case .availableTo:
-            guard let agents = snapshot?.targets?.entries, !agents.isEmpty else { return nil }
-            return Row(
-                label: DetailOverviewCopy.availableTo,
-                value: .text(agents.map(ShellCopy.agentName).joined(separator: ", "), mono: nil))
+            // A not managed or package-only row makes no claim (`AgentReach.resolve`), so it has no row.
+            guard !agents.links.isEmpty else { return nil }
+            return Row(label: DetailOverviewCopy.availableTo, value: .agents(agents))
         case .location, .plainLocation, .foundIn:
             guard let path = entry.path else { return nil }
             let url = scope.root.appending(path: path)

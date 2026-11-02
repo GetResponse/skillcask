@@ -144,8 +144,7 @@
       "cursor"
     ],
     "dirs": [
-      ".claude/skills",
-      ".cursor/skills"
+      ".claude/skills"
     ],
     "from": "skills.toml"
   },

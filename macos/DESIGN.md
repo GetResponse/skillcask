@@ -122,6 +122,33 @@ Code comments cite these by number.
   `sheetTitle` 20 pt (U2: 17), footers are one row, a temporary copy has no Skip and shows in
   Finder only from the primary. Settings' group is `Skillcask app` with no command-line tool line
   and no pre-release switch; Check Now answers inline there, never as a main-window alert.
+- **G15** Agent badges (no board): a skill row shows which `[agents] targets` see the skill as 16 pt
+  `Pill`s in the `.agentBadge` style: a text monogram (`CC`, `Cu`, `Cx`, `De`; a folder glyph for a
+  path target; never a vendor logo). They come from `status.targets` and `doctor`'s per-target link
+  problems, indexed once per snapshot (`AgentIndex`, Domain). A missing, wrong or blocked link, or a
+  broken or blocked store link, adds a warning glyph, strikes the monogram through and takes the warning tint.
+  The badges sit under the row's trailing slot (or its hover controls), so they form one column at
+  the row's trailing edge whatever the location's length; the location truncates first. Badges show
+  only with two or more targets, or for a broken link (one target would put the same badge on every
+  row); never for a not installed row (its state says it), a not managed or package-only row (the
+  CLI does not link them), or while `doctor` has not answered or failed. Order
+  (`AgentTarget.displayOrder`, the one priority list): Claude Code, Codex, then the other presets in
+  `[agents] targets` order, then path targets; the detail's lines and VoiceOver use it too, while the
+  Agents card keeps the config order it mirrors. At most three slots: with four or more targets two
+  badges and `+N`; a broken link that would fall into `+N` takes the last healthy slot instead (the
+  order is kept, a visible problem is not moved); when more links are broken than fit, `+N` counts
+  the rest. VoiceOver reads the row value `…; Available to Cursor; Claude Code link
+  wrong`. The detail's "Available to" lists every agent with its directory (`~/` in the global
+  scope) and a short state (`linked`, `installed` for store agents, `link missing`, `link wrong`,
+  `blocked`, `store link broken`, `store blocked`, `not installed`, `checking…`, `not checked`),
+  problems in the warning colour, then a hint with "See Health"; dependencies show it too. A broken
+  store link of a project skill is the one cause for every agent (the CLI also calls each target
+  link wrong); Repair relinks it. A file or folder skillcask did not create at the store path
+  (`link foreign`) is `store blocked`: its hint says to move it away, since `doctor --fix` never
+  touches a foreign path. After a failed `doctor`, the rows and the detail claim no link from the
+  older answer Health keeps (a skill added since would read `linked` unchecked), while the Agents
+  card still counts that answer's broken links, as Health lists them: a known problem claims nothing
+  healthy. A refresh that fails entirely keeps the snapshot and its link check.
 - The toast's shadow (`0 8pt 24pt`, black at 0.16 light / 0.5 dark) lives in `Toast.Shadow`; no
   shadow token exists yet. Cards never have a shadow.
 
@@ -145,6 +172,14 @@ them by number; the numbers have gaps.
   pending update shows no flags.
 - **Q12** No board state for an empty filter without a query: "Nothing in <filter>" with Show All.
 - **Q15** The board says Reinstall keeps a copy; `install` keeps none, so the app warns and asks.
+- **Q19** `status.targets` prints `entries` (as written) and `dirs` (resolved) as two lists that are
+  not parallel: store agents get no directory and duplicates collapse. The app pairs them by
+  convention (a path entry is its own directory; `claude`, `kiro` and, in the global scope, `junie`
+  take their preset directory, which `resolve_targets` always lists in `dirs`; every other entry
+  reads the store `.agents/skills`; a repeated entry counts once). An add-only
+  `targets.agents: [{entry, dir}]` key (D32), with `dir: null` for the store,
+  would replace the convention, kept as the fallback for older CLIs, and a per-skill `links` map in
+  `status` entries would replace parsing `doctor`'s link lines.
 - **Q18** No command compares installed files with the lock: Review changes and the changed-file
   list are hidden; Reinstall is the only action.
 
