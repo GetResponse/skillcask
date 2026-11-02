@@ -1951,7 +1951,13 @@ pub fn status(ctx: &Ctx, json: bool) -> Result<()> {
             "ok": bad == 0,
             "entries": entries,
             "policy": policy,
-            "targets": { "entries": m.target_entries, "from": m.targets_from, "dirs": m.targets },
+            "targets": {
+                "entries": m.target_entries,
+                "from": m.targets_from,
+                "dirs": m.targets,
+                "local": (!ctx.s.global).then_some(&m.local),
+                "agents": m.target_agents.iter().map(|a| json!({ "entry": a.entry, "dir": a.dir })).collect::<Vec<_>>(),
+            },
             "repositories": repositories,
             "skills-sh": skills_sh,
         }));

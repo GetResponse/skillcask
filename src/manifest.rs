@@ -139,6 +139,8 @@ pub struct Manifest {
     pub skills: Vec<SkillReq>,
     /// Directories that get links, presets resolved (D29).
     pub targets: Vec<String>,
+    /// Each distinct `targets` entry with its directory (`None`: the agent reads the store).
+    pub target_agents: Vec<TargetAgent>,
     /// `targets` as written, and the file it came from, for `status`.
     pub target_entries: Vec<String>,
     pub targets_from: &'static str,
@@ -440,10 +442,16 @@ pub fn parse_with(text: &str, global: bool, outer: &crate::policy::Outer) -> Res
             None => (DEFAULT_TARGETS.map(String::from).to_vec(), "default"),
         },
     };
-    let targets = resolve_targets(&target_entries, global).map_err(|e| {
+    let target_agents = resolve_targets(&target_entries, global).map_err(|e| {
         let file = if targets_from == crate::policy::CONFIG { outer.config_path.as_str() } else { FILE };
         crate::error::Error::new(MANIFEST, format!("{file}: agents.targets: {e}"))
     })?;
+    let mut targets: Vec<String> = Vec::new();
+    for d in target_agents.iter().filter_map(|a| a.dir.as_ref()) {
+        if !targets.contains(d) {
+            targets.push(d.clone());
+        }
+    }
     for t in targets.iter().chain([&local]) {
         let p = Path::new(t);
         if p.is_absolute() || p.components().any(|c| !matches!(c, std::path::Component::Normal(_))) || t.is_empty() || t.contains('\\') {
@@ -458,13 +466,22 @@ pub fn parse_with(text: &str, global: bool, outer: &crate::policy::Outer) -> Res
         return Err(bad(format!("agents.local {local:?} cannot also be a target")));
     }
 
-    Ok(Manifest { repositories, github, skills, targets, target_entries, targets_from, local, policy })
+    Ok(Manifest { repositories, github, skills, targets, target_agents, target_entries, targets_from, local, policy })
 }
 
-/// Target directories for `entries`: presets for the scope, paths as written; each one once.
-fn resolve_targets(entries: &[String], global: bool) -> std::result::Result<Vec<String>, String> {
-    let mut out: Vec<String> = Vec::new();
+#[derive(Debug, Clone, PartialEq)]
+pub struct TargetAgent {
+    pub entry: String,
+    pub dir: Option<String>,
+}
+
+/// Each distinct entry with its directory: presets for the scope, paths as written.
+fn resolve_targets(entries: &[String], global: bool) -> std::result::Result<Vec<TargetAgent>, String> {
+    let mut out: Vec<TargetAgent> = Vec::new();
     for e in entries {
+        if out.iter().any(|a| &a.entry == e) {
+            continue;
+        }
         let dir = if e.contains('/') {
             let p = e.trim_end_matches('/');
             Some(p.strip_prefix("./").unwrap_or(p).to_string())
@@ -474,9 +491,7 @@ fn resolve_targets(entries: &[String], global: bool) -> std::result::Result<Vec<
             })?;
             if global { home } else { project }.map(String::from)
         };
-        if let Some(d) = dir.filter(|d| !out.contains(d)) {
-            out.push(d);
-        }
+        out.push(TargetAgent { entry: e.clone(), dir });
     }
     Ok(out)
 }
