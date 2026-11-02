@@ -1,12 +1,16 @@
-import Foundation
+import AppKit
 
 /// The main window's saved column layout, checked before the window opens. AppKit saves each `NavigationSplitView`
 /// column's frame under `NSSplitView Subview Frames <window id>, <split view>` as `"x, y, width, height, collapsed,
-/// hidden"` and restores it at launch. A sidebar collapsed at quit is saved with both flags `NO`, its last width, and
-/// the next column at x 0, under it. The window always opens with its three columns shown (`MainWindow`), and on
-/// macOS 26 that restored layout opened it with empty columns and hung it in a layout loop on a sidebar toggle until
-/// it crashed. A layout whose visible columns overlap is never right for that window: dropping it lets SwiftUI lay
-/// the columns out from their ideal widths again.
+/// hidden"` and restores it when it creates the split view. A sidebar collapsed at quit is saved with both flags `NO`,
+/// its last width, and the next column at x 0, under it. The window always opens with its three columns shown
+/// (`MainWindow`), and on macOS 26 that restored layout opened it with empty columns and hung it in a layout loop on
+/// a sidebar toggle until it crashed. A layout whose visible columns overlap is never right for that window: dropping
+/// it lets SwiftUI lay the columns out from their ideal widths again.
+///
+/// It runs at launch, before any window (`Entry.main`, which also discards the saved window state then), and again
+/// whenever a main window closes: the app keeps running without windows, and a main window opened again in the same
+/// process reads its layout from these defaults, not from the saved window state, which is read only at launch.
 public enum SplitViewFrames {
     static let prefix = "NSSplitView Subview Frames "
     /// Columns that touch may differ by rounding.
@@ -15,7 +19,7 @@ public enum SplitViewFrames {
     /// Removes the main window's unsound layouts from `defaults` and returns the keys it removed, sorted. A layout
     /// from a domain the app cannot write (the arguments, the global domain) is not reported, so the caller does not
     /// discard the saved state on every launch for it.
-    @discardableResult public static func repair(_ defaults: UserDefaults) -> [String] {
+    public static func repair(_ defaults: UserDefaults) -> [String] {
         unsoundKeys(defaults.dictionaryRepresentation())
             .filter { key in
                 defaults.removeObject(forKey: key)
@@ -23,14 +27,41 @@ public enum SplitViewFrames {
             }
     }
 
-    /// After `repair` dropped a layout: removes the app's saved window state as well, which the report's fix also
-    /// cleared, so the window cannot come back from it with the same columns. Nothing without a bundle identifier
-    /// (`swift run`).
-    public static func discardSavedState(bundle: Bundle = .main, fileManager: FileManager = .default) {
-        guard let identifier = bundle.bundleIdentifier,
-            let library = fileManager.urls(for: .libraryDirectory, in: .userDomainMask).first
-        else { return }
-        try? fileManager.removeItem(at: library.appending(path: "Saved Application State/\(identifier).savedState"))
+    /// Repairs `defaults` each time a main window (`Workspace.isMainScene`) closes, so the next one opened in this
+    /// process does not restore the layout it closed with. Observes for as long as it lives (`Entry.main` keeps it
+    /// for the app's lifetime); AppKit posts `willCloseNotification` on the main thread.
+    @MainActor public final class RepairOnClose: NSObject {
+        private let defaults: UserDefaults
+
+        /// The center stops observing when this is deallocated.
+        public init(_ defaults: UserDefaults = .standard, center: NotificationCenter = .default) {
+            self.defaults = defaults
+            super.init()
+            center.addObserver(
+                self, selector: #selector(windowWillClose(_:)), name: NSWindow.willCloseNotification, object: nil)
+        }
+
+        @objc private func windowWillClose(_ note: Notification) {
+            guard let window = note.object as? NSWindow, Workspace.isMainScene(window.identifier?.rawValue) else {
+                return
+            }
+            _ = repair(defaults)
+        }
+    }
+
+    /// After `repair` dropped a layout at launch: removes the app's saved window state
+    /// (`<library>/Saved Application State/<bundle id>.savedState`) as well, which the report's fix also cleared, so
+    /// the window cannot come back from it with the same columns. Nothing without a bundle identifier (`swift run`).
+    public static func discardSavedState(
+        bundleIdentifier: String? = Bundle.main.bundleIdentifier,
+        library: URL? = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first,
+        fileManager: FileManager = .default
+    ) {
+        guard let bundleIdentifier, !bundleIdentifier.isEmpty, !bundleIdentifier.contains("/"), let library else {
+            return
+        }
+        try? fileManager.removeItem(
+            at: library.appending(path: "Saved Application State/\(bundleIdentifier).savedState"))
     }
 
     /// The keys of main-window layouts that do not parse or whose visible columns overlap, sorted; another

@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 
@@ -136,5 +137,52 @@ import Testing
     @Test func aLayoutTheAppCannotRemoveIsNotReported() {
         let defaults = MemoryDefaults.make(readOnly: [Self.key: Self.overlapping])
         #expect(SplitViewFrames.repair(defaults).isEmpty)
+    }
+
+    /// A main window closing repairs the defaults, so the next one opened in the same process does not restore the
+    /// layout it closed with; another window closing (Settings) leaves them alone.
+    @MainActor @Test func closingAMainWindowRepairsTheLayoutAgain() {
+        let defaults = MemoryDefaults.make()
+        let center = NotificationCenter()
+        let repairOnClose = SplitViewFrames.RepairOnClose(defaults, center: center)
+        defer { withExtendedLifetime(repairOnClose) {} }
+        let window = NSWindow(contentRect: .zero, styleMask: [], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        defaults.set(Self.overlapping, forKey: Self.key)
+
+        window.identifier = NSUserInterfaceItemIdentifier("com_apple_SwiftUI_Settings_window")
+        center.post(name: NSWindow.willCloseNotification, object: window)
+        #expect(defaults.object(forKey: Self.key) != nil)
+
+        window.identifier = NSUserInterfaceItemIdentifier("main-AppWindow-1")
+        center.post(name: NSWindow.willCloseNotification, object: window)
+        #expect(defaults.object(forKey: Self.key) == nil)
+    }
+
+    /// `discardSavedState` against a temporary library and a made-up bundle id, never the user's: it removes that
+    /// app's saved state and nothing next to it, and without a bundle id it removes nothing.
+    @Test func discardSavedStateRemovesOnlyThisAppsSavedState() throws {
+        let library = FileManager.default.temporaryDirectory.appending(
+            path: "SplitViewFramesTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: library) }
+        let states = library.appending(path: "Saved Application State")
+        let ours = states.appending(path: "com.example.skillcask-test.savedState")
+        let other = states.appending(path: "com.example.other.savedState")
+        for folder in [ours, other] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Data("state".utf8).write(to: folder.appending(path: "windows.plist"))
+        }
+
+        SplitViewFrames.discardSavedState(bundleIdentifier: nil, library: library)
+        SplitViewFrames.discardSavedState(bundleIdentifier: "", library: library)
+        #expect(FileManager.default.fileExists(atPath: ours.path))
+
+        SplitViewFrames.discardSavedState(bundleIdentifier: "com.example.skillcask-test", library: library)
+        #expect(!FileManager.default.fileExists(atPath: ours.path))
+        #expect(FileManager.default.fileExists(atPath: other.appending(path: "windows.plist").path))
+
+        // Already gone: nothing to remove, nothing thrown.
+        SplitViewFrames.discardSavedState(bundleIdentifier: "com.example.skillcask-test", library: library)
+        #expect(FileManager.default.fileExists(atPath: states.path))
     }
 }

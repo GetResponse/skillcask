@@ -10,8 +10,7 @@ import SwiftUI
 /// user can narrow either to its minimum (`macos/DESIGN.md` G9; this is what `NavigationSplitView`
 /// does with these values). A project without skills.toml shows the Set Up block in the detail and an empty
 /// list. The stores come from the environment (`skillcaskEnvironment`); the scene boots the app on appear. It always
-/// opens with the three columns shown, so a saved layout of a sidebar collapsed at quit is dropped first
-/// (`SplitViewFrames`).
+/// opens with the three columns shown (`SplitViewFrames`).
 public struct MainWindow: View {
     /// The window's minimum height; the boards are 800 tall, 600 keeps the Overview grid readable.
     public static let minHeight: CGFloat = 600
