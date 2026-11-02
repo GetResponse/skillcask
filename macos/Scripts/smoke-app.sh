@@ -40,10 +40,11 @@ if defaults domains | tr ',' '\n' | sed 's/^ *//' | grep -qx "$domain"; then
     had_domain=1
     defaults export "$domain" "$tmp/defaults.plist"
 fi
-# Step 2b makes the app discard its saved window state: kept aside and put back afterwards.
+# Step 2b makes the app discard its saved window state and the launches write a new one: the user's is kept aside and
+# put back afterwards; when there was none, the one the run wrote is removed.
 saved_state="$HOME/Library/Saved Application State/$domain.savedState"
 had_saved_state=0
-if [ -d "$saved_state" ]; then
+if [ -e "$saved_state" ] || [ -L "$saved_state" ]; then
     had_saved_state=1
     ditto "$saved_state" "$tmp/saved-state"
 fi
@@ -81,6 +82,8 @@ cleanup() {
     if [ "$had_saved_state" = 1 ]; then
         rm -rf "$saved_state"
         ditto "$tmp/saved-state" "$saved_state" || echo "smoke: could not restore $saved_state" >&2
+    else
+        rm -rf "$saved_state"
     fi
     rm -rf "$tmp"
 }
@@ -188,10 +191,10 @@ if kill -0 "$pid" 2>/dev/null; then
     layout=$(defaults read "$domain" "$layout_key" 2>/dev/null | tr -d '\n' || true)
     if [ "$win" != 1 ]; then
         fail "with an overlapping saved layout the app shows $win on-screen windows, want 1"
-    elif printf '%s' "$layout" | grep -q ', 613.000000, '; then
+    elif printf '%s' "$layout" | grep -Eq ', 613(\.0+)?, '; then
         # The list kept the saved width: the layout was restored (AppKit may move the columns apart itself).
         fail "the overlapping saved layout was restored: $layout"
-    elif [ -n "$layout" ] && ! printf '%s' "$layout" | grep -q '"0.000000, 0.000000, 220.000000, '; then
+    elif [ -n "$layout" ] && ! printf '%s' "$layout" | grep -Eq '"0(\.0+)?, 0(\.0+)?, 220(\.0+)?, '; then
         # Dropped, the key is gone or saved again with the sidebar at its ideal 220.
         fail "the saved layout is neither gone nor laid out from the ideal widths: $layout"
     else
