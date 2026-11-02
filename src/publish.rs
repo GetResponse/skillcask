@@ -305,12 +305,19 @@ pub fn validate(paths: &[PathBuf]) -> Result<()> {
     let mut dirs = Vec::new();
     for r in &roots {
         let before = dirs.len();
-        find(r, None, true, &mut dirs).ctx(shown(r))?;
+        find(r, None, true, &mut dirs)?;
         if dirs.len() == before {
-            return Err(Error::new(MANIFEST, format!("no {SKILL_MD} under {}", shown(r)))
-                .hint("validate checks skill sources; for the skills installed here run `skillcask validate .agents/skills`"));
+            let e = Error::new(MANIFEST, format!("no {SKILL_MD} under {}", shown(r)));
+            // Installed skills sit under the hidden .agents/skills, which the default search skips.
+            if paths.is_empty() && Path::new(".agents/skills").is_dir() {
+                return Err(e.hint("to check the skills installed here, run `skillcask validate .agents/skills`"));
+            }
+            return Err(e);
         }
     }
+    // Two paths can reach one skill, e.g. `.agents/skills` and `.claude/skills` linking to it.
+    let mut seen = BTreeSet::new();
+    dirs.retain(|d| seen.insert(d.canonicalize().unwrap_or_else(|_| d.clone())));
     let mut invalid = 0;
     for dir in &dirs {
         let at = shown(dir);
@@ -365,13 +372,16 @@ fn find(dir: &Path, out: Option<&Path>, links: bool, found: &mut Vec<PathBuf>) -
     if dir.join(SKILL_MD).is_file() {
         found.push(dir.to_path_buf());
     }
-    let mut children: Vec<_> = std::fs::read_dir(dir).and_then(Iterator::collect).ctx(dir.display())?;
+    let mut children: Vec<_> = std::fs::read_dir(dir).and_then(Iterator::collect).ctx(shown(dir))?;
     children.sort_by_key(|e| e.file_name());
     for e in children {
         let name = e.file_name();
         let name = name.to_string_lossy();
+        if name.starts_with('.') || name == "target" || name == "node_modules" {
+            continue;
+        }
         let kind = e.file_type().ctx(e.path().display())?;
-        if kind.is_dir() && !name.starts_with('.') && name != "target" && name != "node_modules" {
+        if kind.is_dir() {
             find(&e.path(), out, links, found)?;
         } else if links && kind.is_symlink() && e.path().join(SKILL_MD).is_file() {
             found.push(e.path());
