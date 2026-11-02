@@ -37,6 +37,7 @@ struct AgentsCard: View {
     /// Health.` The linked count leaves out `unlinked`, so it agrees with doctor's missing links. Broken links are
     /// counted per agent with a directory of its own: a store agent has no link, and a broken store link (a
     /// project skill `not linked`) is already named under "Not linked", once, however many agents read the store.
+    /// After a failed `doctor` the counts come from the document Health keeps (`AgentIndex.countedReaches`).
     static func footnote(_ snapshot: ScopeSnapshot, agents: AgentIndex) -> String {
         let unlinked = unlinked(snapshot)
         var sentences = [
@@ -45,7 +46,7 @@ struct AgentsCard: View {
         if !unlinked.isEmpty {
             sentences.append(OverviewCopy.notLinked(unlinked))
         }
-        let reaches = agents.all
+        let reaches = agents.countedReaches(in: snapshot)
         for target in agents.targets where target.directory != nil {
             let states = reaches.compactMap { reach in
                 reach.links.first {

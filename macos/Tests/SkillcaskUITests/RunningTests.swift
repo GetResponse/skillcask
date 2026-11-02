@@ -236,7 +236,9 @@ import Testing
         let doctor = try #require(DesignFixtures.api.doctor)
         #expect(doctor.remedy(of: DoctorItem(line: Self.missingLink)) == .sync)
         #expect(doctor.remedy(of: DoctorItem(line: ".cursor/skills/pdf: link wrong")) == .repair)
-        #expect(doctor.brokenLinks(in: ".claude/skills") == 1, "the jira-syntax link is the missing skill's problem")
+        #expect(
+            doctor.remedy(of: DoctorItem(line: ".claude/skills/jira-syntax: link missing")) == .sync,
+            "the jira-syntax link is the missing skill's problem")
         let onlyDownload = try self.doctor(problems: [Self.missingLink, Self.notInstalled])
         #expect(!onlyDownload.canRepair)
         let report = HealthReport.resolve(onlyDownload)

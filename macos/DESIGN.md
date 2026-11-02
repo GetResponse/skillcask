@@ -126,7 +126,7 @@ Code comments cite these by number.
   `Pill`s in the `.agentBadge` style: a text monogram (`CC`, `Cu`, `Cx`, `De`; a folder glyph for a
   path target; never a vendor logo). They come from `status.targets` and `doctor`'s per-target link
   problems, indexed once per snapshot (`AgentIndex`, Domain). A missing, wrong or blocked link, or a
-  broken store link, adds a warning glyph, strikes the monogram through and takes the warning tint.
+  broken or blocked store link, adds a warning glyph, strikes the monogram through and takes the warning tint.
   The badges sit under the row's trailing slot (or its hover controls), so they form one column at
   the row's trailing edge whatever the location's length; the location truncates first. Badges show
   only with two or more targets, or for a broken link (one target would put the same badge on every
@@ -140,10 +140,15 @@ Code comments cite these by number.
   the rest. VoiceOver reads the row value `…; Available to Cursor; Claude Code link
   wrong`. The detail's "Available to" lists every agent with its directory (`~/` in the global
   scope) and a short state (`linked`, `installed` for store agents, `link missing`, `link wrong`,
-  `blocked`, `store link broken`, `not installed`, `checking…`, `not checked`), problems in the
-  warning colour, then a hint with "See Health"; dependencies show it too. A broken store link of a
-  project skill is the one cause for every agent (the CLI also calls each target link wrong). After a
-  failed `doctor`, no link is claimed from the older answer Health keeps.
+  `blocked`, `store link broken`, `store blocked`, `not installed`, `checking…`, `not checked`),
+  problems in the warning colour, then a hint with "See Health"; dependencies show it too. A broken
+  store link of a project skill is the one cause for every agent (the CLI also calls each target
+  link wrong); Repair relinks it. A file or folder skillcask did not create at the store path
+  (`link foreign`) is `store blocked`: its hint says to move it away, since `doctor --fix` never
+  touches a foreign path. After a failed `doctor`, the rows and the detail claim no link from the
+  older answer Health keeps (a skill added since would read `linked` unchecked), while the Agents
+  card still counts that answer's broken links, as Health lists them: a known problem claims nothing
+  healthy. A refresh that fails entirely keeps the snapshot and its link check.
 - The toast's shadow (`0 8pt 24pt`, black at 0.16 light / 0.5 dark) lives in `Toast.Shadow`; no
   shadow token exists yet. Cards never have a shadow.
 
@@ -170,9 +175,10 @@ them by number; the numbers have gaps.
 - **Q19** `status.targets` prints `entries` (as written) and `dirs` (resolved) as two lists that are
   not parallel: store agents get no directory and duplicates collapse. The app pairs them by
   convention (a path entry is its own directory; `claude`, `kiro` and, in the global scope, `junie`
-  take their preset directory when `dirs` lists it; every other entry reads the store
-  `.agents/skills`; a repeated entry counts once). An add-only `targets.agents: [{entry, dir}]` key (D32), with
-  `dir: null` for the store, would replace the convention, and a per-skill `links` map in
+  take their preset directory, which `resolve_targets` always lists in `dirs`; every other entry
+  reads the store `.agents/skills`; a repeated entry counts once). An add-only
+  `targets.agents: [{entry, dir}]` key (D32), with `dir: null` for the store,
+  would replace the convention, kept as the fallback for older CLIs, and a per-skill `links` map in
   `status` entries would replace parsing `doctor`'s link lines.
 - **Q18** No command compares installed files with the lock: Review changes and the changed-file
   list are hidden; Reinstall is the only action.

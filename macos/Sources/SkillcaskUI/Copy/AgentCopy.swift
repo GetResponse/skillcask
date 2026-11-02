@@ -58,6 +58,7 @@ public enum AgentCopy {
         case .wrong: "link wrong"
         case .blocked: "blocked"
         case .storeLinkBroken: "store link broken"
+        case .storeBlocked: "store blocked"
         case .notInstalled: "not installed"
         case .pending: "checking…"
         case .unknown: "not checked"
@@ -81,10 +82,10 @@ public enum AgentCopy {
         let linked = reach.linked.map { name($0.target) }
         let available = linked.isEmpty ? "Available to no agent" : "Available to \(OutcomeCopy.list(linked))"
         var problems: [String] = []
-        if reach.problems.contains(where: { $0.state == .storeLinkBroken }) {
-            problems.append(state(.storeLinkBroken))
+        if let store = reach.problems.first(where: \.state.isStoreProblem) {
+            problems.append(state(store.state))
         }
-        problems += reach.problems.filter { $0.state != .storeLinkBroken }
+        problems += reach.problems.filter { !$0.state.isStoreProblem }
             .map { "\(name($0.target)) \(state($0.state))" }
         return problems.isEmpty ? available : "\(available); \(OutcomeCopy.list(problems))"
     }
@@ -103,6 +104,12 @@ public enum AgentCopy {
         }
         if states.contains(.pending) {
             return ("Checking the links…", false)
+        }
+        if states.contains(.storeBlocked) {
+            return (
+                "A file or folder skillcask did not create holds this name in .agents/skills, so no agent sees it. "
+                    + "Move it away, then Repair.", true
+            )
         }
         if states.contains(.storeLinkBroken) {
             return ("The skill’s link into .agents/skills is broken, so no agent sees it. Repair fixes this.", true)

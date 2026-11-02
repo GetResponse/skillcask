@@ -227,7 +227,7 @@ struct OverviewTab: View {
 
     private func agentStateColor(_ state: AgentReach.State) -> Color {
         switch state {
-        case .missing, .wrong, .blocked, .storeLinkBroken: Color.statusWarningText
+        case .missing, .wrong, .blocked, .storeLinkBroken, .storeBlocked: Color.statusWarningText
         case .notInstalled: Color.statusErrorText
         case .linked, .pending, .unknown: Color.textSecondary
         }

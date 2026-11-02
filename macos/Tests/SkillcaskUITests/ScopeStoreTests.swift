@@ -70,6 +70,12 @@ import Testing
         #expect(store.snapshot?.doctor != nil, "Health keeps the last answer")
         #expect(store.agentIndex.check == .failed)
         #expect(store.agentReach(for: pdf).links.map(\.state) == [.unknown, .unknown])
+        // Nothing scripted: the whole refresh fails and clears the partial-failure strip, but the snapshot on screen
+        // keeps its older `doctor` answer, so its links stay unchecked.
+        await store.refresh()
+        #expect(store.lastError != nil && store.partialFailure == nil)
+        #expect(store.agentIndex.check == .failed)
+        #expect(store.agentReach(for: pdf).links.map(\.state) == [.unknown, .unknown])
     }
 
     @Test(.timeLimit(.minutes(1))) func selectionSurvivesARefreshWithANewVersion() async {

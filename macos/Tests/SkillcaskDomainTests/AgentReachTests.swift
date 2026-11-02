@@ -159,6 +159,21 @@ import Testing
         #expect(states == ["claude": .storeLinkBroken, "kiro": .storeLinkBroken, "codex": .storeLinkBroken])
     }
 
+    @Test func aForeignFolderAtTheStorePathBlocksEveryAgentAndIsNoRepair() throws {
+        // What the 0.10.2 CLI prints with a folder skillcask did not create at `.agents/skills/notes`: `doctor --fix`
+        // never touches it, so it is not the broken store link Repair relinks.
+        let states = try Self.states(
+            "notes", entries: [Self.row("notes", package: nil, state: "not linked")],
+            targets: ["claude", "codex"], dirs: [".claude/skills"],
+            doctor: [".agents/skills/notes: link foreign", ".claude/skills/notes: link wrong"])
+        #expect(states == ["claude": .storeBlocked, "codex": .storeBlocked])
+        let notOurs = try Self.states(
+            "notes", entries: [Self.row("notes", package: nil, state: "not linked")],
+            doctor: [".agents/skills/notes exists and was not created by skillcask; move it away"])
+        #expect(notOurs == ["claude": .storeBlocked, "cursor": .storeBlocked])
+        #expect(AgentReach.State.storeBlocked.isProblem && AgentReach.State.storeBlocked.isStoreProblem)
+    }
+
     @Test func aStoreAgentSeesAnInstalledSkillWhateverTheOtherLinks() throws {
         let states = try Self.states(
             "pdf", targets: ["claude", "codex"], dirs: [".claude/skills"], doctor: [".claude/skills/pdf: link missing"])

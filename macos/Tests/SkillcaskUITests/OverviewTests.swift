@@ -106,7 +106,6 @@ import Testing
         #expect(api.canRepair)
         let repaired = try #require(DesignFixtures.apiRepaired.doctor)
         #expect(!repaired.canRepair)
-        #expect(api.brokenLinks(in: ".claude/skills") == 1)
         #expect(
             AgentsCard.footnote(DesignFixtures.api, agents: DesignFixtures.agentIndex(DesignFixtures.api))
                 == "12 skills are linked into both. Not linked: jira-syntax, sql-review. One Claude Code link is wrong — see "

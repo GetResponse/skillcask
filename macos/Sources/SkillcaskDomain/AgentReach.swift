@@ -4,9 +4,9 @@ import SkillcaskCore
 ///
 /// `targets.entries` (as written) and `targets.dirs` (resolved, deduplicated) are not parallel lists: an agent that
 /// reads the shared store gets no directory (D29), and two entries naming one directory link once. The app pairs
-/// them without a second copy of the CLI's preset table: a path entry (it holds a `/`) is its own directory, the
-/// presets with a directory of their own (`ownDirectory`) take theirs when `dirs` lists it, and any other entry
-/// reads the store. `macos/DESIGN.md` Q19 names the CLI key that would replace this.
+/// them by the CLI's preset convention: a path entry (it holds a `/`) is its own directory, the presets with a
+/// directory of their own (`ownDirectory`) take theirs (`resolve_targets` always lists it in `dirs`), and any other
+/// entry reads the store. `macos/DESIGN.md` Q19 names the CLI key that would replace this.
 public struct AgentTarget: Hashable, Sendable, Identifiable {
     /// The entry as written in `[agents] targets`: `claude`, `cursor`, `./tools/skills`.
     public let entry: String
@@ -85,9 +85,6 @@ public struct AgentTarget: Hashable, Sendable, Identifiable {
                 directory = path.hasPrefix("./") ? String(path.dropFirst(2)) : path
             } else {
                 directory = ownDirectory(of: entry, isGlobal: isGlobal)
-                    .flatMap {
-                        targets.dirs.contains($0) ? $0 : nil
-                    }
             }
             return AgentTarget(entry: entry, directory: directory, isGlobal: isGlobal)
         }
@@ -110,8 +107,11 @@ public struct AgentReach: Hashable, Sendable {
         case blocked
         /// A project skill's own link into the store (`.agents/skills/<name>` → `.skills/<name>`) is missing or
         /// wrong: no agent sees it, whatever its own link says (`doctor` then also calls every target link
-        /// wrong; the store is the cause).
+        /// wrong; the store is the cause). Repair relinks it.
         case storeLinkBroken
+        /// A file or folder skillcask did not create sits at the project skill's store path (`.agents/skills/<name>:
+        /// link foreign`): no agent sees the skill, and Repair never touches it (`doctor --fix` skips foreign paths).
+        case storeBlocked
         /// The skill itself is not installed, so no agent sees it.
         case notInstalled
         /// `doctor` has not answered yet (the first, status-only load).
@@ -120,10 +120,15 @@ public struct AgentReach: Hashable, Sendable {
         /// for skills it may not cover).
         case unknown
 
+        /// The store is the one cause for every agent: said once, not counted per agent.
+        public var isStoreProblem: Bool {
+            self == .storeLinkBroken || self == .storeBlocked
+        }
+
         /// A link problem the user can see on the row.
         public var isProblem: Bool {
             switch self {
-            case .missing, .wrong, .blocked, .storeLinkBroken: true
+            case .missing, .wrong, .blocked, .storeLinkBroken, .storeBlocked: true
             case .linked, .notInstalled, .pending, .unknown: false
             }
         }
@@ -177,7 +182,7 @@ public struct AgentReach: Hashable, Sendable {
 /// The CLI links every managed skill (package, dependency, project, hand-written) into every target directory and
 /// installs it in the store (`link_plan` in `src/commands.rs`), so a skill reaches every target unless `doctor`
 /// names its link there. A not managed or package-only row makes no claim.
-public struct AgentIndex: Hashable, Sendable {
+public struct AgentIndex: Sendable {
     /// How far `doctor`'s answer can be trusted for this snapshot.
     public enum LinkCheck: Hashable, Sendable {
         /// `doctor` answered in the same refresh as `status`.
@@ -192,13 +197,15 @@ public struct AgentIndex: Hashable, Sendable {
     /// `AgentTarget.displayOrder`.
     public let targets: [AgentTarget]
     public let check: LinkCheck
+    private let isGlobal: Bool
     private let reaches: [SkillEntry.ID: AgentReach]
 
-    public static let empty = AgentIndex(targets: [], check: .pending, reaches: [:])
+    public static let empty = AgentIndex(targets: [], check: .pending, isGlobal: false, reaches: [:])
 
-    private init(targets: [AgentTarget], check: LinkCheck, reaches: [SkillEntry.ID: AgentReach]) {
+    private init(targets: [AgentTarget], check: LinkCheck, isGlobal: Bool, reaches: [SkillEntry.ID: AgentReach]) {
         self.targets = targets
         self.check = check
+        self.isGlobal = isGlobal
         self.reaches = reaches
     }
 
@@ -217,7 +224,7 @@ public struct AgentIndex: Hashable, Sendable {
                     notInstalled: missing.contains(entry.name))
             }
         }
-        self.init(targets: targets, check: check, reaches: reaches)
+        self.init(targets: targets, check: check, isGlobal: isGlobal, reaches: reaches)
     }
 
     /// The reach of `entry`; `.none` for a row that makes no claim.
@@ -225,9 +232,13 @@ public struct AgentIndex: Hashable, Sendable {
         reaches[entry.id] ?? .none
     }
 
-    /// Every reach of the snapshot, for the Agents card's counts.
-    public var all: [AgentReach] {
-        Array(reaches.values)
+    /// Every reach of `snapshot` (the one this index was built from), for the Agents card's broken-link counts.
+    /// After a failed `doctor` they come from the document kept for Health, so the card names what Health lists:
+    /// a count of known problems claims no link healthy, unlike a row's or the detail's `linked`, which an older
+    /// answer may not cover (a skill added since).
+    public func countedReaches(in snapshot: ScopeSnapshot) -> [AgentReach] {
+        let index = check == .failed ? AgentIndex(snapshot: snapshot, isGlobal: isGlobal, check: .current) : self
+        return Array(index.reaches.values)
     }
 
     private static func reach(
@@ -246,7 +257,11 @@ public struct AgentIndex: Hashable, Sendable {
         case .current: break
         }
         // A project skill reaches every agent through its store link; when that is broken (`doctor`'s
-        // `.agents/skills/<name>` line, or `status`'s `not linked`), it is the one cause for every agent.
+        // `.agents/skills/<name>` line, or `status`'s `not linked`), it is the one cause for every agent. A folder
+        // skillcask did not create there is the user's to move (Repair skips it), a missing or wrong link Repair's.
+        if problems[AgentTarget.store] == .blocked {
+            return all(.storeBlocked)
+        }
         if problems[AgentTarget.store] != nil || entry.state == .notLinked {
             return all(.storeLinkBroken)
         }

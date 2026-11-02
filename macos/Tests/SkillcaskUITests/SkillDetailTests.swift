@@ -168,9 +168,11 @@ import Testing
 
     @Test func offlineShowsTheStripAndKeepsStatusKnownRows() {
         let detail = SkillDetail(infoError: .failed(code: .network, message: "", hint: nil, stderr: ""))
+        let offlineReach = DesignFixtures.agentReach(
+            of: DesignFixtures.commitMessageOffline, in: DesignFixtures.apiOffline, scope: Boot.apiScope)
         let content = OverviewContent(
             entry: DesignFixtures.commitMessageOffline, detail: detail, snapshot: DesignFixtures.apiOffline,
-            scope: Boot.apiScope, isOffline: false)
+            scope: Boot.apiScope, isOffline: false, agents: offlineReach)
         #expect(content.banners == [.offline])
         #expect(content.facts.isEmpty)
         #expect(
@@ -187,11 +189,11 @@ import Testing
         // The app offline with no detail yet reads the same; online without an answer shows no strip.
         let waiting = OverviewContent(
             entry: DesignFixtures.commitMessageOffline, detail: nil, snapshot: DesignFixtures.apiOffline,
-            scope: Boot.apiScope, isOffline: true)
+            scope: Boot.apiScope, isOffline: true, agents: offlineReach)
         #expect(waiting.banners == [.offline])
         let online = OverviewContent(
             entry: DesignFixtures.commitMessageOffline, detail: nil, snapshot: DesignFixtures.apiOffline,
-            scope: Boot.apiScope, isOffline: false)
+            scope: Boot.apiScope, isOffline: false, agents: offlineReach)
         #expect(online.banners.isEmpty)
     }
 
@@ -224,7 +226,8 @@ import Testing
         scope: Scope = Boot.apiScope
     ) -> OverviewContent {
         OverviewContent(
-            entry: entry, detail: SkillDetail(info: info), snapshot: snapshot, scope: scope, isOffline: false)
+            entry: entry, detail: SkillDetail(info: info), snapshot: snapshot, scope: scope, isOffline: false,
+            agents: DesignFixtures.agentReach(of: entry, in: snapshot, scope: scope))
     }
 
     private func value(_ label: String, in rows: [OverviewContent.Row]) -> OverviewContent.Value? {

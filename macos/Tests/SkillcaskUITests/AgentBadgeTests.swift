@@ -126,6 +126,14 @@ import Testing
             hint(DesignFixtures.agentsNotes, Self.agents)?.text.hasPrefix("The skill’s link into .agents/skills")
                 == true)
         #expect(hint(DesignFixtures.agentsJiraSyntax, Self.agents)?.seeHealth == false)
+        let target = AgentTarget(entry: "claude", directory: ".claude/skills")
+        let storeBlocked = AgentReach(links: [AgentReach.Link(target: target, state: .storeBlocked)])
+        // Repair (`doctor --fix`) never touches a foreign path, so the hint does not promise it fixes this.
+        #expect(
+            AgentCopy.hint(storeBlocked)?.text
+                == "A file or folder skillcask did not create holds this name in .agents/skills, so no agent sees it. "
+                + "Move it away, then Repair.")
+        #expect(AgentCopy.summary(storeBlocked) == "Available to no agent; store blocked")
         let failed = DesignFixtures.agentIndex(DesignFixtures.agents, check: .failed)
         #expect(
             hint(DesignFixtures.agentsHandyNotes, failed)?.text
@@ -136,7 +144,7 @@ import Testing
     @Test func theDetailListsEveryAgentWithItsLinkState() throws {
         let content = OverviewContent(
             entry: DesignFixtures.agentsReviewNotes, detail: nil, snapshot: DesignFixtures.agents, scope: Boot.apiScope,
-            isOffline: false)
+            isOffline: false, agents: Self.agents.reach(of: DesignFixtures.agentsReviewNotes))
         let row = try #require(content.place.first { $0.label == DetailOverviewCopy.availableTo })
         guard case .agents(let reach) = row.value else {
             Issue.record("Available to is not the agent lines")
@@ -148,11 +156,15 @@ import Testing
             ])
         let dependency = OverviewContent(
             entry: DesignFixtures.safeRefactor, detail: nil, snapshot: DesignFixtures.api, scope: Boot.apiScope,
-            isOffline: false)
+            isOffline: false,
+            agents: DesignFixtures.agentReach(
+                of: DesignFixtures.safeRefactor, in: DesignFixtures.api, scope: Boot.apiScope))
         #expect(dependency.place.contains { $0.label == DetailOverviewCopy.availableTo }, "a dependency is linked too")
         let notManaged = OverviewContent(
             entry: DesignFixtures.standupSummary, detail: nil, snapshot: DesignFixtures.personal, scope: .personal,
-            isOffline: false)
+            isOffline: false,
+            agents: DesignFixtures.agentReach(
+                of: DesignFixtures.standupSummary, in: DesignFixtures.personal, scope: .personal))
         #expect(!notManaged.place.contains { $0.label == DetailOverviewCopy.availableTo }, "no claim, no row")
         #expect(AgentCopy.state(.blocked) == "blocked" && AgentCopy.state(.storeLinkBroken) == "store link broken")
     }
@@ -168,6 +180,16 @@ import Testing
                 == "5 skills are linked into all 4. Not linked: jira-syntax, notes. One Claude Code link is wrong — see "
                 + "Health. One Kiro link is missing — see Health. One ./tools/skills link is broken — see Health.")
         #expect(OverviewCopy.brokenLinks([.missing, .wrong], agent: "Kiro") == "2 Kiro links are broken — see Health.")
+    }
+
+    @Test func afterAFailedDoctorTheAgentsCardStillNamesWhatHealthLists() {
+        // The rows and the detail claim no link from the kept document, but the card counts its problems, as Health
+        // lists them: a known broken link is no healthy claim.
+        let failed = DesignFixtures.agentIndex(DesignFixtures.agents, check: .failed)
+        #expect(failed.reach(of: DesignFixtures.agentsReviewNotes).links.allSatisfy { $0.state == .unknown })
+        #expect(
+            AgentsCard.footnote(DesignFixtures.agents, agents: failed)
+                == AgentsCard.footnote(DesignFixtures.agents, agents: Self.agents))
     }
 
     @Test func theAgentsCardShowsHomePathsInTheGlobalScope() {

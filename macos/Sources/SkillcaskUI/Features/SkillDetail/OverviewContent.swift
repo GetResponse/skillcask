@@ -101,14 +101,11 @@ struct OverviewContent: Hashable {
     /// The place card (Main board's second card): kind, agents, location, security; always known offline.
     let place: [Row]
 
-    /// - Parameter agents: The row's reach from the store's `AgentIndex`; nil builds one from `snapshot` (previews
-    ///   and tests).
+    /// - Parameter agents: The row's reach from the store's `AgentIndex` (`ScopeStore.agentReach(for:)`).
     init(
         entry: SkillEntry, detail: SkillDetail?, snapshot: ScopeSnapshot?, scope: Scope, isOffline: Bool,
-        agents: AgentReach? = nil
+        agents: AgentReach
     ) {
-        let agents =
-            agents ?? snapshot.map { AgentIndex(snapshot: $0, isGlobal: scope.isPersonal).reach(of: entry) } ?? .none
         let info = detail?.info?.package == nil ? nil : detail?.info
         let offline = entry.package != nil && info == nil && (isOffline || Self.isNetworkFailure(detail?.infoError))
         let state = Self.state(of: entry, info: info, offline: offline)

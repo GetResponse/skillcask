@@ -154,6 +154,11 @@ public enum DesignFixtures {
         AgentIndex(snapshot: snapshot, isGlobal: isGlobal, check: check)
     }
 
+    /// The reach of `entry` in a fixture snapshot, as `ScopeStore.agentReach(for:)` returns it.
+    public static func agentReach(of entry: SkillEntry, in snapshot: ScopeSnapshot, scope: Scope) -> AgentReach {
+        agentIndex(snapshot, isGlobal: scope.isPersonal).reach(of: entry)
+    }
+
     // MARK: - Updates (`Versions`, `Versions-States`, `ReviewUpdate`)
 
     /// Update within range: 1.2.0 → 1.4.0, released 24 Oct 2026.

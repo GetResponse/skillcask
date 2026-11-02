@@ -53,6 +53,10 @@ import SkillcaskDomain
     /// Which agents see each row of `snapshot`, built once whenever the snapshot or the `doctor` outcome changes
     /// (`reindexAgents()`), so the list's rows only look it up.
     public private(set) var agentIndex = AgentIndex.empty
+    /// `doctor` failed in the last refresh that read `status`: the kept `doctor` document is not trusted for links.
+    /// Its own flag, not `partialFailure`, which a refresh that fails entirely clears while the snapshot (and its
+    /// older `doctor` answer) stays on screen.
+    private var doctorFailed = false
     public private(set) var presentation: Presentation = .loading
     /// The selected row's id (`SkillEntry.ID`); bound to the list's selection.
     public var selection: SkillEntry.ID?
@@ -158,7 +162,7 @@ import SkillcaskDomain
     /// How far `doctor` can be trusted for the snapshot: failed in the last refresh (an older document kept for
     /// Health is not trusted for links), not answered yet, or current.
     var linkCheck: AgentIndex.LinkCheck {
-        if partialFailure?.failed.contains(.doctor) == true {
+        if doctorFailed {
             return .failed
         }
         return snapshot?.doctor == nil ? .pending : .current
@@ -252,8 +256,10 @@ import SkillcaskDomain
             switch doctorResult {
             case .success(let doctor):
                 documents.doctor = doctor
+                doctorFailed = false
             case .failure(let error):
                 if error != .cancelled {
+                    doctorFailed = true
                     failed.append(.doctor)
                     firstError = firstError ?? error
                     if documents.doctor != nil || repair != nil { kept.insert(.doctor) }
@@ -269,8 +275,9 @@ import SkillcaskDomain
             documents.repair = nil
             lastError = error
             // The whole refresh failed: `lastError` says why, and no strip about `audit` or `doctor` from an older
-            // refresh stays beside it.
+            // refresh stays beside it. The snapshot stays, and so does its link check (`doctorFailed`).
             partialFailure = nil
+            reindexAgents()
             if !scope.isPersonal, Presentation.forFailedLoad(error) == .noManifest {
                 // The folder has no skills.toml (any more): nothing read before stays on screen, and the sidebar's
                 // set-up state is checked again, so the window shows Set Up instead of a stale or parent project.
@@ -288,6 +295,7 @@ import SkillcaskDomain
         documents = Documents()
         snapshot = nil
         agentIndex = .empty
+        doctorFailed = false
         partialFailure = nil
         selection = nil
         detail = nil
@@ -369,6 +377,7 @@ import SkillcaskDomain
     /// Previews: the warning of a refresh that read `status` but not `audit` or `doctor`.
     func preload(partialFailure: PartialFailure) {
         self.partialFailure = partialFailure
+        doctorFailed = partialFailure.failed.contains(.doctor)
         reindexAgents()
     }
 
