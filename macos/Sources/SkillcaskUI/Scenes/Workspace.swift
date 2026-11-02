@@ -135,7 +135,7 @@ import UniformTypeIdentifiers
     }
 
     /// SwiftUI names a `WindowGroup`'s windows `<scene id>-AppWindow-<n>`.
-    static func isMainScene(_ identifier: String?) -> Bool {
+    nonisolated static func isMainScene(_ identifier: String?) -> Bool {
         guard let identifier else { return false }
         return identifier == MainWindow.sceneID || identifier.hasPrefix(MainWindow.sceneID + "-")
     }

@@ -9,13 +9,14 @@ import SwiftUI
 /// 400 is fixed, so at the 960 pt minimum the list gives first (360 → 340) and the sidebar stays at 220; the
 /// user can narrow either to its minimum (`macos/DESIGN.md` G9; this is what `NavigationSplitView`
 /// does with these values). A project without skills.toml shows the Set Up block in the detail and an empty
-/// list. The stores come from the environment (`skillcaskEnvironment`); the scene boots the app on appear.
+/// list. The stores come from the environment (`skillcaskEnvironment`); the scene boots the app on appear. It always
+/// opens with the three columns shown (`SplitViewFrames`).
 public struct MainWindow: View {
     /// The window's minimum height; the boards are 800 tall, 600 keeps the Overview grid readable.
     public static let minHeight: CGFloat = 600
     /// The scene's id, so Settings and the app menu can open the window when none is open; SwiftUI starts its
     /// windows' identifiers with it (`Workspace.isMainScene`).
-    public static let sceneID = "main"
+    public nonisolated static let sceneID = "main"
 
     @Environment(AppStore.self) private var app
     @Environment(ActionRunner.self) private var runner

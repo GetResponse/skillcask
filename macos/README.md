@@ -71,9 +71,11 @@ warnings in unchanged files, so trust a count of 0 only after `swift package cle
 `macos-app` job runs `test.sh` on a clean checkout.
 
 `smoke-app.sh` needs a logged-in GUI session. It checks the app's `--version` refusal, then starts
-the built app on the sample data and live (with a fresh `SKILLCASK_HOME` and a `PATH` without
-skillcask; `-appUpdates.consent declined`, so no update check), signals only the processes it
-started, and restores the app's defaults afterwards.
+the built app on the sample data, again over a saved column layout whose columns overlap (it must
+be dropped), and live (with a fresh `SKILLCASK_HOME` and a `PATH` without skillcask;
+`-appUpdates.consent declined`, so no update check), signals only the processes it started, and
+afterwards restores the app's defaults and saved window state, or removes those the run wrote when
+there were none.
 
 ## Render the previews
 

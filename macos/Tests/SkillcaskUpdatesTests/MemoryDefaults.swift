@@ -3,7 +3,8 @@ import Foundation
 /// `UserDefaults` that keeps every value in memory, so a test leaves no plist: `removePersistentDomain(forName:)`
 /// empties a real suite, but cfprefsd writes an empty `~/Library/Preferences/<suite>.plist` seconds later.
 /// `UpdateDefaults` reads through `object(forKey:)` (which `string(forKey:)` and `bool(forKey:)` call) and writes
-/// through `set(_:forKey:)` and `removeObject(forKey:)`, the three this overrides.
+/// through `set(_:forKey:)` and `removeObject(forKey:)`; `SplitViewFrames.repair` lists the keys through
+/// `dictionaryRepresentation()`. Those four are what this overrides.
 /// Keep in sync with `macos/Tests/SkillcaskUITests/MemoryDefaults.swift`.
 final class MemoryDefaults: UserDefaults, @unchecked Sendable {
     /// What was written.
@@ -37,5 +38,9 @@ final class MemoryDefaults: UserDefaults, @unchecked Sendable {
 
     override func removeObject(forKey defaultName: String) {
         values[defaultName] = nil
+    }
+
+    override func dictionaryRepresentation() -> [String: Any] {
+        values.merging(readOnly) { _, argument in argument }
     }
 }
