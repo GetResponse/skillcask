@@ -18,6 +18,9 @@ import SkillcaskDomain
 
     /// A scope re-selected within this interval is not refreshed again.
     public static let freshness: TimeInterval = 60
+    /// Live refresh ignores changes delivered this soon after a mutation's refresh ended: that refresh already
+    /// read the app's own writes, which FSEvents reports a latency and a debounce later.
+    public static let settleWindow: TimeInterval = 2
 
     public let scope: Scope
     /// The CLI seam this store (and `ActionRunner`, for this scope) talks through.
@@ -33,9 +36,12 @@ import SkillcaskDomain
     /// Recorded: opening the scope (`refreshIfStale` when it reads: "Opened api"), `refresh()` (⌘R, a failed
     /// Overview's Retry: "Refreshed api") and `checkUpdates()` (⌘R, Check Now: "Checked for updates"). Not
     /// recorded, because nobody asked for them: the refresh a finished mutation runs (`refreshAfterMutation`; the
-    /// mutation's own row stands for it) and the `outdated` that Settings "check updates when a project opens"
-    /// adds to the first open.
+    /// mutation's own row stands for it), live refresh (`refreshAfterChange`, `refreshOnActivate`) and the
+    /// `outdated` that Settings "check updates when a project opens" adds to the first open.
     @ObservationIgnored public var recordActivity: ActionRunner.ActivitySink?
+    /// Called when the latest refresh ends, however it ended (`isReading` turned false): live refresh runs a
+    /// change it held back while this one was in flight.
+    @ObservationIgnored public var onRefreshEnded: (@MainActor () -> Void)?
     /// Called when a refresh of a project finds no skills.toml in its folder (the CLI's or `GuardedClient`'s
     /// `skills.toml not found`), so `AppStore` checks the sidebar's set-up state again; nil in tests that need none.
     @ObservationIgnored public var onManifestMissing: (@MainActor () -> Void)?
@@ -96,6 +102,13 @@ import SkillcaskDomain
     public private(set) var isLoadingDetail = false
 
     @ObservationIgnored private var generation = 0
+    /// The trio is in flight, quiet or not (`isRefreshing` is only the one the list shows).
+    @ObservationIgnored private(set) var isReading = false
+    /// How many `refreshAfterMutation` are in flight, and when the last one ended: quiet refreshes wait them out.
+    @ObservationIgnored private var mutationRefreshes = 0
+    @ObservationIgnored private var mutationRefreshEndedAt: Date?
+    /// The clock `freshness` and `settleWindow` are measured on; tests move it forward.
+    @ObservationIgnored var now: @MainActor () -> Date = { Date() }
     @ObservationIgnored private var checkGeneration = 0
     @ObservationIgnored private var detailGeneration = 0
     @ObservationIgnored private var documents = Documents()
@@ -153,14 +166,26 @@ import SkillcaskDomain
     /// while a mutation of this scope runs or waits (the runner refreshes when it finishes). With
     /// Settings "check updates when a project opens", the first open also runs `outdated` in the background.
     public func refreshIfStale() async {
-        if let checkedAt, snapshot != nil, Date().timeIntervalSince(checkedAt) < Self.freshness {
-            return
-        }
-        if let queue, await queue.isBusy(scope) {
-            return
-        }
+        await refreshIfStale(recording: .open)
+    }
+
+    /// `refreshIfStale()` when the app becomes active, quiet (`refreshAfterChange`'s guards, no fade, no Activity
+    /// row): live refresh's net for changes no event reported. A scope not loaded yet is left to the list's open.
+    public func refreshOnActivate() async {
+        guard snapshot != nil, isStale, await queueIsIdle(), isStale, mayRefreshQuietly else { return }
+        await refresh(keeping: nil, recording: nil, quiet: true)
+    }
+
+    /// The snapshot is older than `freshness` (or missing).
+    private var isStale: Bool {
+        guard let checkedAt, snapshot != nil else { return true }
+        return now().timeIntervalSince(checkedAt) >= Self.freshness
+    }
+
+    private func refreshIfStale(recording read: Read?) async {
+        guard isStale, await queueIsIdle() else { return }
         let firstOpen = snapshot == nil
-        await refresh(keeping: nil, recording: .open)
+        await refresh(keeping: nil, recording: read)
         if firstOpen, snapshot != nil, settings?.checkUpdatesOnOpen == true {
             await checkUpdates(recording: nil)
         }
@@ -175,14 +200,18 @@ import SkillcaskDomain
 
     /// `refresh()`, with the Repair document `repair` shown in place of `doctor` when this refresh lands, and the
     /// Activity row of `read` (none for a mutation's refresh).
-    private func refresh(keeping repair: DoctorDocument?, recording read: Read?) async {
+    /// `quiet` (live refresh) leaves `isRefreshing` alone, so the list neither fades nor says "Checking…".
+    private func refresh(keeping repair: DoctorDocument?, recording read: Read?, quiet: Bool = false) async {
         let startedAt = Date()
         generation += 1
         let mine = generation
-        isRefreshing = true
+        isReading = true
+        isRefreshing = !quiet
         defer {
             if mine == generation {
+                isReading = false
                 isRefreshing = false
+                onRefreshEnded?()
             }
         }
         async let status = traced(StatusDocument.self, .status)
@@ -317,6 +346,11 @@ import SkillcaskDomain
     /// installed (an update's new version) instead of what was there before.
     /// - Parameter repair: The finished Repair's `doctor --fix --json`, shown until the next refresh lands.
     public func refreshAfterMutation(repair: DoctorDocument? = nil) async {
+        mutationRefreshes += 1
+        defer {
+            mutationRefreshes -= 1
+            mutationRefreshEndedAt = now()
+        }
         await refresh(keeping: repair, recording: nil)
         if selectedEntry != nil {
             await loadDetail()
@@ -324,6 +358,46 @@ import SkillcaskDomain
         if documents.outdated != nil {
             await checkUpdates(recording: nil)
         }
+    }
+
+    /// The refresh live refresh runs when something outside the app changed the scope's files (a terminal, an
+    /// agent): the offline trio, quiet (no fade, no "Checking…", no Activity row), and the selected row's detail;
+    /// never `outdated` (the network is never implicit). Runs only when `mayRefreshQuietly` holds after the queue
+    /// was asked, checked again with no suspension before the refresh starts.
+    ///
+    /// Known limit: a change skipped for a mutation is dropped, not deferred. Those are the app's own writes, which
+    /// the runner's refresh reads; refreshing again after every mutation would fade the list twice, at the cost of
+    /// missing a foreign change that lands in the same seconds until the next event or activation.
+    public func refreshAfterChange() async {
+        guard mayRefreshQuietly, await queueIsIdle(), mayRefreshQuietly else { return }
+        await refresh(keeping: nil, recording: nil, quiet: true)
+        if selectedEntry != nil {
+            await loadDetail(showingProgress: false)
+        }
+    }
+
+    /// A mutation's refresh is running: changes seen now are its own writes.
+    var isRefreshingAfterMutation: Bool {
+        mutationRefreshes > 0
+    }
+
+    /// Whether a refresh nobody asked for may start: no trio is in flight (it would supersede one the user started,
+    /// or a Repair's, and drop its Activity row or document) and no mutation's refresh runs or ended within
+    /// `settleWindow` (it read those writes). The queue is asked apart (`queueIsIdle`), since that suspends.
+    var mayRefreshQuietly: Bool {
+        if isReading || mutationRefreshes > 0 {
+            return false
+        }
+        if let ended = mutationRefreshEndedAt, now().timeIntervalSince(ended) < Self.settleWindow {
+            return false
+        }
+        return true
+    }
+
+    /// No mutation of this scope runs or waits.
+    private func queueIsIdle() async -> Bool {
+        guard let queue else { return true }
+        return await !queue.isBusy(scope)
     }
 
     /// Previews and tests: the documents and selection of a scope without running anything. The snapshot is
@@ -428,7 +502,9 @@ import SkillcaskDomain
     /// `info --json -- <skill>` (offline, milliseconds) and the SKILL.md, in parallel, under the detail generation:
     /// what `.task(id: store.selection)` runs. A not managed row has no info document; a row without a path has
     /// no file.
-    public func loadDetail() async {
+    /// - Parameter showingProgress: false for live refresh: the shown detail stays put, with no spinner, until the
+    ///   new one lands (a spinner already on from another load is still turned off).
+    public func loadDetail(showingProgress: Bool = true) async {
         detailGeneration += 1
         let mine = detailGeneration
         guard let entry = selectedEntry else {
@@ -439,11 +515,19 @@ import SkillcaskDomain
         if detail != nil, loadedDetailID != entry.id {
             detail = nil
         }
-        isLoadingDetail = true
+        if showingProgress {
+            isLoadingDetail = true
+        }
         async let info = infoResult(for: entry)
         async let text = textResult(for: entry)
         let (infoResult, textResult) = await (info, text)
-        guard mine == detailGeneration, !Task.isCancelled else { return }
+        guard mine == detailGeneration, !Task.isCancelled else {
+            // Cancelled with no newer load to own the spinner: it must not stay on.
+            if mine == detailGeneration {
+                isLoadingDetail = false
+            }
+            return
+        }
         isLoadingDetail = false
         loadedDetailID = entry.id
         var infoError: CLIError?

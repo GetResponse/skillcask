@@ -116,6 +116,8 @@ import SkillcaskDomain
     public let cliSettings = CLISettingsStore()
     /// The one mutation queue of the app, shared with `ActionRunner`.
     public let queue: MutationQueue
+    /// Watches the selected scope's files and refreshes it when something outside the app changes them.
+    @ObservationIgnored public let liveRefresh: LiveRefresh
     private let locator: Locator
     private let makeClient: @Sendable (URL) -> any CLIClient
     private let textReader: ScopeStore.TextReader
@@ -216,10 +218,12 @@ import SkillcaskDomain
         settings: SettingsStore, queue: MutationQueue = MutationQueue(), locator: Locator = Locator(),
         environment: EnvironmentPolicy = .default, makeClient: (@Sendable (URL) -> any CLIClient)? = nil,
         textReader: @escaping ScopeStore.TextReader = ScopeStore.readText,
-        manifestExists: @escaping @Sendable (URL) -> Bool = AppStore.manifestOnDisk
+        manifestExists: @escaping @Sendable (URL) -> Bool = AppStore.manifestOnDisk,
+        liveRefresh: LiveRefresh = LiveRefresh(watcher: FSEventsWatcher())
     ) {
         self.settings = settings
         self.queue = queue
+        self.liveRefresh = liveRefresh
         self.locator = locator
         let policy = Self.policy(environment, with: settings)
         let source = EnvironmentSource(policy)
@@ -234,6 +238,7 @@ import SkillcaskDomain
             }
         self.textReader = textReader
         self.manifestExists = manifestExists
+        liveRefresh.app = self
     }
 
     /// A ready app over a known client: tests and the fixture boot skip the location and the version gate.
@@ -241,10 +246,12 @@ import SkillcaskDomain
         settings: SettingsStore, queue: MutationQueue = MutationQueue(), client: any CLIClient,
         capabilities: Capabilities, environment: EnvironmentPolicy = .default,
         textReader: @escaping ScopeStore.TextReader = ScopeStore.readText,
-        manifestExists: @escaping @Sendable (URL) -> Bool = AppStore.manifestOnDisk
+        manifestExists: @escaping @Sendable (URL) -> Bool = AppStore.manifestOnDisk,
+        liveRefresh: LiveRefresh = LiveRefresh(watcher: NoFileWatcher())
     ) {
         self.settings = settings
         self.queue = queue
+        self.liveRefresh = liveRefresh
         let policy = Self.policy(environment, with: settings)
         self.environment = policy
         environmentSource = EnvironmentSource(policy)
@@ -255,6 +262,7 @@ import SkillcaskDomain
         self.manifestExists = manifestExists
         self.client = client
         cli = .ready(capabilities)
+        liveRefresh.app = self
     }
 
     // MARK: - Derived
@@ -385,6 +393,12 @@ import SkillcaskDomain
         summaries.reset()
         cli = .locating
         await boot()
+    }
+
+    /// The CLI's config directory (config.toml, the personal manifest), resolved in the children's environment.
+    public func configDirectory(base: [String: String] = ProcessInfo.processInfo.environment) -> URL {
+        Scope.configDirectory(
+            environment: environment.environment(from: base), home: FileManager.default.homeDirectoryForCurrentUser)
     }
 
     /// The skills.toml the CLI reads for `scope`, resolved in the children's environment (`environment`).

@@ -59,6 +59,16 @@ public struct StatusDocument: Decodable, Hashable, Sendable {
         public let dirs: [String]
         /// `skills.toml`, `config.toml` or `default`.
         public let from: String?
+        /// The project skills directory (`[agents] local`), relative to the project root, no `./` or trailing `/`;
+        /// `null` with `--global`. Added after 0.10.2 (add-only, D32): nil from an older CLI, read as `.skills`.
+        public let local: String?
+
+        public init(entries: [String], dirs: [String], from: String?, local: String? = nil) {
+            self.entries = entries
+            self.dirs = dirs
+            self.from = from
+            self.local = local
+        }
     }
 
     /// Since 0.9.0 (D42): every source the scope may resolve in.
