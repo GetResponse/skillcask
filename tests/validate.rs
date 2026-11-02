@@ -55,7 +55,37 @@ fn a_path_without_skills_fails() {
     let p = Project::new(&s);
     p.write("empty/readme.md", "x");
     let out = p.expect(&["validate", "empty"], 1);
-    assert!(out.contains("no SKILL.md under empty"), "{out}");
+    assert!(out.contains("no SKILL.md under empty") && !out.contains("hint"), "{out}");
+    let out = p.expect(&["validate", "nope"], 5);
+    assert_eq!(out.matches("nope").count(), 1, "the missing path is named once: {out}");
+
+    // The default search skips the hidden .agents/skills, so a consumer project points there.
+    p.write(".agents/skills/alpha/SKILL.md", &md("alpha", ""));
+    let out = p.expect(&["validate"], 1);
+    assert!(out.contains("run `skillcask validate .agents/skills`"), "{out}");
+    assert!(p.ok(&["validate", ".agents/skills"]).contains("checked 1 skill"));
+}
+
+#[cfg(unix)]
+#[test]
+fn installed_skills_linked_into_the_store_are_found() {
+    let s = Server::start();
+    let p = Project::new(&s);
+    p.write(".skills/alpha/SKILL.md", &md("alpha", ""));
+    let link = |target: &str, at: &str| {
+        let at = p.path().join(at);
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(target, at).unwrap();
+    };
+    link("../../.skills/alpha", ".agents/skills/alpha");
+    link("../../.agents/skills/alpha", ".claude/skills/alpha");
+    // Skipped like directories of the same name, and links are never descended.
+    link("alpha", ".agents/skills/.hidden");
+    link("alpha", ".agents/skills/node_modules");
+    link("../../.skills", ".agents/skills/nested");
+    link("..", ".agents/skills/loop");
+    let out = p.ok(&["validate", ".agents/skills", ".claude/skills"]);
+    assert!(out.contains("checked 1 skill"), "{out}");
 }
 
 #[test]

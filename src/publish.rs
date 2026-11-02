@@ -63,7 +63,7 @@ pub fn publish(args: &PublishArgs) -> Result<()> {
     let roots = if args.paths.is_empty() { vec![PathBuf::from(".")] } else { args.paths.clone() };
     let mut dirs = Vec::new();
     for r in &roots {
-        find(r, Some(&out), &mut dirs)?;
+        find(r, Some(&out), false, &mut dirs)?;
     }
 
     let mut found: BTreeMap<String, Vec<Found>> = BTreeMap::new();
@@ -305,11 +305,19 @@ pub fn validate(paths: &[PathBuf]) -> Result<()> {
     let mut dirs = Vec::new();
     for r in &roots {
         let before = dirs.len();
-        find(r, None, &mut dirs).ctx(shown(r))?;
+        find(r, None, true, &mut dirs)?;
         if dirs.len() == before {
-            bail!(MANIFEST, "no {SKILL_MD} under {}", shown(r));
+            let e = Error::new(MANIFEST, format!("no {SKILL_MD} under {}", shown(r)));
+            // Installed skills sit under the hidden .agents/skills, which the default search skips.
+            if paths.is_empty() && Path::new(".agents/skills").is_dir() {
+                return Err(e.hint("to check the skills installed here, run `skillcask validate .agents/skills`"));
+            }
+            return Err(e);
         }
     }
+    // Two paths can reach one skill, e.g. `.agents/skills` and `.claude/skills` linking to it.
+    let mut seen = BTreeSet::new();
+    dirs.retain(|d| seen.insert(d.canonicalize().unwrap_or_else(|_| d.clone())));
     let mut invalid = 0;
     for dir in &dirs {
         let at = shown(dir);
@@ -354,21 +362,29 @@ fn shown(p: &Path) -> String {
     if cfg!(windows) { s.replace('\\', "/") } else { s }
 }
 
-/// Skill directories under `dir`; `out` (the publish output) is not searched.
-fn find(dir: &Path, out: Option<&Path>, found: &mut Vec<PathBuf>) -> Result<()> {
+/// Skill directories under `dir`; `out` (the publish output) is not searched. With `links`, a
+/// symlinked child holding SKILL.md counts too (installed skills link into the store); links are
+/// never descended, so a link cycle cannot loop.
+fn find(dir: &Path, out: Option<&Path>, links: bool, found: &mut Vec<PathBuf>) -> Result<()> {
     if out.is_some_and(|out| dir.canonicalize().is_ok_and(|c| c == out)) {
         return Ok(());
     }
     if dir.join(SKILL_MD).is_file() {
         found.push(dir.to_path_buf());
     }
-    let mut children: Vec<_> = std::fs::read_dir(dir).and_then(Iterator::collect).ctx(dir.display())?;
+    let mut children: Vec<_> = std::fs::read_dir(dir).and_then(Iterator::collect).ctx(shown(dir))?;
     children.sort_by_key(|e| e.file_name());
     for e in children {
         let name = e.file_name();
         let name = name.to_string_lossy();
-        if e.file_type().ctx(e.path().display())?.is_dir() && !name.starts_with('.') && name != "target" && name != "node_modules" {
-            find(&e.path(), out, found)?;
+        if name.starts_with('.') || name == "target" || name == "node_modules" {
+            continue;
+        }
+        let kind = e.file_type().ctx(e.path().display())?;
+        if kind.is_dir() {
+            find(&e.path(), out, links, found)?;
+        } else if links && kind.is_symlink() && e.path().join(SKILL_MD).is_file() {
+            found.push(e.path());
         }
     }
     Ok(())

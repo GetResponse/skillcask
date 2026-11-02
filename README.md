@@ -582,7 +582,8 @@ skillcask validate skills/
 
 It follows the [Agent Skills specification](https://agentskills.io/specification): `name` 1-64
 lowercase letters, digits and single hyphens, equal to the directory name; `description` 1-1024
-characters; `compatibility` at most 500. Without paths it searches the current directory.
+characters; `compatibility` at most 500. Without paths it searches the current directory, skipping
+hidden ones; `skillcask validate .agents/skills` checks the skills installed in a project.
 `publish` skips a `SKILL.md` without `name` or `version` and names it in a warning.
 
 To retire a skill, publish a new version with `deprecated: true`, or `deprecated: vendor/name`
