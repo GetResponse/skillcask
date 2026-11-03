@@ -223,8 +223,8 @@ import Testing
     // MARK: - Copy
 
     @Test func brewCommandsAreTheReleasedFormula() {
-        #expect(OnboardingCopy.installCommand == "brew install puniserv/tap/skillcask")
-        #expect(OnboardingCopy.upgradeCommand == "brew upgrade puniserv/tap/skillcask")
+        #expect(OnboardingCopy.installCommand == "brew install getresponse/tap/skillcask")
+        #expect(OnboardingCopy.upgradeCommand == "brew upgrade getresponse/tap/skillcask")
     }
 
     @Test func foundAndNeededRows() {

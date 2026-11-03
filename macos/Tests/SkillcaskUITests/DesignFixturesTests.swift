@@ -425,7 +425,7 @@ import Testing
         #expect(
             DesignFixtures.cliMissing == .cliMissing(searched: ["/opt/homebrew/bin", "/usr/local/bin", "~/.cargo/bin"]))
         #expect(DesignFixtures.cliTooOld == .cliTooOld(found: Version(0, 7, 2), needs: Version(0, 9, 0)))
-        #expect(DesignFixtures.Onboarding.installCommand == "brew install puniserv/tap/skillcask")
+        #expect(DesignFixtures.Onboarding.installCommand == "brew install getresponse/tap/skillcask")
         #expect(DesignFixtures.Onboarding.upgradeCommand == "brew upgrade skillcask")
         let settings = DesignFixtures.settings
         #expect(settings.toolPath == "/opt/homebrew/bin/skillcask" && settings.toolVersion == Version(0, 9, 4))

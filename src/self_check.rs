@@ -7,7 +7,7 @@ use serde_json::json;
 use crate::error::{Error, NETWORK, Result};
 use crate::ui;
 
-const URL: &str = "https://raw.githubusercontent.com/puniserv/homebrew-tap/main/Casks/skillcask-app.rb";
+const URL: &str = "https://raw.githubusercontent.com/GetResponse/homebrew-tap/main/Casks/skillcask-app.rb";
 const LIMIT: u64 = 64 * 1024;
 pub const RUNNING: &str = env!("CARGO_PKG_VERSION");
 pub const RELEASES: &str = "https://github.com/GetResponse/skillcask/releases";

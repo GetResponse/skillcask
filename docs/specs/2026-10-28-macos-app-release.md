@@ -20,7 +20,7 @@ one Homebrew install gives both the `skillcask` command and the app.
   Security › Open Anyway, after every update.
 - **Homebrew casks quarantine** what they install. `--no-quarantine` is gone (deprecated in
   Homebrew 5.0, removed in 6), and since 2026-09-01 `homebrew/cask` disables casks that fail
-  Gatekeeper. Third-party taps (ours, `puniserv/homebrew-tap`) still load them, and some strip the
+  Gatekeeper. Third-party taps (ours, `GetResponse/homebrew-tap`) still load them, and some strip the
   quarantine in `postflight`; that bypasses Gatekeeper instead of passing it.
 - **Homebrew formulae do not quarantine.** An app inside a formula opens even ad hoc, but it lives in
   the Cellar, not in `/Applications`: no Launchpad, and Spotlight finds it only by chance.
@@ -66,14 +66,14 @@ CLI release intact; rerun the job, or the whole run, once fixed.
 ### 2. Homebrew: a cask next to the formula
 
 - Formula `skillcask` (unchanged, from dist): the CLI on macOS and Linux.
-- Cask `skillcask-app` in `puniserv/homebrew-tap`: installs `Skillcask.app` into `/Applications`,
-  `depends_on formula: "puniserv/tap/skillcask"`, `depends_on macos: :sonoma`, `zap` for the app's
+- Cask `skillcask-app` in `GetResponse/homebrew-tap`: installs `Skillcask.app` into `/Applications`,
+  `depends_on formula: "getresponse/tap/skillcask"`, `depends_on macos: :sonoma`, `zap` for the app's
   preferences. Job `publish-homebrew-cask` (after `publish-homebrew-formula`, which pushes to the
   same tap, and `publish-macos-app`; skipped on pre-releases like the formula) reads the zip's
   `.sha256` from the release, writes the whole cask and pushes it with the existing
   `HOMEBREW_TAP_TOKEN`. It gets no signing secrets.
 
-`brew install puniserv/tap/skillcask puniserv/tap/skillcask-app` then gives both. Both names, because
+`brew install getresponse/tap/skillcask getresponse/tap/skillcask-app` then gives both. Both names, because
 Homebrew refuses to load anything from a third-party tap that is not named on the command line or
 listed by `brew trust`, and a dependency is neither. Users who install only the formula get no app.
 
@@ -145,7 +145,7 @@ signing and notarizing use `security` and `xcrun` directly, with no third-party 
       local ad-hoc builds only.
 - [x] AGENTS.md release steps: the new jobs, and what to do when notarization is slow or rejected.
 - [ ] First stable release with the cask, on a Mac without the tap:
-      `brew install puniserv/tap/skillcask puniserv/tap/skillcask-app`, then `skillcask app`; also
+      `brew install getresponse/tap/skillcask getresponse/tap/skillcask-app`, then `skillcask app`; also
       the cask alone, to see whether Homebrew refuses the formula it depends on.
 
 ## Testing
@@ -153,7 +153,7 @@ signing and notarizing use `security` and `xcrun` directly, with no third-party 
 - `spctl -a -vv` and `xcrun stapler validate` on the uploaded zip, in the job.
 - Manual, once per change to the job: download the zip in a browser on a Mac that never built
   skillcask, open it, expect the single "downloaded from the internet" prompt;
-  `brew install puniserv/tap/skillcask puniserv/tap/skillcask-app`, then `skillcask app`.
+  `brew install getresponse/tap/skillcask getresponse/tap/skillcask-app`, then `skillcask app`.
 - `macos/Scripts/smoke-app.sh` against the notarized bundle.
 
 ## Resolved questions

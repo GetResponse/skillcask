@@ -5,7 +5,7 @@ members = ["cargo:."]
 cargo-dist-version = "0.32.0"
 ci = "github"
 installers = ["shell", "powershell", "homebrew", "npm"]
-tap = "puniserv/homebrew-tap"
+tap = "GetResponse/homebrew-tap"
 publish-jobs = ["homebrew", "npm"]
 targets = [
     "aarch64-apple-darwin",

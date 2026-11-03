@@ -61,7 +61,7 @@ xattr -dr com.apple.quarantine Skillcask.app
 Releases do not have this problem: `publish-macos-app` in `.github/workflows/release.yml` builds the
 app with the released CLI, signs it with a Developer ID (`SIGN_IDENTITY="Developer ID Application:
 …"`), notarizes and staples it, and attaches the zip to the GitHub Release; the cask
-`skillcask-app` in `puniserv/homebrew-tap` installs that zip (D50,
+`skillcask-app` in `GetResponse/homebrew-tap` installs that zip (D50,
 `docs/specs/2026-10-28-macos-app-release.md`).
 
 ## Test
