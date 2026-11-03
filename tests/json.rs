@@ -95,3 +95,35 @@ fn search_escapes_package_text() {
         json!({ "results": [{ "name": "acme/beta", "description": "beta <U+202E>txt", "source": "gl", "installs": null, "skills": 1, "requires": {} }], "skills-sh": null })
     );
 }
+
+#[test]
+fn status_targets_pair_each_agent_with_its_directory() {
+    let s = Server::start();
+    let p = Project::new(&s);
+    let targets = r#"["./.claude/skills", "claude", "codex", "junie", "claude", "./tools/skills/"]"#;
+    p.write("skills.toml", &format!("[skills]\n[agents]\nlocal = \"my-skills/\"\ntargets = {targets}\n[policy]\npackagist = false\n"));
+    p.ok(&["install"]);
+    let t = &doc(&p, &["status", "--json"], 0)["targets"];
+    assert_eq!(t["dirs"], json!([".claude/skills", "tools/skills"]));
+    assert_eq!(t["local"], json!("my-skills"));
+    // Every distinct entry once: a preset whose directory a path already named keeps it, and an
+    // agent reading the store (codex, junie in a project) has none.
+    assert_eq!(
+        t["agents"],
+        json!([
+            { "entry": "./.claude/skills", "dir": ".claude/skills" },
+            { "entry": "claude", "dir": ".claude/skills" },
+            { "entry": "codex", "dir": null },
+            { "entry": "junie", "dir": null },
+            { "entry": "./tools/skills/", "dir": "tools/skills" },
+        ])
+    );
+
+    p.global_manifest(&s, "");
+    let config = p.home().join(".config/skillcask/skills.toml");
+    let text = std::fs::read_to_string(&config).unwrap().replace(r#"[".claude/skills", ".junie/skills"]"#, r#"["junie"]"#);
+    std::fs::write(&config, text).unwrap();
+    let t = &serde_json::from_str::<Value>(&p.global(&["status", "--json"], 0)).unwrap()["targets"];
+    assert_eq!(t["local"], json!(null), "[agents] local does not apply globally");
+    assert_eq!(t["agents"], json!([{ "entry": "junie", "dir": ".junie/skills" }]));
+}
