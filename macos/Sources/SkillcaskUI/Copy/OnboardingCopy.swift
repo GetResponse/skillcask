@@ -6,8 +6,8 @@ import SkillcaskCore
 /// reuse `StripCopy.notManagedTitle(count:)` and `EmptyCopy` (`noProjectsTitle`, `openFolder`, `findProjects`).
 ///
 /// The Homebrew commands are the release's: `dist-workspace.toml` publishes the formula `skillcask` to the tap
-/// `puniserv/homebrew-tap` (README "Install": `brew install puniserv/tap/skillcask`). The upgrade command names the
-/// tap too (`brew upgrade puniserv/tap/skillcask`, a decision), where the board writes the bare
+/// `GetResponse/homebrew-tap` (README "Install": `brew install getresponse/tap/skillcask`). The upgrade command names the
+/// tap too (`brew upgrade getresponse/tap/skillcask`, a decision), where the board writes the bare
 /// `brew upgrade skillcask`, which would be ambiguous if a core formula of that name ever existed. Needed is
 /// `Capabilities.minimum` (0.9.4), where the board writes 0.9.0.
 ///
@@ -31,7 +31,7 @@ public enum OnboardingCopy {
         "The app shows what the skillcask tool reports and runs it for you; it has no logic of its own. It isn’t "
         + "installed yet, or it isn’t on your path."
     public static let installStep = "Install it with Homebrew"
-    public static let installCommand = "brew install puniserv/tap/skillcask"
+    public static let installCommand = "brew install getresponse/tap/skillcask"
     public static let noHomebrew = "No Homebrew?"
     public static let otherWays = "Other ways to install"
     public static let inTheReadme = "are in the README."
@@ -57,7 +57,7 @@ public enum OnboardingCopy {
         "\(version) or newer"
     }
     public static let upgradeStep = "Upgrade with Homebrew"
-    public static let upgradeCommand = "brew upgrade puniserv/tap/skillcask"
+    public static let upgradeCommand = "brew upgrade getresponse/tap/skillcask"
     public static let thenTryAgain = "Then Try Again"
     public static let differentCopy = "A different copy somewhere else? Use Locate…."
 

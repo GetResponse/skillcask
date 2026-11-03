@@ -19,7 +19,7 @@ Composer or Node.
 **macOS, Linux**
 
 ```sh
-brew install puniserv/tap/skillcask
+brew install getresponse/tap/skillcask
 # or, without Homebrew:
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/GetResponse/skillcask/releases/latest/download/skillcask-installer.sh | sh
 ```
@@ -36,12 +36,21 @@ it in `~/.cargo/bin` (`%USERPROFILE%\.cargo\bin` on Windows).
 **Desktop app (macOS 14+ only for now)**
 
 ```sh
-brew install puniserv/tap/skillcask puniserv/tap/skillcask-app
+brew install getresponse/tap/skillcask getresponse/tap/skillcask-app
 skillcask app                   # or open Skillcask from Applications
 ```
 
 Install with the full names: Homebrew loads a third-party tap's cask only when it is named in full
 (or listed by `brew trust`); after that, `brew upgrade` takes the short name.
+
+The tap was `puniserv/tap` before 0.10.5. If you installed from it, move to the new name once
+(your app settings stay):
+
+```sh
+brew uninstall skillcask-app skillcask   # skillcask alone if you have no app
+brew untap puniserv/tap
+brew install getresponse/tap/skillcask getresponse/tap/skillcask-app
+```
 
 Without Homebrew:
 
@@ -619,7 +628,7 @@ on the formula; name both, since Homebrew loads from a third-party tap only what
 or what `brew trust` lists:
 
 ```sh
-brew install puniserv/tap/skillcask puniserv/tap/skillcask-app
+brew install getresponse/tap/skillcask getresponse/tap/skillcask-app
 ```
 
 Every release also has `Skillcask-X.Y.Z-macos-universal.zip`, signed with a Developer ID and

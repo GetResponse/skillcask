@@ -246,7 +246,7 @@ enum Cmd {
     },
     /// Browse, add, update and remove skills in a terminal UI; it runs this binary for every step.
     Ui,
-    /// Open the macOS app (brew install puniserv/tap/skillcask-app).
+    /// Open the macOS app (brew install getresponse/tap/skillcask-app).
     App,
     /// Say whether a newer skillcask is released: one anonymous request for the tap's cask file,
     /// only when run; writes nothing.
@@ -418,7 +418,7 @@ fn app() -> Result<(), Error> {
         .map_err(|e| Error::new(error::IO, format!("open: {e}")))?;
     if !out.status.success() {
         return Err(Error::new(MANIFEST, "Skillcask.app is not installed").hint(
-            "brew install puniserv/tap/skillcask puniserv/tap/skillcask-app, or unzip Skillcask-<version>-macos-universal.zip from a release into /Applications",
+            "brew install getresponse/tap/skillcask getresponse/tap/skillcask-app, or unzip Skillcask-<version>-macos-universal.zip from a release into /Applications",
         ));
     }
     Ok(())

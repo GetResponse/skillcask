@@ -310,7 +310,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: true
-          repository: "puniserv/homebrew-tap"
+          repository: "GetResponse/homebrew-tap"
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
       # So we have access to the formula
       - name: Fetch homebrew formulae
@@ -480,7 +480,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: true
-          repository: "puniserv/homebrew-tap"
+          repository: "GetResponse/homebrew-tap"
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
       - name: Commit the cask
         run: |
@@ -499,7 +499,7 @@ jobs:
             desc "Desktop app for the skillcask package manager for agent skills"
             homepage "https://github.com/GetResponse/skillcask"
 
-            depends_on formula: "puniserv/tap/skillcask"
+            depends_on formula: "getresponse/tap/skillcask"
             depends_on macos: :sonoma
 
             app "Skillcask.app"

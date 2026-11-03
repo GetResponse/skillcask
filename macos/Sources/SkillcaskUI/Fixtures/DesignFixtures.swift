@@ -471,7 +471,7 @@ public enum DesignFixtures {
     /// `Onboarding`, `Onboarding-States`: where the app looks and what to run.
     public enum Onboarding {
         public static let searched = ["/opt/homebrew/bin", "/usr/local/bin", "~/.cargo/bin"]
-        public static let installCommand = "brew install puniserv/tap/skillcask"
+        public static let installCommand = "brew install getresponse/tap/skillcask"
         public static let upgradeCommand = "brew upgrade skillcask"
         public static let foundPath = "/opt/homebrew/bin/skillcask"
     }
