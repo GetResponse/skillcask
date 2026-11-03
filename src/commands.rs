@@ -2334,7 +2334,7 @@ fn sarif_log(findings: &[(String, Finding)]) -> Value {
             "tool": { "driver": {
                 "name": "skillcask",
                 "version": env!("CARGO_PKG_VERSION"),
-                "informationUri": "https://github.com/getresponse/skillcask",
+                "informationUri": "https://github.com/GetResponse/skillcask",
                 "rules": rules,
             } },
             "results": results,

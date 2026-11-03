@@ -144,7 +144,7 @@ import Testing
     @Test func openReleasePageOpensExactlyTheTagPage() {
         let store = presented(.direct)
         store.perform(.openReleasePage, on: Self.latest)
-        #expect(log.opened == [URL(string: "https://github.com/getresponse/skillcask/releases/tag/v0.10.3")!])
+        #expect(log.opened == [URL(string: "https://github.com/GetResponse/skillcask/releases/tag/v0.10.3")!])
         #expect(log.copied.isEmpty && log.launched.isEmpty)
         #expect(!store.state.awaitingRelaunch)
         #expect(store.sheet == nil)
@@ -153,7 +153,7 @@ import Testing
     @Test func releaseNotesOpenTheTagPageAndKeepTheSheet() {
         let store = presented()
         store.openReleaseNotes(for: Self.latest)
-        #expect(log.opened == [URL(string: "https://github.com/getresponse/skillcask/releases/tag/v0.10.3")!])
+        #expect(log.opened == [URL(string: "https://github.com/GetResponse/skillcask/releases/tag/v0.10.3")!])
         #expect(store.sheet != nil)
     }
 

@@ -21,13 +21,13 @@ Composer or Node.
 ```sh
 brew install puniserv/tap/skillcask
 # or, without Homebrew:
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/getresponse/skillcask/releases/latest/download/skillcask-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/GetResponse/skillcask/releases/latest/download/skillcask-installer.sh | sh
 ```
 
 **Windows (PowerShell)**
 
 ```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://github.com/getresponse/skillcask/releases/latest/download/skillcask-installer.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/GetResponse/skillcask/releases/latest/download/skillcask-installer.ps1 | iex"
 ```
 
 The two installer scripts download the binary for your platform from the latest release and put
@@ -46,7 +46,7 @@ Install with the full names: Homebrew loads a third-party tap's cask only when i
 Without Homebrew:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/getresponse/skillcask/releases/latest/download/skillcask-app-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/GetResponse/skillcask/releases/latest/download/skillcask-app-installer.sh | sh
 ```
 
 The installer downloads `Skillcask-X.Y.Z-macos-universal.zip` (signed and notarized, with its own
@@ -76,11 +76,11 @@ cargo install --locked skillcask
 ```
 
 **Release archives** for macOS, Linux and Windows are on the
-[releases page](https://github.com/getresponse/skillcask/releases), with sha256 checksums and GitHub
+[releases page](https://github.com/GetResponse/skillcask/releases), with sha256 checksums and GitHub
 build provenance attestations:
 
 ```sh
-gh attestation verify skillcask-x86_64-unknown-linux-gnu.tar.xz -R getresponse/skillcask
+gh attestation verify skillcask-x86_64-unknown-linux-gnu.tar.xz -R GetResponse/skillcask
 ```
 
 Releases up to 0.10.2 were built before the repository moved and verify with `--owner puniserv --signer-repo puniserv/skillcask`.
@@ -93,7 +93,7 @@ permissions:
   attestations: read   # for the provenance check
 steps:
   - uses: actions/checkout@<sha>
-  - uses: getresponse/skillcask@<commit sha of a release tag>   # vX.Y.Z
+  - uses: GetResponse/skillcask@<commit sha of a release tag>   # vX.Y.Z
     with:
       version: X.Y.Z               # needed when the action is pinned to a sha, not a tag
       args: install --frozen       # default
@@ -536,7 +536,7 @@ too young falls back to an older commit when the server supports partial fetches
   scanning, e.g. in GitHub Actions:
 
   ```yaml
-  - uses: getresponse/skillcask@v0.8.0
+  - uses: GetResponse/skillcask@v0.8.0
     with:
       args: install --frozen
   - run: skillcask audit --sarif > skills.sarif

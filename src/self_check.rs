@@ -10,7 +10,7 @@ use crate::ui;
 const URL: &str = "https://raw.githubusercontent.com/puniserv/homebrew-tap/main/Casks/skillcask-app.rb";
 const LIMIT: u64 = 64 * 1024;
 pub const RUNNING: &str = env!("CARGO_PKG_VERSION");
-pub const RELEASES: &str = "https://github.com/getresponse/skillcask/releases";
+pub const RELEASES: &str = "https://github.com/GetResponse/skillcask/releases";
 
 /// One anonymous request; writes nothing. Every failure to fetch is a network error (exit 3).
 pub fn run(verbose: bool, json: bool) -> Result<()> {
@@ -133,7 +133,7 @@ mod tests {
     use super::*;
 
     fn cask(version_lines: &str) -> Vec<u8> {
-        format!("cask \"skillcask-app\" do\n{version_lines}  sha256 \"abc\"\n\n  url \"https://github.com/getresponse/skillcask/releases/download/v#{{version}}/x.zip\"\n  name \"Skillcask\"\nend\n").into_bytes()
+        format!("cask \"skillcask-app\" do\n{version_lines}  sha256 \"abc\"\n\n  url \"https://github.com/GetResponse/skillcask/releases/download/v#{{version}}/x.zip\"\n  name \"Skillcask\"\nend\n").into_bytes()
     }
 
     #[test]

@@ -2,13 +2,13 @@
 # Installs Skillcask.app from a skillcask release into /Applications. Attached to every release as
 # skillcask-app-installer.sh:
 #
-#   curl --proto '=https' --tlsv1.2 -LsSf https://github.com/getresponse/skillcask/releases/latest/download/skillcask-app-installer.sh | sh
+#   curl --proto '=https' --tlsv1.2 -LsSf https://github.com/GetResponse/skillcask/releases/latest/download/skillcask-app-installer.sh | sh
 #
 # SKILLCASK_VERSION=X.Y.Z picks a release (default: the latest), SKILLCASK_APP_DIR another folder.
 # An earlier copy goes to the Trash. A copy Homebrew installed is left to `brew upgrade`.
 set -eu
 
-repo=https://github.com/getresponse/skillcask
+repo=https://github.com/GetResponse/skillcask
 dest=${SKILLCASK_APP_DIR:-/Applications}
 
 fail() {

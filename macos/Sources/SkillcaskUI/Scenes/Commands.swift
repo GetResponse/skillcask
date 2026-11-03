@@ -175,7 +175,7 @@ public struct SkillcaskCommands: Commands {
     }
 
     /// The project README, where Skillcask Help and README both go until the app has help of its own.
-    static let readme = URL(string: "https://github.com/getresponse/skillcask#readme") ?? URL(fileURLWithPath: "/")
+    static let readme = URL(string: "https://github.com/GetResponse/skillcask#readme") ?? URL(fileURLWithPath: "/")
 
     private var isBusy: Bool {
         guard store != nil, let runner else { return true }

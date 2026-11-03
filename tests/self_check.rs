@@ -9,7 +9,7 @@ const RUNNING: &str = env!("CARGO_PKG_VERSION");
 
 fn cask(version: &str) -> String {
     format!(
-        "cask \"skillcask-app\" do\n  version \"{version}\"\n  sha256 \"0000\"\n\n  url \"https://github.com/getresponse/skillcask/releases/download/v#{{version}}/Skillcask-#{{version}}-macos-universal.zip\"\n  name \"Skillcask\"\n\n  app \"Skillcask.app\"\nend\n"
+        "cask \"skillcask-app\" do\n  version \"{version}\"\n  sha256 \"0000\"\n\n  url \"https://github.com/GetResponse/skillcask/releases/download/v#{{version}}/Skillcask-#{{version}}-macos-universal.zip\"\n  name \"Skillcask\"\n\n  app \"Skillcask.app\"\nend\n"
     )
 }
 
@@ -31,7 +31,7 @@ fn reports_a_newer_release() {
     let p = project(&s);
     let out = p.ok(&["self-check"]);
     assert!(out.contains(&format!("skillcask {RUNNING}, latest 999.0.0: update available")), "{out}");
-    assert!(out.contains("https://github.com/getresponse/skillcask/releases/tag/v999.0.0"), "{out}");
+    assert!(out.contains("https://github.com/GetResponse/skillcask/releases/tag/v999.0.0"), "{out}");
     let o = p.run(&["self-check", "--json"]);
     assert_eq!(o.status.code(), Some(0));
     let stdout = String::from_utf8(o.stdout).unwrap();
