@@ -83,7 +83,7 @@ build provenance attestations:
 gh attestation verify skillcask-x86_64-unknown-linux-gnu.tar.xz -R getresponse/skillcask
 ```
 
-Releases up to 0.10.2 were built before the repository moved and verify with `-R puniserv/skillcask`.
+Releases up to 0.10.2 were built before the repository moved and verify with `--owner puniserv --signer-repo puniserv/skillcask`.
 
 **GitHub Actions**
 
