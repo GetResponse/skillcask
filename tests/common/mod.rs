@@ -367,7 +367,15 @@ impl Project {
     }
 
     pub fn run(&self, args: &[&str]) -> Output {
-        self.command(args).output().unwrap()
+        // A binary a test copied in can still be open for writing in a child another test thread forked
+        // (ETXTBSY on Linux, rust-lang/rust#114554); the child closes it on exec, so retry.
+        for _ in 0..50 {
+            match self.command(args).output() {
+                Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => std::thread::sleep(std::time::Duration::from_millis(20)),
+                r => return r.unwrap(),
+            }
+        }
+        panic!("{:?} stayed busy", self.bin)
     }
 
     /// Runs with `input` piped to stdin.
