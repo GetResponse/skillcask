@@ -214,10 +214,10 @@ import Testing
     @Test func theReleasePageFromAStrictVersionOnly() {
         #expect(
             UpdateLinks.releasePage(for: Version(0, 10, 2))?.absoluteString
-                == "https://github.com/puniserv/skillcask/releases/tag/v0.10.2")
+                == "https://github.com/getresponse/skillcask/releases/tag/v0.10.2")
         #expect(
             UpdateLinks.releasePage(for: Version(1, 0, 0, prerelease: "rc.1"))?.absoluteString
-                == "https://github.com/puniserv/skillcask/releases/tag/v1.0.0-rc.1")
+                == "https://github.com/getresponse/skillcask/releases/tag/v1.0.0-rc.1")
         #expect(UpdateLinks.releasePage(for: Version(1, 0, 0, prerelease: "rc/../../x")) == nil)
         #expect(UpdateLinks.releasePage(for: Version(1, 0, 0, prerelease: "")) == nil)
         #expect(UpdateLinks.zipName(for: Version(0, 10, 2)) == "Skillcask-0.10.2-macos-universal.zip")

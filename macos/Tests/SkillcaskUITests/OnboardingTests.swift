@@ -236,7 +236,7 @@ import Testing
     }
 
     @Test func learnMoreOpensThePublicReadme() {
-        #expect(OnboardingCopy.readme.absoluteString == "https://github.com/puniserv/skillcask")
-        #expect(OnboardingCopy.installSection.absoluteString == "https://github.com/puniserv/skillcask#install")
+        #expect(OnboardingCopy.readme.absoluteString == "https://github.com/getresponse/skillcask")
+        #expect(OnboardingCopy.installSection.absoluteString == "https://github.com/getresponse/skillcask#install")
     }
 }

@@ -23,10 +23,10 @@ public enum UpdateLinks {
     /// The Homebrew update for the cask and the formula it depends on.
     public static let homebrewCommand = "brew update && brew upgrade skillcask skillcask-app"
 
-    /// `https://github.com/puniserv/skillcask/releases/tag/v<version>`; nil for a version that is not strict.
+    /// `https://github.com/getresponse/skillcask/releases/tag/v<version>`; nil for a version that is not strict.
     public static func releasePage(for version: Version) -> URL? {
         guard version.isStrict else { return nil }
-        return URL(string: "https://github.com/puniserv/skillcask/releases/tag/v\(version)")
+        return URL(string: "https://github.com/getresponse/skillcask/releases/tag/v\(version)")
     }
 
     /// `Skillcask-<version>-macos-universal.zip`, the release asset the direct-download steps name.

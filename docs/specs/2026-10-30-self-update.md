@@ -70,7 +70,7 @@ hint for success.
    check then (no `shasum` fallback).
 2. `GET <base>/v<latest>/skillcask-installer.sh` with `Http::anonymous` (no credential, D51), at
    most 256 KiB (the 0.10.1 script is 55 KiB). `<base>` is
-   `https://github.com/puniserv/skillcask/releases/download`; `SKILLCASK_SELF_UPDATE_URL` replaces
+   `https://github.com/getresponse/skillcask/releases/download`; `SKILLCASK_SELF_UPDATE_URL` replaces
    only the base, for tests and mirrors, so the tag still follows the reported version, and a
    warning names it.
 3. Write it to an unnamed temp file (`tempfile::tempfile`), so nothing is left behind.
