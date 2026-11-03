@@ -17,10 +17,10 @@ public enum OnboardingCopy {
     // MARK: - Links
 
     /// Learn more: the project's README (`Cargo.toml` `repository`).
-    public static let readme = URL(string: "https://github.com/puniserv/skillcask") ?? URL(fileURLWithPath: "/")
+    public static let readme = URL(string: "https://github.com/getresponse/skillcask") ?? URL(fileURLWithPath: "/")
     /// "Other ways to install": the README's Install section.
     public static let installSection =
-        URL(string: "https://github.com/puniserv/skillcask#install") ?? URL(fileURLWithPath: "/")
+        URL(string: "https://github.com/getresponse/skillcask#install") ?? URL(fileURLWithPath: "/")
 
     // MARK: - CLI missing (Onboarding)
 

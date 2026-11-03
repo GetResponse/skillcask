@@ -119,7 +119,7 @@ import Testing
         let stderr = """
             warning: https://raw.githubusercontent.com/puniserv/homebrew-tap/main/Casks/skillcask-app.rb: io: Connection refused (os error 61); retrying in 1s
             error: https://raw.githubusercontent.com/puniserv/homebrew-tap/main/Casks/skillcask-app.rb: io: Connection refused (os error 61)
-              hint: check the connection; releases are listed at https://github.com/puniserv/skillcask/releases
+              hint: check the connection; releases are listed at https://github.com/getresponse/skillcask/releases
 
             """
         let client = Scripted(stderr: stderr, exit: 3)
@@ -128,7 +128,7 @@ import Testing
                 code: .network,
                 message:
                     "https://raw.githubusercontent.com/puniserv/homebrew-tap/main/Casks/skillcask-app.rb: io: Connection refused (os error 61)",
-                hint: "check the connection; releases are listed at https://github.com/puniserv/skillcask/releases",
+                hint: "check the connection; releases are listed at https://github.com/getresponse/skillcask/releases",
                 stderr: stderr)
         ) {
             try await client.selfCheck(binary: bundled, capabilities: capabilities)

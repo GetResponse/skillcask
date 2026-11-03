@@ -286,7 +286,7 @@ mod tests {
         let ps = cmd(Method::Installer(PathBuf::new()), true).unwrap();
         assert_eq!(
             ps,
-            "powershell -ExecutionPolicy Bypass -c \"irm https://github.com/puniserv/skillcask/releases/download/v1.2.3/skillcask-installer.ps1 | iex\""
+            "powershell -ExecutionPolicy Bypass -c \"irm https://github.com/getresponse/skillcask/releases/download/v1.2.3/skillcask-installer.ps1 | iex\""
         );
         let sh = cmd(Method::Installer(PathBuf::new()), false).unwrap();
         assert!(sh.contains("/download/v1.2.3/skillcask-installer.sh | sh"), "{sh}");

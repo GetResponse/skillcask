@@ -6,7 +6,7 @@ branding:
 
 inputs:
   version:
-    description: 'skillcask version (x.y.z). Default: the release tag the action is used at (uses puniserv/skillcask@vX.Y.Z).'
+    description: 'skillcask version (x.y.z). Default: the release tag the action is used at (uses getresponse/skillcask@vX.Y.Z).'
     required: false
     default: ""
   args:
@@ -56,7 +56,7 @@ runs:
           *) echo "::error::skillcask: no release build for $RUNNER_OS $RUNNER_ARCH"; exit 1 ;;
         esac
         file="skillcask-$target.$ext"
-        base="https://github.com/puniserv/skillcask/releases/download/v$v"
+        base="https://github.com/getresponse/skillcask/releases/download/v$v"
         dir="$RUNNER_TEMP/skillcask-$v"
         mkdir -p "$dir"
         cd "$dir"
@@ -73,7 +73,12 @@ runs:
           exit 1
         fi
         if [ "$VERIFY" = "true" ]; then
-          gh attestation verify "$file" --repo puniserv/skillcask
+          # Releases up to 0.10.2 were attested before the repository moved; their attestations stay
+          # with the account puniserv and name puniserv/skillcask as the signer.
+          case "$v" in
+            0.[0-9].*|0.10.[0-2]) gh attestation verify "$file" --owner puniserv --signer-repo puniserv/skillcask ;;
+            *) gh attestation verify "$file" --repo getresponse/skillcask ;;
+          esac
         fi
         if [ "$ext" = zip ]; then
           unzip -q -o "$file"
