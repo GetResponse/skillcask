@@ -13,7 +13,8 @@ use crate::error::{Context, Error, MANIFEST, Result};
 pub const CONFIG: &str = "config.toml";
 pub const SKILLS_SH: &str = "skills-sh";
 pub const REPOSITORY_AGES: &str = "repository-min-release-age";
-pub const KEYS: [&str; 6] = ["min-release-age", "allow-ranges", "packagist", "github-requires", "allow-sources", "deny-patterns"];
+pub const KEYS: [&str; 7] =
+    ["min-release-age", "allow-ranges", "packagist", "github-requires", "allow-sources", "deny-patterns", "deny-packages"];
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
@@ -79,6 +80,17 @@ fn check_source(s: &str, names: bool) -> std::result::Result<(), String> {
     })
 }
 
+fn valid_package_pattern(p: &str) -> bool {
+    let part = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "-_.".contains(c));
+    p.split_once('/').is_some_and(|(v, n)| part(v) && (n == "*" || part(n)))
+}
+
+/// Whether package `name` (`vendor/name`) matches a `deny-packages` entry (D57).
+pub fn denied(patterns: &[String], name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    patterns.iter().any(|p| p.strip_suffix("/*").map_or(*p == name, |v| name.split_once('/').is_some_and(|(nv, _)| nv == v)))
+}
+
 fn value(k: &'static str, raw: Raw, names: bool) -> std::result::Result<Value, String> {
     match (k, raw) {
         ("min-release-age", Raw::Str(s)) => crate::manifest::duration(&s).map(Value::Age),
@@ -87,7 +99,11 @@ fn value(k: &'static str, raw: Raw, names: bool) -> std::result::Result<Value, S
             l.iter().try_for_each(|s| check_source(s, names))?;
             Ok(Value::List(l))
         }
-        ("allow-sources", _) => Err("must be a list".into()),
+        ("deny-packages", Raw::List(l)) => match l.iter().find(|p| !valid_package_pattern(p)) {
+            Some(p) => Err(format!("{p:?} is not vendor/name or vendor/*")),
+            None => Ok(Value::List(l)),
+        },
+        ("allow-sources" | "deny-packages", _) => Err("must be a list".into()),
         (_, Raw::Bool(b)) => Ok(Value::Bool(b)),
         (_, Raw::Str(s)) if s == "true" || s == "false" => Ok(Value::Bool(s == "true")),
         _ => Err("must be true or false".into()),
@@ -161,7 +177,7 @@ pub fn env_layer(var: impl Fn(&str) -> Option<String>) -> Result<Layer> {
     for k in KEYS {
         let name = format!("SKILLCASK_{}", k.to_uppercase().replace('-', "_"));
         let Some(s) = var(&name).filter(|s| !s.trim().is_empty()) else { continue };
-        let r = if k == "allow-sources" {
+        let r = if matches!(k, "allow-sources" | "deny-packages") {
             Raw::List(s.split(',').map(str::trim).filter(|x| !x.is_empty()).map(String::from).collect())
         } else {
             Raw::Str(s.trim().to_string())
@@ -442,6 +458,19 @@ mod tests {
         assert!(read_config(&dir.path().join(CONFIG)).unwrap_err().msg.contains("search.skills-sh must be true or false"));
         std::fs::write(dir.path().join(CONFIG), "[search]\nskills-sh = false\n").unwrap();
         assert_eq!(read_config(&dir.path().join(CONFIG)).unwrap().skills_sh, Some(false));
+    }
+
+    #[test]
+    fn deny_packages() {
+        assert!(proj("[policy]\ndeny-packages = [\"evil/*\", \"acme/bad\"]").values.contains_key("deny-packages"));
+        for bad in ["evil", "*/x", "Evil/x", "evil/x*", "/x", "evil/"] {
+            let doc: DocumentMut = format!("[policy]\ndeny-packages = [{bad:?}]").parse().unwrap();
+            assert!(layer(doc.get("policy").and_then(Item::as_table_like), "skills.toml", false).is_err(), "{bad}");
+        }
+        let l = vec!["evil/*".to_string(), "acme/bad".to_string()];
+        assert!(denied(&l, "evil/x") && denied(&l, "Acme/Bad") && !denied(&l, "acme/good") && !denied(&l, "evilx/y"));
+        let env = env_layer(|k| (k == "SKILLCASK_DENY_PACKAGES").then(|| "evil/*, acme/bad".to_string())).unwrap();
+        assert_eq!(env.values["deny-packages"], Value::List(l));
     }
 
     #[test]

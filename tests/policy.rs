@@ -1,4 +1,4 @@
-//! Layered policy and `allow-sources` (D18).
+//! Layered policy, `allow-sources` (D18) and `deny-packages` (D57).
 mod common;
 
 use common::*;
@@ -171,4 +171,24 @@ fn init_lists_the_default_sources() {
     p.ok(&["init"]);
     let t = p.read("skills.toml");
     assert!(t.contains("packagist = { url = \"https://repo.packagist.org\" }") && t.contains("github = { type = \"github\""), "{t}");
+}
+
+#[test]
+fn deny_packages_refuses_by_name_before_any_download_and_in_a_lock() {
+    let s = Server::start();
+    let p = two_repos(&s, "deny-packages = [\"acme/*\"]");
+    let e = p.expect(&["add", "acme/public"], 1);
+    assert!(e.contains("acme/public is refused by policy.deny-packages (skills.toml)"), "{e}");
+    assert!(!s.log().iter().any(|l| l.contains(".zip")), "{:?}", s.log());
+    let e = p.expect(&["add", "github:acme/tools"], 1);
+    assert!(e.contains("acme/tools is refused by policy.deny-packages"), "GitHub sources too: {e}");
+
+    let q = two_repos(&s, "");
+    q.ok(&["add", "acme/public"]);
+    q.write("skills.toml", &q.read("skills.toml").replace("packagist = false", "packagist = false\ndeny-packages = [\"acme/public\"]"));
+    let mut c = clone_of(&q, &s);
+    c.env.push(("CI".into(), "true".into()));
+    let e = c.expect(&["install"], 1);
+    assert!(e.contains("acme/public is refused by policy.deny-packages"), "a committed lock cannot bring it in: {e}");
+    assert!(!c.exists(".agents/skills/public"));
 }

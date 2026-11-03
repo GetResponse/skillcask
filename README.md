@@ -191,6 +191,7 @@ packagist = true         # false: drop the implicit Packagist repository
 github-requires = false  # true: dependencies may come from GitHub or git URLs
 allow-sources = ["acme", "own", "packagist", "github"]   # only these sources; default: all
 deny-patterns = false    # true: risky patterns and invisible characters in new skill text fail instead of warning
+deny-packages = ["evil/*"]   # refused by name from any source, also in a lock; default: none
 ```
 
 ### Agents
@@ -234,13 +235,18 @@ organisation). Other repositories get no request, and `install` refuses a lock e
 also with `--frozen`, so a committed lock cannot bring them back. Dependencies follow the same
 rule.
 
+`deny-packages` refuses packages by name, `vendor/name` or a whole `vendor/*`, whatever source
+serves them (a GitHub `owner/repo` counts as `owner/repo`). It is checked before any download and
+again on every lock entry, so it also stops a dependency or a committed lock.
+
 Policy can also come from `config.toml` next to the global manifest (`~/.config/skillcask`) and
 from the environment. The first layer that sets a key wins:
 
 1. `SKILLCASK_ALLOW_SOURCES`, `SKILLCASK_MIN_RELEASE_AGE`, `SKILLCASK_ALLOW_RANGES`,
-   `SKILLCASK_PACKAGIST`, `SKILLCASK_GITHUB_REQUIRES`, `SKILLCASK_DENY_PATTERNS` (against an
-   enforced key only a stricter value is accepted: a longer cooldown, `deny-patterns` on, the
-   others off, narrower sources);
+   `SKILLCASK_PACKAGIST`, `SKILLCASK_GITHUB_REQUIRES`, `SKILLCASK_DENY_PATTERNS`,
+   `SKILLCASK_DENY_PACKAGES` (lists comma-separated; against an enforced key only a stricter value
+   is accepted: a longer cooldown, `deny-patterns` on, the others off, narrower sources, more
+   denied packages);
 2. keys `config.toml` lists in `enforce`: a project that sets them otherwise fails;
 3. `[policy]` in `skills.toml`;
 4. the other keys of `config.toml`, as defaults.

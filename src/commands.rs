@@ -227,9 +227,7 @@ impl Ctx {
         prepared: &mut HashMap<String, Fetched>,
     ) -> Result<Option<Package>> {
         let Some(p) = p.filter(|p| !source_changed(m, req, p)) else { return Ok(None) };
-        if let Some(why) = m.refuses(&p.repository) {
-            bail!(MANIFEST, "{}: {why}", p.name);
-        }
+        m.check_locked(p)?;
         let fits = || {
             let c = Constraint::parse(&req.constraint).ok();
             c.zip(version::Version::parse(&p.version)).is_some_and(|(c, v)| c.allows(&v))
@@ -388,9 +386,7 @@ impl Ctx {
         }
         // A committed lock must not bring in what the policy refuses.
         for p in &lock.packages {
-            if let Some(why) = m.refuses(&p.repository) {
-                bail!(MANIFEST, "{}: {why}", p.name);
-            }
+            m.check_locked(p)?;
         }
         // Nor a version younger than a cooldown the project cannot change: a lock written under a
         // looser one would install unchanged (D7). Its `released` is the lock's word, as at resolution.
@@ -1353,6 +1349,7 @@ fn locked_repository<'a>(m: &'a Manifest, req: &SkillReq, locked: Option<&Packag
 }
 
 fn find(reg: &Registry, m: &Manifest, req: &SkillReq, locked: Option<&Package>) -> Result<(Repository, Vec<Candidate>)> {
+    m.check_name(&req.name)?;
     // A blocked repository fails here; searching the others could pick a namesake elsewhere.
     let blocked = |r: &Repository| m.refuses(&r.url).map(|why| Error::new(MANIFEST, format!("{}: {why}", req.name)));
     let Some(repo) = locked_repository(m, req, locked) else {
@@ -2550,9 +2547,7 @@ pub fn diff_from(ctx: &Ctx, base: &Path, package: Option<&str>) -> Result<()> {
             continue;
         }
         // The lock under review chooses the URL; the policy decides whether it is fetched at all.
-        if let Some(why) = m.refuses(&new.repository) {
-            bail!(MANIFEST, "{}: {why}", new.name);
-        }
+        m.check_locked(new)?;
         let f = ctx.fetch(&new.name, &new.dist, Some(&new.dist_sha256), None)?.1;
         // Shows what `install` would place, or fails where `install` would.
         for sk in &new.skills {

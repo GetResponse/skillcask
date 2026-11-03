@@ -54,6 +54,7 @@ min-release-age = "3d"
 allow-ranges = true
 # allow-sources = ["packagist", "github"]   # only these: repository names, packagist, github, https:// prefixes
 # deny-patterns = true   # risky patterns (curl | sh, ~/.ssh, "ignore previous instructions") and invisible characters fail instead of warning
+# deny-packages = ["vendor/*", "vendor/name"]   # refused by name, from any source
 "#;
 
 pub const GLOBAL_TEMPLATE: &str = r#"# skillcask global manifest: personal skills in ~/.agents/skills. Lock: skills.lock.
@@ -77,6 +78,7 @@ min-release-age = "3d"
 allow-ranges = true
 # allow-sources = ["packagist", "github"]   # only these: repository names, packagist, github, https:// prefixes
 # deny-patterns = true   # risky patterns (curl | sh, ~/.ssh, "ignore previous instructions") and invisible characters fail instead of warning
+# deny-packages = ["vendor/*", "vendor/name"]   # refused by name, from any source
 "#;
 
 pub fn template(global: bool) -> &'static str {
@@ -126,6 +128,8 @@ pub struct Policy {
     pub deny_patterns: bool,
     /// The only sources allowed; `None`: all (D18).
     pub allow_sources: Option<Vec<String>>,
+    /// Packages refused by name, `vendor/name` or `vendor/*` (D57).
+    pub deny_packages: Vec<String>,
     /// Keys set by a layer, with that layer, for `status`.
     pub effective: crate::policy::Effective,
 }
@@ -196,6 +200,24 @@ impl Manifest {
         Some(format!("source {shown} is not in policy.allow-sources ({from}){why}"))
     }
 
+    /// Errors when `name` (`vendor/name`) is in `deny-packages`.
+    pub fn check_name(&self, name: &str) -> Result<()> {
+        if crate::policy::denied(&self.policy.deny_packages, name) {
+            let from = self.policy.effective.get("deny-packages").map_or("", |(_, f)| f);
+            bail!(MANIFEST, "{name} is refused by policy.deny-packages ({from})");
+        }
+        Ok(())
+    }
+
+    /// Errors when the lock entry `p` is refused by name or by source.
+    pub fn check_locked(&self, p: &crate::lock::Package) -> Result<()> {
+        self.check_name(&p.name)?;
+        if let Some(why) = self.refuses(&p.repository) {
+            bail!(MANIFEST, "{}: {why}", p.name);
+        }
+        Ok(())
+    }
+
     /// GitHub is on and `allow-sources` admits at least some GitHub repository.
     pub fn github_allowed(&self) -> bool {
         let repos = format!("{}/repos/", crate::github::api());
@@ -209,8 +231,9 @@ impl Manifest {
         self.repositories.iter().filter(|r| self.allows(&r.url)).cloned().collect()
     }
 
-    /// Errors unless the GitHub or plain git source of `req` may be used.
+    /// Errors unless `req` and its GitHub or plain git source may be used.
     pub fn check_source(&self, req: &SkillReq) -> Result<()> {
+        self.check_name(&req.name)?;
         let Some(url) = &req.git else { return self.check_github(&req.name) };
         if let Some(why) = self.refuses(url) {
             bail!(MANIFEST, "{}: {why}", req.name);
@@ -324,6 +347,10 @@ pub fn parse_with(text: &str, global: bool, outer: &crate::policy::Outer) -> Res
         allow_sources: match effective.get("allow-sources") {
             Some((V::List(l), _)) => Some(l.clone()),
             _ => None,
+        },
+        deny_packages: match effective.get("deny-packages") {
+            Some((V::List(l), _)) => l.clone(),
+            _ => Vec::new(),
         },
         effective,
     };
