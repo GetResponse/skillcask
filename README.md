@@ -47,7 +47,8 @@ The tap was `puniserv/tap` before 0.10.5. If you installed from it, move to the 
 (your app settings stay):
 
 ```sh
-brew uninstall skillcask-app skillcask   # skillcask alone if you have no app
+brew uninstall --cask puniserv/tap/skillcask-app   # skip if you have no app
+brew uninstall puniserv/tap/skillcask
 brew untap puniserv/tap
 brew install getresponse/tap/skillcask getresponse/tap/skillcask-app
 ```
