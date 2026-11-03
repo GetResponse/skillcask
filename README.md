@@ -236,7 +236,8 @@ also with `--frozen`, so a committed lock cannot bring them back. Dependencies f
 rule.
 
 `deny-packages` refuses packages by name, `vendor/name` or a whole `vendor/*`, whatever source
-serves them (a GitHub `owner/repo` counts as `owner/repo`). It is checked before any download and
+serves them (a GitHub `owner/repo` counts as `owner/repo`). A plain git entry is matched by
+its key in `skills.toml`, which the project picks, so limit git URLs with `allow-sources`. It is checked before any download and
 again on every lock entry, so it also stops a dependency or a committed lock.
 
 Policy can also come from `config.toml` next to the global manifest (`~/.config/skillcask`) and
