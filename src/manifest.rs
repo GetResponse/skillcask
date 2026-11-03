@@ -53,7 +53,7 @@ local = ".skills"   # project skills, linked into .agents/skills
 min-release-age = "3d"
 allow-ranges = true
 # allow-sources = ["packagist", "github"]   # only these: repository names, packagist, github, https:// prefixes
-# deny-patterns = true   # risky patterns (curl | sh, ~/.ssh, "ignore previous instructions") fail instead of warning
+# deny-patterns = true   # risky patterns (curl | sh, ~/.ssh, "ignore previous instructions") and invisible characters fail instead of warning
 "#;
 
 pub const GLOBAL_TEMPLATE: &str = r#"# skillcask global manifest: personal skills in ~/.agents/skills. Lock: skills.lock.
@@ -76,7 +76,7 @@ github = { type = "github", url = "https://api.github.com" }
 min-release-age = "3d"
 allow-ranges = true
 # allow-sources = ["packagist", "github"]   # only these: repository names, packagist, github, https:// prefixes
-# deny-patterns = true   # risky patterns (curl | sh, ~/.ssh, "ignore previous instructions") fail instead of warning
+# deny-patterns = true   # risky patterns (curl | sh, ~/.ssh, "ignore previous instructions") and invisible characters fail instead of warning
 "#;
 
 pub fn template(global: bool) -> &'static str {

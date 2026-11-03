@@ -190,7 +190,7 @@ allow-ranges = true      # false: every version must be exact
 packagist = true         # false: drop the implicit Packagist repository
 github-requires = false  # true: dependencies may come from GitHub or git URLs
 allow-sources = ["acme", "own", "packagist", "github"]   # only these sources; default: all
-deny-patterns = false    # true: risky patterns in new skill text fail instead of warning
+deny-patterns = false    # true: risky patterns and invisible characters in new skill text fail instead of warning
 ```
 
 ### Agents
@@ -546,8 +546,8 @@ too young falls back to an older commit when the server supports partial fetches
   | tells the agent to ignore its instructions | "ignore (all) previous/prior instructions", "disregard all previous/prior" |
 
   Skills that teach shell setup trigger some of these legitimately, so they are warnings. With
-  `deny-patterns = true` under `[policy]` (or enforced in `config.toml`) they fail the command
-  with exit 1 and nothing is written.
+  `deny-patterns = true` under `[policy]` (or enforced in `config.toml`) they, and the invisible
+  characters above, fail the command with exit 1 and nothing is written.
 - `skillcask audit` reviews what is installed now, every skill in `.agents/skills` and the project
   skills: the commands its shell code blocks run, the hosts of its URLs, the paths in the home
   directory or under system roots, the environment variables it reads and the files an agent could

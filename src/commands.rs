@@ -734,28 +734,27 @@ impl Ctx {
     }
 }
 
-/// Warns about invisible Unicode in `p`'s skill files (D23).
 /// Warns about invisible characters (D23) and risky patterns (D31) in the skills of a fresh
-/// download; `deny`: risky patterns fail instead (policy.deny-patterns).
+/// download; `deny`: either fails instead (policy.deny-patterns, D56).
 fn scan_new(f: &Fetched, p: &Package, deny: bool) -> Result<()> {
-    let mut risky = 0;
+    let mut found = 0;
     for sk in &p.skills {
         for e in f.skill_files(&p.name, sk.from.as_ref().unwrap_or(&sk.name), &sk.path)? {
             let path = if sk.path.is_empty() { e.path } else { format!("{}/{}", sk.path, e.path) };
             let bytes = std::fs::read(f.dir.path().join(&path))?;
-            for w in skill::invisible_warnings(&path, &bytes) {
-                ui::warn(format!("{}: {w}", p.name));
-            }
-            let found = skill::risky_warnings(&path, &bytes);
-            risky += found.len();
-            for w in found {
+            let warnings = [skill::invisible_warnings(&path, &bytes), skill::risky_warnings(&path, &bytes)].concat();
+            found += warnings.len();
+            for w in warnings {
                 ui::warn(format!("{}: {w}", p.name));
             }
         }
     }
-    if deny && risky > 0 {
-        return Err(Error::new(MANIFEST, format!("{} {}: risky patterns found, refused by policy.deny-patterns", p.name, p.version))
-            .hint("review the lines above; if they are fine, lift deny-patterns for this run with SKILLCASK_DENY_PATTERNS=false"));
+    if deny && found > 0 {
+        return Err(Error::new(
+            MANIFEST,
+            format!("{} {}: risky patterns or invisible characters found, refused by policy.deny-patterns", p.name, p.version),
+        )
+        .hint("review the lines above; if they are fine, lift deny-patterns for this run with SKILLCASK_DENY_PATTERNS=false"));
     }
     Ok(())
 }
