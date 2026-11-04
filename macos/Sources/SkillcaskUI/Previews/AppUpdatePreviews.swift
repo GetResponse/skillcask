@@ -61,6 +61,8 @@ extension PreviewRegistry {
         Entry(id: "U1", state: state, size: CGSize(width: Size.sidebarWidth, height: height)) {
             AnyView(
                 AppUpdateCard(card: card, installed: AppUpdateSample.installed)
+                    // The sidebar footer offers the card its ideal height; a fixed-height entry would not.
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(AppUpdateCard.padding)
                     .frame(width: Size.sidebarWidth)
                     .frame(maxHeight: .infinity, alignment: .top)
