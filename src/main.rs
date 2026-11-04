@@ -176,6 +176,9 @@ enum Cmd {
         /// Print a SARIF 2.1.0 log for code scanning.
         #[arg(long)]
         sarif: bool,
+        /// Also check locked packages for published security advisories and abandoned packages (network, D55).
+        #[arg(long)]
+        advisories: bool,
     },
     /// Search for skill packages; with skills.sh on, also the GitHub skills it lists.
     Search {
@@ -355,7 +358,7 @@ fn run(cli: Cli) -> Result<(), Error> {
         Cmd::Info { target, json } => commands::info(&ctx, &target, json),
         Cmd::Status { json } => commands::status(&ctx, json),
         Cmd::Doctor { fix, json } => commands::doctor(&ctx, fix, json),
-        Cmd::Audit { json, sarif } => commands::audit(&ctx, json, sarif),
+        Cmd::Audit { json, sarif, advisories } => commands::audit(&ctx, json, sarif, advisories),
         Cmd::Search { query, json, skills_sh, no_skills_sh, remember } => {
             let choice = (skills_sh || no_skills_sh).then_some(skills_sh);
             if remember && choice.is_none() {

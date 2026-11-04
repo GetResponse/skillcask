@@ -2192,8 +2192,10 @@ struct Finding {
 }
 
 /// `(rule id, SARIF level, description)`; the rule ids are part of the output (D34).
-const AUDIT_RULES: [(&str, &str, &str); 3] = [
+const AUDIT_RULES: [(&str, &str, &str); 5] = [
     ("modified", "error", "Installed skill differs from skills.lock"),
+    ("advisory", "error", "Locked version has a published security advisory (D55)"),
+    ("abandoned", "warning", "Package is marked abandoned in its repository (D55)"),
     ("risky-pattern", "warning", "Line matches a risky pattern (D31)"),
     ("invisible-character", "warning", "Invisible or bidi control character (D23)"),
 ];
@@ -2201,7 +2203,7 @@ const AUDIT_RULES: [(&str, &str, &str); 3] = [
 /// A skill directory `audit` reads: name, package and locked skill if locked, kind, path.
 type OnDisk<'a> = (String, Option<&'a Package>, Option<&'a LockedSkill>, &'static str, String);
 
-pub fn audit(ctx: &Ctx, json: bool, sarif: bool) -> Result<()> {
+pub fn audit(ctx: &Ctx, json: bool, sarif: bool, advisories: bool) -> Result<()> {
     let s = &ctx.s;
     let m = Manifest::load(&s.config, s.global)?;
     let lock = Lock::load(&s.config)?;
@@ -2247,8 +2249,21 @@ pub fn audit(ctx: &Ctx, json: bool, sarif: bool) -> Result<()> {
         report.push((name, *p, *kind, dir, reach, found.len()));
         findings.extend(found.into_iter().map(|f| (name.clone(), f)));
     }
+    let (published, unchecked, failed) = if advisories { advisory_findings(ctx, &m, &lock)? } else { Default::default() };
+    for (package, rule, message) in published {
+        for (n, (p, _)) in locked.iter().filter(|(_, (p, _))| p.name == package) {
+            let path = format!("{STORE}/{n}");
+            findings.push((n.clone(), Finding { rule, path, line: None, message: format!("{} {}: {message}", p.name, p.version) }));
+        }
+    }
+    for f in &failed {
+        ui::warn(format!("advisories not checked: {f}"));
+    }
+    if !unchecked.is_empty() && !json && !sarif {
+        ui::note(format!("no advisories published for: {}", unchecked.join(", ")));
+    }
 
-    let problems = findings.len();
+    let problems = findings.len() + failed.len();
     if sarif {
         print_json(&sarif_log(&findings));
     } else if json {
@@ -2268,7 +2283,8 @@ pub fn audit(ctx: &Ctx, json: bool, sarif: bool) -> Result<()> {
                 })
             })
             .collect();
-        print_json(&json!({ "ok": problems == 0, "skills": entries }));
+        let checked = advisories.then(|| json!({ "unchecked": unchecked, "failed": failed }));
+        print_json(&json!({ "ok": problems == 0, "skills": entries, "advisories": checked }));
     } else {
         for (name, p, kind, _, r, _) in &report {
             let from = p.map_or(kind.to_string(), |p| format!("{} {}", p.name, p.version));
@@ -2279,7 +2295,7 @@ pub fn audit(ctx: &Ctx, json: bool, sarif: bool) -> Result<()> {
             println!("{}", if ui::agent() { head } else { ui::out(ui::Color::Cyan, head) });
             for (_, f) in findings.iter().filter(|(n, _)| n == *name) {
                 let at = f.line.map_or(s.show(&f.path), |l| format!("{}:{l}", s.show(&f.path)));
-                let (mark, c) = if f.rule == "modified" { ("✗", ui::Color::Red) } else { ("!", ui::Color::Yellow) };
+                let (mark, c) = if matches!(f.rule, "modified" | "advisory") { ("✗", ui::Color::Red) } else { ("!", ui::Color::Yellow) };
                 println!("  {} {}: {}", ui::out(c, mark), skill::shown(&at), f.message);
             }
             for (label, set) in
@@ -2303,6 +2319,64 @@ pub fn audit(ctx: &Ctx, json: bool, sarif: bool) -> Result<()> {
         return Err(Error::new(MANIFEST, format!("{problems} finding(s)")));
     }
     Ok(())
+}
+
+/// `(package, rule, message)` of a finding about a whole package.
+type PackageFinding = (String, &'static str, String);
+
+/// `audit --advisories` (D55): a `PackageFinding` for each advisory that affects a locked
+/// version and each package its repository marks abandoned, the packages whose source publishes
+/// no advisories, and the sources that could not be read.
+fn advisory_findings(ctx: &Ctx, m: &Manifest, lock: &Lock) -> Result<(Vec<PackageFinding>, Vec<String>, Vec<String>)> {
+    let http = ctx.http()?;
+    let reg = Registry::new(http);
+    let repos = m.allowed_repositories();
+    let (mut found, mut unchecked, mut failed) = (Vec::new(), Vec::new(), Vec::new());
+    let affecting = |list: &[registry::Advisory], p: &Package| -> Vec<PackageFinding> {
+        list.iter().filter(|a| a.package == p.name && a.affects(&p.version)).map(|a| (p.name.clone(), "advisory", a.describe())).collect()
+    };
+    let mut composer: Vec<(&Repository, Vec<&Package>)> = Vec::new();
+    for p in &lock.packages {
+        if m.refuses(&p.repository).is_some() {
+            unchecked.push(p.name.clone());
+        } else if p.git_ref.is_some() {
+            match github::advisories(http, &p.repository, &p.name) {
+                Ok(Some(list)) => found.extend(affecting(&list, p)),
+                Ok(None) => unchecked.push(p.name.clone()),
+                Err(e) => failed.push(format!("{}: {}", p.name, e.msg)),
+            }
+        } else if let Some(r) = repos.iter().find(|r| r.url == p.repository) {
+            match composer.iter_mut().find(|(x, _)| x.url == r.url) {
+                Some((_, ps)) => ps.push(p),
+                None => composer.push((r, vec![p])),
+            }
+        } else {
+            unchecked.push(p.name.clone());
+        }
+    }
+    for (r, ps) in composer {
+        let names: Vec<&str> = ps.iter().map(|p| p.name.as_str()).collect();
+        match reg.advisories(r, &names) {
+            Ok(Some(list)) => ps.iter().for_each(|p| found.extend(affecting(&list, p))),
+            Ok(None) => unchecked.extend(names.iter().map(|n| n.to_string())),
+            Err(e) => failed.push(format!("repository {}: {}", r.name, e.msg)),
+        }
+        for p in ps {
+            match reg.versions(r, &p.name) {
+                // Composer marks the whole package, so the newest version's metadata decides.
+                Ok(Some(c)) => match c.first().and_then(|c| c.abandoned.as_ref()) {
+                    Some(Some(to)) if manifest::valid_package_name(to) => {
+                        found.push((p.name.clone(), "abandoned", format!("abandoned; use {to} instead")))
+                    }
+                    Some(_) => found.push((p.name.clone(), "abandoned", "abandoned".into())),
+                    None => {}
+                },
+                Ok(None) => {}
+                Err(e) => failed.push(format!("{}: {}", p.name, e.msg)),
+            }
+        }
+    }
+    Ok((found, unchecked, failed))
 }
 
 /// SARIF 2.1.0, which GitHub code scanning and GitLab read; one result per finding.

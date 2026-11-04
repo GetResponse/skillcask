@@ -41,6 +41,42 @@ pub struct Candidate {
     pub license: Vec<String>,
 }
 
+/// A published security advisory (D55). `affected`: Composer constraints, any of which matches an
+/// affected version; `None` when the source gives none, which means every version.
+pub struct Advisory {
+    pub package: String,
+    pub id: String,
+    pub cve: Option<String>,
+    pub title: Option<String>,
+    pub severity: Option<String>,
+    pub link: Option<String>,
+    pub affected: Vec<Option<String>>,
+}
+
+impl Advisory {
+    /// Whether `version` is affected. A version or range skillcask cannot read counts as affected,
+    /// so an advisory is never dropped for a format it does not know.
+    pub fn affects(&self, version: &str) -> bool {
+        let Some(v) = Version::parse(version) else { return true };
+        self.affected.is_empty()
+            || self.affected.iter().any(|r| r.as_deref().is_none_or(|r| Constraint::parse(r).ok().is_none_or(|c| c.matches(&v))))
+    }
+
+    pub fn describe(&self) -> String {
+        let mut tags = vec![self.id.clone()];
+        tags.extend(self.cve.clone().filter(|c| *c != self.id));
+        tags.extend(self.severity.clone());
+        let mut s = format!("advisory {}", tags.join(", "));
+        if let Some(t) = &self.title {
+            s.push_str(&format!(": {t}"));
+        }
+        if let Some(l) = &self.link {
+            s.push_str(&format!(" ({l})"));
+        }
+        crate::skill::shown(&s)
+    }
+}
+
 const SEARCH_LIMIT: usize = 30;
 
 type Versions = Vec<Map<String, Value>>;
@@ -228,6 +264,39 @@ impl<'a> Registry<'a> {
         let r = Rc::new((url, json));
         self.roots.borrow_mut().insert(repo.url.clone(), r.clone());
         Ok(r)
+    }
+
+    /// Advisories for `packages` from the API the repository's `packages.json` names in
+    /// `security-advisories.api-url` (Packagist does); `None` when it names none (D55).
+    pub fn advisories(&self, repo: &Repository, packages: &[&str]) -> Result<Option<Vec<Advisory>>> {
+        let root = self.root(repo)?;
+        let Some(api) = root.1.get("security-advisories").and_then(|a| a.get("api-url")).and_then(Value::as_str) else {
+            return Ok(None);
+        };
+        let mut url = root.0.join(api).map_err(|e| Error::new(NETWORK, format!("bad security-advisories api-url {api:?}: {e}")))?;
+        for p in packages {
+            url.query_pairs_mut().append_pair("packages[]", p);
+        }
+        let json = self
+            .http
+            .get_json(url.as_str())?
+            .ok_or_else(|| Error::new(NETWORK, format!("repository {}: {} not found", repo.name, crate::http::redact(&url))))?;
+        let s = |a: &Value, k: &str| a.get(k).and_then(Value::as_str).filter(|s| !s.is_empty()).map(String::from);
+        let mut out = Vec::new();
+        for p in packages {
+            for a in json.get("advisories").and_then(|m| m.get(*p)).and_then(Value::as_array).into_iter().flatten() {
+                out.push(Advisory {
+                    package: p.to_string(),
+                    id: s(a, "advisoryId").or_else(|| s(a, "cve")).unwrap_or_else(|| "advisory".into()),
+                    cve: s(a, "cve"),
+                    title: s(a, "title"),
+                    severity: s(a, "severity"),
+                    link: s(a, "link"),
+                    affected: vec![s(a, "affectedVersions")],
+                });
+            }
+        }
+        Ok(Some(out))
     }
 
     pub fn versions(&self, repo: &Repository, package: &str) -> Result<Option<Vec<Candidate>>> {
@@ -476,6 +545,28 @@ pub fn newest<'c>(cands: &'c [Candidate], constraint: Option<&Constraint>) -> Op
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn an_advisory_affects_what_its_ranges_match_and_what_it_cannot_read() {
+        let a = |ranges: &[Option<&str>]| Advisory {
+            package: "acme/x".into(),
+            id: "PKSA-1".into(),
+            cve: None,
+            title: None,
+            severity: None,
+            link: None,
+            affected: ranges.iter().map(|r| r.map(String::from)).collect(),
+        };
+        let composer = a(&[Some(">=1.0.0,<1.0.2|>=2.0.0,<2.1.0")]);
+        assert!(composer.affects("1.0.1") && composer.affects("v2.0.5"));
+        assert!(!composer.affects("1.0.2") && !composer.affects("3.0.0"));
+        let github = a(&[Some(">= 6, < 6.4.48"), Some("= 7.0.0")]);
+        assert!(github.affects("6.4.47") && github.affects("7.0.0") && !github.affects("6.4.48"));
+        // No range, an unreadable range or a commit instead of a version: affected.
+        assert!(a(&[]).affects("1.0.0") && a(&[None]).affects("1.0.0"));
+        assert!(a(&[Some("not a range")]).affects("1.0.0"));
+        assert!(a(&[Some("<0.1")]).affects(&"a".repeat(40)));
+    }
 
     fn p2() -> Value {
         json!({"minified": "composer/2.0", "packages": {"acme/x": [
