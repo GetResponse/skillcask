@@ -61,6 +61,25 @@ a repository without one gets the enforced value. `config.toml` lists the except
 Only `[policy]` is read from `config.toml`; any other table is exit 1, so a typo does not
 silently drop a rule. CI without the file applies the project and the environment.
 
+## Threat model
+
+`enforce` keeps a project from loosening the policy: a cloned repository's `skills.toml`, its
+dependencies (D16) and its committed lock cannot change an enforced key or bring in a source
+outside an enforced `allow-sources`. It guards against what a project brings, not against whoever
+runs skillcask:
+
+- The environment beats an enforced key (layer 1, with a warning), so a CI job or a wrapper can
+  still set the policy for one run.
+- `SKILLCASK_HOME` and `XDG_CONFIG_HOME` choose which `config.toml` is read; pointed at another
+  directory, no key is enforced at all.
+- The user owns `config.toml` and can edit it.
+
+skillcask runs with the user's rights and does not try to stop them; only the operating system
+could (a config directory the user cannot write, managed by MDM, and a locked environment). A rule
+nobody may skip is checked where the developer does not control the run: a required CI job on the
+default branch, with the policy in the job's environment, that runs `install --frozen`, so every
+merged lock passed it.
+
 ## allow-sources
 
 Absent: every source is allowed. Each entry is one of:

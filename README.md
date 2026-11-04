@@ -263,6 +263,11 @@ enforce = ["min-release-age"]
 "https://gitlab.example.com/" = "0"   # internal skills, reviewed in merge requests
 ```
 
+`enforce` stops a project, its dependencies and its lock from loosening the policy. It does not
+stop the person running skillcask: the environment wins over it, and `SKILLCASK_HOME` or
+`XDG_CONFIG_HOME` can point at a config without it. For a rule nobody may skip, run
+`skillcask install --frozen` in a required CI job with the policy in the job's environment.
+
 `config.toml` and the environment take URL prefixes, not repository names, since a name means
 whatever a project calls it. `skillcask status` prints each key that is set and where it came
 from.
@@ -540,10 +545,11 @@ too young falls back to an older commit when the server supports partial fetches
 - `skillcask audit` reviews what is installed now, every skill in `.agents/skills` and the project
   skills: the commands its shell code blocks run, the hosts of its URLs, the paths in the home
   directory or under system roots, the environment variables it reads and the files an agent could
-  run. That is read from the text, so it is a hint for review, not a sandbox. It also reports a
-  locked skill that differs from the lock, and every risky line and invisible character above,
-  with no limit per file, and exits 1 on any of them. `--sarif` prints a SARIF 2.1.0 log for code
-  scanning, e.g. in GitHub Actions:
+  run. That is read from the text, so it is a hint for review, not a sandbox, and not a
+  vulnerability scan: no advisory database is checked, and a skill without findings is not known to
+  be safe. It also reports a locked skill that differs from the lock, and every risky line and
+  invisible character above, with no limit per file, and exits 1 on any of them. `--sarif` prints a
+  SARIF 2.1.0 log for code scanning, e.g. in GitHub Actions:
 
   ```yaml
   - uses: GetResponse/skillcask@v0.8.0
