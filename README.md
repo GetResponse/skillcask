@@ -1,11 +1,8 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/GetResponse/skillcask/master/docs/assets/hero-dark.svg">
-    <img alt="skillcask" src="https://raw.githubusercontent.com/GetResponse/skillcask/master/docs/assets/hero-light.svg" width="640">
-  </picture>
-</p>
-
-<h1 align="center">skillcask</h1>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/GetResponse/skillcask/master/docs/assets/hero-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/GetResponse/skillcask/master/docs/assets/hero-light.svg">
+  <img alt="skillcask: agent skills, pinned by hash" src="https://raw.githubusercontent.com/GetResponse/skillcask/master/docs/assets/hero-light.svg" width="100%">
+</picture>
 
 <p align="center">
   <strong>A lockfile-first package manager for AI agent skills.</strong><br>
@@ -48,8 +45,8 @@ skillcask install --frozen                    # CI: install exactly the lock or 
 ```
 
 Commit `skills.toml` and `skills.lock`; the installed skills are gitignored. In GitHub Actions,
-`uses: GetResponse/skillcask@<commit sha of a release tag>` runs `install --frozen`
-([setup](docs/guide/install.md)).
+`uses: GetResponse/skillcask@<commit sha of a release tag>` with `version: X.Y.Z` runs
+`install --frozen` ([setup](docs/guide/install.md)).
 
 ## Why skillcask
 
@@ -64,10 +61,9 @@ Commit `skills.toml` and `skills.lock`; the installed skills are gitignored. In 
 - **Policy for every project.** `allow-sources`, `deny-packages`, exact versions only, and keys that
   `config.toml` enforces so a project cannot loosen them.
 - **Audit.** `audit` lists what each skill reaches (commands, hosts, paths, env vars, scripts),
-  flags risky lines and invisible characters, checks published advisories and prints SARIF.
+  flags risky lines and invisible characters, and prints SARIF; `--advisories` also checks
+  published security advisories.
 - **Data only.** No package code runs, ever. No telemetry. No PHP, Composer or Node needed.
-- **Also:** dependencies between skills, personal skills (`--global`), a terminal UI
-  (`skillcask ui`), `--json` output and a terse mode for coding agents.
 
 ## How it works
 
@@ -85,8 +81,26 @@ mismatch. Details: [Use](docs/guide/usage.md).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/GetResponse/skillcask/master/docs/assets/macos-app-dark.png">
-  <img alt="The Skillcask macOS app: a project's skills with their state, and the details of one skill" src="https://raw.githubusercontent.com/GetResponse/skillcask/master/docs/assets/macos-app-light.png" width="800">
+  <img alt="Skillcask for macOS: a project's skills with their state, and the details of one skill" src="https://raw.githubusercontent.com/GetResponse/skillcask/master/docs/assets/macos-app-light.png" width="800">
 </picture>
+
+<table>
+  <tr>
+    <td width="33%"><picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/GetResponse/skillcask/master/docs/assets/macos-updates-dark.png">
+      <img alt="Reviewing an update as a diff before applying it" src="https://raw.githubusercontent.com/GetResponse/skillcask/master/docs/assets/macos-updates-light.png">
+    </picture></td>
+    <td width="33%"><picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/GetResponse/skillcask/master/docs/assets/macos-audit-dark.png">
+      <img alt="Security findings for a skill" src="https://raw.githubusercontent.com/GetResponse/skillcask/master/docs/assets/macos-audit-light.png">
+    </picture></td>
+    <td width="33%"><picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/GetResponse/skillcask/master/docs/assets/macos-add-dark.png">
+      <img alt="Searching and adding a skill" src="https://raw.githubusercontent.com/GetResponse/skillcask/master/docs/assets/macos-add-light.png">
+    </picture></td>
+  </tr>
+  <tr><td align="center">Review updates</td><td align="center">Audit findings</td><td align="center">Add skills</td></tr>
+</table>
 
 A SwiftUI app for macOS 14+ over the CLI: see each skill's state, updates and audit findings, read
 its SKILL.md and diffs, and add, update or remove skills. Linux and Windows have the terminal UI,

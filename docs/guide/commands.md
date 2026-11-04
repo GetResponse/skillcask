@@ -6,8 +6,8 @@ Every command except `publish`, `validate` and `projects` takes `-g, --global`.
 |---|---|
 | `init` | Create `skills.toml`. |
 | `add <vendor/name>[@constraint] [--repository r]` | Resolve, lock and install. |
-| `add github:<owner/repo>[/skill][@version-or-ref]` | The same from a GitHub repository, [see below](sources.md#skills-from-github-and-skillssh). |
-| `add git:<https-url>[@version-or-ref]` | The same from any git repository over HTTPS, [see below](sources.md#skills-from-any-git-repository). |
+| `add github:<owner/repo>[/skill][@version-or-ref]` | The same from a GitHub repository, [see Sources](sources.md#skills-from-github-and-skillssh). |
+| `add git:<https-url>[@version-or-ref]` | The same from any git repository over HTTPS, [see Sources](sources.md#skills-from-any-git-repository). |
 | `remove <vendor/name>…` | Drop from manifest and lock; delete files, links and gitignore lines. |
 | `install [--frozen]` | Install the lock. `--frozen` (implied by `CI`) fails when the lock is out of date. |
 | `update [vendor/name…] [--diff]` | Re-resolve within constraints. `--diff` prints what changes in each updated or added package; it does not ask before installing. |
@@ -21,7 +21,7 @@ Every command except `publish`, `validate` and `projects` takes `-g, --global`.
 | `search [query] [--skills-sh\|--no-skills-sh [--remember]]` | Packagist (`type=ai-agent-skill`) and skill packages of the other repositories, GitLab included; with skills.sh on, also the GitHub skills it lists, as `github:owner/repo/skill` with their install count. skills.sh is off until you turn it on, since it receives the query: the first search in a terminal asks once, `--remember` saves a flag's choice (no query needed), both in `config.toml`. |
 | `auth set\|remove <host>` | Keep a registry token in git's credential helper (Keychain, Credential Manager, libsecret). |
 | `publish --vendor v --base-url URL --out DIR [--inline] [--dist-url TPL] [paths…]` | Build a static Composer repository from a monorepo. |
-| `validate [paths…]` | Check `SKILL.md` files against the Agent Skills spec, [see below](publishing.md). |
+| `validate [paths…]` | Check `SKILL.md` files against the Agent Skills spec, [see Publishing skills](publishing.md). |
 | `projects [dirs…]` | Directories that hold `skills.toml` under the given ones (default: the current one), up to 6 levels down; hidden directories, `node_modules`, `vendor`, `target` and `Library` are skipped. |
 | `ui` | A terminal UI over the commands above: skills with their state and updates, `info`, SKILL.md and `audit` per skill, add, adopt (also offered when an add hits a skill skillcask does not manage), update (diff first), remove, doctor, a filter of the list, search of the registries (and skills.sh, asked once), the repositories in use (`R`, `S` turns skills.sh on or off) and a projects picker; `g` switches between the project and `--global`. |
 | `app` | Opens the macOS app (see [macOS app](macos-app.md)); exits 1 when it is not installed, and on Linux and Windows. |
