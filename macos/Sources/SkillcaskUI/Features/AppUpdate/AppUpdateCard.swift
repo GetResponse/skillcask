@@ -104,7 +104,9 @@ struct AppUpdateCard: View {
                     .font(Font.Token.caption)
                     .foregroundStyle(Color.textSecondary)
             }
-            .fixedSize(horizontal: false, vertical: true)
+            // No vertical `fixedSize`: outside the sidebar's `List`, on macOS 26 and later, it makes the split view
+            // as tall as the text's ideal height and shifts every column up (`SidebarCardLayoutTests`). The lines
+            // wrap in full without it.
             .frame(maxWidth: .infinity, alignment: .leading)
             if hides {
                 Button(action: onHide) {
