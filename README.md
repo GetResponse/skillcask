@@ -252,6 +252,10 @@ allow-sources = ["https://gitlab.example.com/", "github"]
 enforce = ["allow-sources"]
 ```
 
+`"github"` in an enforced `allow-sources` is public GitHub (`https://api.github.com/repos/`):
+`SKILLCASK_GITHUB_API` and `GITHUB_API_URL` do not move it. For GitHub Enterprise, enforce its
+prefix, e.g. `"https://ghe.example.com/api/v3/repos/"`.
+
 An enforced `min-release-age` also applies to a repository's own `min-release-age`: a project
 may only make it longer. Exceptions, by URL prefix, stay in `config.toml`:
 
