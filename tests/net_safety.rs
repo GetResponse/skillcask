@@ -176,6 +176,29 @@ fn an_enforced_github_source_is_public_github_only() {
 }
 
 #[test]
+fn a_locked_dist_outside_its_github_repository_is_refused() {
+    let (gh, evil) = (Server::start(), Server::start());
+    let sha = "1".repeat(40);
+    gh.put("/repos/acme/t/tags", json!([{ "name": "v1.0.0", "commit": { "sha": sha } }]).to_string());
+    gh.put(&format!("/repos/acme/t/commits/{sha}"), gh_commit(&sha, 240).to_string());
+    let zip = zipball(&[("SKILL.md", &skill_md("t"))]);
+    gh.put(&format!("/repos/acme/t/zipball/{sha}"), zip.clone());
+    evil.put(&format!("/repos/acme/t/zipball/{sha}"), zip);
+    let p = with_github(Project::new(&gh), &gh);
+    p.write("skills.toml", "[repositories]\npackagist = false\n");
+    p.ok(&["add", "github:acme/t"]);
+    // Regression: only `repository` was held to allow-sources; `dist.url` was fetched as written.
+    p.write(
+        "skills.lock",
+        &p.read("skills.lock").replace(&format!("{}/repos/acme/t/zipball/", gh.base), &format!("{}/repos/acme/t/zipball/", evil.base)),
+    );
+    std::fs::remove_dir_all(p.path().join(".agents")).unwrap();
+    let e = p.expect(&["install", "--frozen"], 1);
+    assert!(e.contains("dist url") && e.contains(&format!("is not {}/repos/acme/t/zipball/{sha}", gh.base)), "{e}");
+    assert!(evil.log().is_empty(), "{:?}", evil.log());
+}
+
+#[test]
 fn github_rate_limit_is_named() {
     let s = Server::start();
     s.respond("/repos/acme/x/tags", 403, &[("x-ratelimit-remaining", "0")], "");
