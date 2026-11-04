@@ -135,7 +135,7 @@ fn advisories_flag_a_locked_version_and_an_abandoned_package() {
         "{out}"
     );
     assert!(!out.contains("PKSA-2"), "{out}");
-    assert!(out.contains(".agents/skills/baz: acme/old 2.0.0: abandoned; use acme/fresh instead"), "{out}");
+    assert!(out.contains(".agents/skills/baz: acme/old is abandoned; use acme/fresh instead"), "{out}");
     assert!(out.contains("2 skill(s), 2 finding(s)"), "{out}");
     let asked = s.requests().into_iter().find(|r| r.path.starts_with("/api/security-advisories/")).unwrap();
     assert!(asked.path.contains("packages%5B%5D=acme%2Fclean") && asked.path.contains("packages%5B%5D=acme%2Fold"), "{}", asked.path);
@@ -143,8 +143,23 @@ fn advisories_flag_a_locked_version_and_an_abandoned_package() {
     let v = json_of(&p, &["audit", "--advisories", "--sarif"]);
     let rules: Vec<&str> = v["runs"][0]["results"].as_array().unwrap().iter().map(|r| r["ruleId"].as_str().unwrap()).collect();
     assert_eq!(rules, ["advisory", "abandoned"]);
-    let v = json_of(&p, &["audit", "--advisories", "--json"]);
+    let o = p.run(&["audit", "--advisories", "--json"]);
+    let v: Value = serde_json::from_slice(&o.stdout).unwrap();
     assert_eq!(v["advisories"], json!({ "unchecked": [], "failed": [] }));
+    assert!(!String::from_utf8_lossy(&o.stderr).contains("advisories not checked"), "notes stay off stderr with --json");
+    assert_eq!(json_of(&p, &["audit", "--json"])["advisories"], Value::Null);
+
+    // A replacement that is not a package name is not printed: it is registry text.
+    s.put(
+        "/p2/acme/old.json",
+        json!({ "minified": "composer/2.0", "packages": { "acme/old": [{
+            "name": "acme/old", "type": "ai-agent-skill", "version": "2.0.0", "version_normalized": "2.0.0.0",
+            "dist": { "type": "zip", "url": s.url("/dist/acme/old/2.0.0.zip"), "reference": "ref0", "shasum": "" },
+            "abandoned": "acme/x\u{1b}[31m" }] } })
+        .to_string(),
+    );
+    let out = p.expect(&["audit", "--advisories"], 1);
+    assert!(out.contains(": acme/old is abandoned\n") && !out.contains('\u{1b}'), "{out}");
 }
 
 #[test]
@@ -157,12 +172,70 @@ fn advisories_fail_when_a_source_cannot_be_read_and_name_sources_without_any() {
     // No security-advisories in packages.json: nothing to check, not a failure.
     let o = p.run(&["audit", "--advisories"]);
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
-    assert!(String::from_utf8_lossy(&o.stderr).contains("no advisories published for: acme/clean"));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("advisories not checked: acme/clean"));
     assert_eq!(json_of(&p, &["audit", "--advisories", "--json"])["advisories"]["unchecked"], json!(["acme/clean"]));
 
     with_advisories_api(&s);
     let out = p.expect(&["audit", "--advisories"], 1);
-    assert!(out.contains("advisories not checked: repository fix:") && out.contains("not found"), "{out}");
+    assert!(out.contains("advisories could not be read: repository fix: https://") && out.contains("not found"), "{out}");
+    let v = json_of(&p, &["audit", "--advisories", "--sarif"]);
+    let inv = &v["runs"][0]["invocations"][0];
+    assert_eq!(inv["executionSuccessful"], false);
+    assert!(inv["toolExecutionNotifications"][0]["message"]["text"].as_str().unwrap().contains("repository fix"), "{inv}");
+}
+
+#[test]
+fn an_unreadable_composer_root_fails_once_for_all_its_packages() {
+    let s = Server::start();
+    s.simple("acme/clean", "1.0.0", "bar");
+    s.simple("acme/old", "2.0.0", "baz");
+    let p = Project::new(&s);
+    manifest(&p, &s, "");
+    p.ok(&["add", "acme/clean"]);
+    p.ok(&["add", "acme/old"]);
+    s.respond("/packages.json", 404, &[], "");
+    let before = s.log().len();
+    let out = p.expect(&["audit", "--advisories"], 1);
+    assert_eq!(out.matches("advisories could not be read").count(), 1, "{out}");
+    assert!(!out.contains("repository fix: repository fix"), "{out}");
+    assert!(out.contains("2 skill(s), 1 finding(s)"), "{out}");
+    let roots = s.log()[before..].iter().filter(|l| l.starts_with("/packages.json")).count();
+    assert_eq!(roots, 1, "{:?}", s.log());
+}
+
+#[test]
+fn a_refused_source_is_unchecked_and_gets_no_request() {
+    let s = Server::start();
+    s.simple("acme/clean", "1.0.0", "bar");
+    with_advisories_api(&s);
+    let mut p = Project::new(&s);
+    manifest(&p, &s, "");
+    p.ok(&["add", "acme/clean"]);
+    p.env.push(("SKILLCASK_ALLOW_SOURCES".into(), "https://elsewhere.example.com/".into()));
+    let v = json_of(&p, &["audit", "--advisories", "--json"]);
+    assert_eq!(v["advisories"]["unchecked"], json!(["acme/clean"]), "{v}");
+    assert!(!s.log().iter().any(|l| l.starts_with("/api/security-advisories")), "{:?}", s.log());
+}
+
+#[test]
+fn a_plain_git_entry_is_unchecked() {
+    let s = Server::start();
+    let r = tempfile::tempdir().unwrap();
+    git(r.path(), &["init", "-q", "-b", "main"]);
+    std::fs::write(r.path().join("SKILL.md"), skill_md("plain")).unwrap();
+    git(r.path(), &["add", "-A"]);
+    git(r.path(), &["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "c"]);
+    git(r.path(), &["-c", "user.name=t", "-c", "user.email=t@example.com", "tag", "-a", "v1.0.0", "-m", "v1.0.0"]);
+    s.serve_git("/acme/plain.git", r.path());
+    let mut p = Project::new(&s);
+    p.env.push(("SKILLCASK_MIN_RELEASE_AGE".into(), "0".into()));
+    p.write("skills.toml", "[skills]\n\n[policy]\npackagist = false\n");
+    p.ok(&["add", &format!("git:{}", s.url("/acme/plain.git"))]);
+    let o = p.run(&["audit", "--advisories", "--json"]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let v: Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v["advisories"]["unchecked"], json!(["acme/plain"]), "{v}");
+    assert!(!s.log().iter().any(|l| l.contains("security-advisories")), "{:?}", s.log());
 }
 
 #[test]
@@ -190,4 +263,35 @@ fn advisories_of_a_github_repository_match_the_locked_tag() {
     let out = p.expect(&["audit", "--advisories"], 1);
     assert!(out.contains("acme/tagged v1.0.0: advisory GHSA-aaaa-bbbb-cccc, critical: Leaks tokens"), "{out}");
     assert!(!out.contains("GHSA-dddd"), "{out}");
+
+    s.respond("/repos/acme/tagged/security-advisories", 500, &[], "");
+    let out = p.expect(&["audit", "--advisories"], 1);
+    assert!(out.contains("advisories could not be read: acme/tagged:"), "{out}");
+}
+
+#[test]
+fn a_commit_pinned_github_entry_counts_advisories_published_after_its_commit() {
+    let s = Server::start();
+    let head = "b".repeat(40);
+    s.put("/repos/acme/tools/tags", "[]");
+    s.put("/repos/acme/tools", json!({ "default_branch": "main" }).to_string());
+    s.put("/repos/acme/tools/commits/HEAD", json!({ "sha": head, "commit": { "committer": { "date": ago(300) } } }).to_string());
+    s.put("/repos/acme/tools/activity", json!([{ "before": "0".repeat(40), "after": head, "timestamp": ago(300) }]).to_string());
+    s.put(&format!("/repos/acme/tools/zipball/{head}"), zipball(&[("SKILL.md", &skill_md("tools"))]));
+    s.put(
+        "/repos/acme/tools/security-advisories",
+        json!([
+            { "ghsa_id": "GHSA-newr-aaaa-aaaa", "published_at": ago(1), "vulnerabilities": [{ "vulnerable_version_range": "< 1.0.2" }] },
+            { "ghsa_id": "GHSA-oldr-aaaa-aaaa", "published_at": ago(400), "vulnerabilities": [{ "vulnerable_version_range": "< 1.0.2" }] },
+            { "ghsa_id": "GHSA-gone-aaaa-aaaa", "published_at": ago(1), "withdrawn_at": ago(1) },
+        ])
+        .to_string(),
+    );
+    let mut p = Project::new(&s);
+    p.env.push(("SKILLCASK_GITHUB_API".into(), s.base.clone()));
+    p.manifest(&s, "");
+    p.ok(&["add", "github:acme/tools"]);
+    let out = p.expect(&["audit", "--advisories"], 1);
+    assert!(out.contains("advisory GHSA-newr-aaaa-aaaa"), "{out}");
+    assert!(!out.contains("GHSA-oldr") && !out.contains("GHSA-gone"), "{out}");
 }

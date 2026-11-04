@@ -556,8 +556,10 @@ too young falls back to an older commit when the server supports partial fetches
 - `skillcask audit --advisories` also asks the sources of the locked packages what is published
   about them: security advisories from a Composer repository that offers them (Packagist does) and
   from a GitHub repository's security advisories, matched against the locked version, and
-  packages marked abandoned. A source that cannot be read fails the run; packages whose source
-  publishes no advisories are listed as unchecked. Plain `audit` stays offline. To warn users of
+  packages marked abandoned. An entry locked at a commit has no version to match, so only
+  advisories published after that commit count. A source that cannot be read fails the run;
+  packages whose source publishes no advisories, and plain git entries, are listed as unchecked.
+  Plain `audit` stays offline. To warn users of
   your skill, publish a GitHub security advisory on its repository (for a Composer package, with
   the `composer` ecosystem and the package name, so Packagist lists it too).
 - `--sarif` prints a SARIF 2.1.0 log for code scanning, e.g. in GitHub Actions. Scripts a skill
@@ -565,10 +567,12 @@ too young falls back to an older commit when the server supports partial fetches
   `--advisories`; [OSV-Scanner](https://github.com/google/osv-scanner) checks those:
 
   ```yaml
-  - uses: GetResponse/skillcask@v0.8.0
+  - uses: GetResponse/skillcask@v0.10.5
     with:
       args: install --frozen
   - run: skillcask audit --advisories --sarif > skills.sarif
+    env:
+      GITHUB_TOKEN: ${{ github.token }}   # anonymous GitHub API calls are limited to 60 an hour
   - uses: github/codeql-action/upload-sarif@v3
     if: always()
     with:
