@@ -24,5 +24,5 @@ Examples of what we treat as a vulnerability:
 - A project or a dependency loosens a policy key that `config.toml` enforces.
 - A credential is sent to a host it is not meant for.
 
-The design and the threat model are in the [README](README.md#security) and in
+The design and the threat model are in the [security guide](docs/guide/security.md) and in
 `docs/specs/2026-10-19-skillcask-v1.md`.
