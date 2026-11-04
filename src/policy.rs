@@ -257,24 +257,44 @@ pub fn remember_skills_sh(on: bool) -> Result<std::path::PathBuf> {
     })
 }
 
-/// Set once the environment-over-`enforce` warnings are printed: a run loads the manifest more than once.
-static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
 /// Layer names `resolve` records and `fixed` matches.
 pub const ENVIRONMENT: &str = "environment";
 pub const ENFORCED: &str = "config.toml, enforced";
 
-/// Merges the layers; a manifest value that differs from an enforced one is an error.
+/// An `allow-sources` entry as the URL prefix it stands for.
+fn source_url(entry: &str) -> String {
+    match entry {
+        "packagist" => crate::manifest::PACKAGIST_URL.to_string(),
+        "github" => format!("{}/repos/", crate::github::trusted_api()),
+        e => e.to_string(),
+    }
+}
+
+/// Whether the environment's `v` asks at least what the enforced `e` asks (D18): a cooldown as
+/// long, `deny-patterns` on if it is on, `allow-ranges`, `packagist` and `github-requires` off if
+/// they are off, and only sources inside the enforced `allow-sources`.
+pub fn tightens(k: &str, v: &Value, e: &Value) -> bool {
+    match (v, e) {
+        (Value::Age(v), Value::Age(e)) => v >= e,
+        (Value::Bool(v), Value::Bool(e)) if k == "deny-patterns" => v >= e,
+        (Value::Bool(v), Value::Bool(e)) => v <= e,
+        (Value::List(v), Value::List(e)) => v.iter().all(|x| e.iter().any(|y| x == y || under(&source_url(x), &source_url(y)))),
+        _ => false,
+    }
+}
+
+/// Merges the layers; a manifest value that differs from an enforced one is an error, and so is
+/// an environment value that loosens one.
 pub fn resolve(project: &Layer, o: &Outer) -> Result<Effective> {
     let mut out = Effective::new();
-    let mut overrides = Vec::new();
     for k in KEYS {
         let enforced = o.config.enforce.contains(k).then(|| o.config.values.get(k)).flatten();
         if let (Some(e), Some(v)) = (enforced, o.env.values.get(k))
-            && e != v
+            && !tightens(k, v, e)
         {
             let var = format!("SKILLCASK_{}", k.to_uppercase().replace('-', "_"));
-            overrides.push(format!("{var} overrides policy.{k} = {e} enforced by {}; using {v}", o.config_path));
+            return Err(Error::new(MANIFEST, format!("{var} = {v} loosens policy.{k} = {e} enforced by {}", o.config_path))
+                .hint(format!("unset {var} or make it stricter, or ask whoever manages {} to lift it", o.config_path)));
         }
         // With the key in the environment the project's value is unused, so it cannot clash.
         if let (Some(e), Some(p), None) = (enforced, project.values.get(k), o.env.values.get(k))
@@ -286,8 +306,7 @@ pub fn resolve(project: &Layer, o: &Outer) -> Result<Effective> {
                 o.config_path
             )));
         }
-        // The environment repeating the enforced value lifts nothing: it stays enforced, so the
-        // per-repository floor of D28 still applies.
+        // The environment repeating the enforced value changes nothing: it stays enforced.
         let pick = if let Some(v) = o.env.values.get(k).filter(|v| enforced != Some(*v)) {
             Some((v, ENVIRONMENT))
         } else if let Some(v) = enforced {
@@ -299,11 +318,6 @@ pub fn resolve(project: &Layer, o: &Outer) -> Result<Effective> {
         };
         if let Some((v, from)) = pick {
             out.insert(k, (v.clone(), from));
-        }
-    }
-    if !overrides.is_empty() && !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-        for w in overrides {
-            crate::ui::warn(w);
         }
     }
     Ok(out)
@@ -343,6 +357,27 @@ pub fn under(url: &str, prefix: &str) -> bool {
 mod tests {
     use super::*;
 
+    #[test]
+    fn the_environment_may_only_tighten_an_enforced_value() {
+        let age = |s: &str| Value::Age(crate::manifest::duration(s).unwrap());
+        let list = |l: &[&str]| Value::List(l.iter().map(|s| s.to_string()).collect());
+        assert!(tightens("min-release-age", &age("5d"), &age("3d")) && tightens("min-release-age", &age("3d"), &age("3d")));
+        assert!(!tightens("min-release-age", &age("0"), &age("3d")));
+        assert!(tightens("deny-patterns", &Value::Bool(true), &Value::Bool(false)));
+        assert!(!tightens("deny-patterns", &Value::Bool(false), &Value::Bool(true)));
+        for k in ["allow-ranges", "packagist", "github-requires"] {
+            assert!(tightens(k, &Value::Bool(false), &Value::Bool(true)), "{k}");
+            assert!(!tightens(k, &Value::Bool(true), &Value::Bool(false)), "{k}");
+        }
+        let enforced = list(&["https://gitlab.example.com/", "github"]);
+        assert!(tightens("allow-sources", &list(&["https://gitlab.example.com/skills/"]), &enforced));
+        assert!(tightens("allow-sources", &list(&["https://api.github.com/repos/acme/"]), &enforced));
+        assert!(tightens("allow-sources", &list(&[]), &enforced));
+        assert!(!tightens("allow-sources", &list(&["packagist"]), &enforced));
+        assert!(!tightens("allow-sources", &list(&["https://gitlab.example.com.evil/"]), &enforced));
+        assert!(tightens("allow-sources", &list(&["packagist"]), &list(&["https://repo.packagist.org/"])));
+    }
+
     fn cfg(text: &str) -> Result<Layer> {
         let doc: DocumentMut = text.parse().unwrap();
         layer(doc.get("policy").and_then(Item::as_table_like), "config.toml", true)
@@ -369,9 +404,12 @@ mod tests {
         let same = proj("[policy]\nallow-sources = [\"https://git.example.com/\"]");
         assert!(resolve(&same, &o).is_ok());
 
-        let env = env_layer(|k| (k == "SKILLCASK_ALLOW_SOURCES").then(|| "github, packagist".to_string())).unwrap();
-        let e = resolve(&clash, &Outer { env, ..o }).unwrap();
-        assert_eq!(e["allow-sources"], (Value::List(vec!["github".into(), "packagist".into()]), "environment"));
+        // The environment may narrow an enforced key, never widen it (D18).
+        let env = |v: &str| env_layer(|k| (k == "SKILLCASK_ALLOW_SOURCES").then(|| v.to_string())).unwrap();
+        let wide = resolve(&clash, &Outer { env: env("github, packagist"), ..o.clone() }).unwrap_err();
+        assert!(wide.msg.contains("SKILLCASK_ALLOW_SOURCES = [\"github\", \"packagist\"] loosens policy.allow-sources"), "{}", wide.msg);
+        let e = resolve(&clash, &Outer { env: env("https://git.example.com/skills/"), ..o }).unwrap();
+        assert_eq!(e["allow-sources"], (Value::List(vec!["https://git.example.com/skills/".into()]), "environment"));
     }
 
     #[test]

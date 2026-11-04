@@ -34,9 +34,11 @@ Keys: `min-release-age`, `allow-ranges`, `packagist`, `github-requires`, `allow-
 2. User config `config.toml` in the config dir of D13 (`$SKILLCASK_HOME`,
    `$XDG_CONFIG_HOME/skillcask`, `~/.config/skillcask`), keys listed in `enforce`. A project that
    sets an enforced key to another value is exit 1 naming the key and the file, unless the
-   environment sets the key: then the project's value is unused. An environment value that
-   differs from an enforced one wins, with one warning per run on stderr naming the variable,
-   both values and the file.
+   environment sets the key: then the project's value is unused. Against an enforced key the
+   environment may only tighten: a longer `min-release-age`, `deny-patterns = true`,
+   `allow-ranges`, `packagist` or `github-requires` false, an `allow-sources` whose every entry
+   lies inside an enforced one. A looser value is exit 1 naming the variable, both values and the
+   file.
 3. `[policy]` of the project (or global) `skills.toml`.
 4. User config, keys not in `enforce`.
 5. Built-in defaults.
@@ -73,10 +75,9 @@ when a version is resolved (D23, D31), not to a version the lock already pins, a
 
 It guards against what a project brings, not against whoever runs skillcask:
 
-- The environment beats an enforced key (layer 1; a warning names a value that differs from the
-  enforced one), so a CI job or a wrapper can still set the policy for one run. A
-  `SKILLCASK_MIN_RELEASE_AGE` other than the enforced value also lifts the per-repository floor of
-  D28 for that run; the enforced value repeated keeps it.
+- The environment cannot loosen an enforced key, only tighten it (layer 1), so a CI job or a
+  wrapper can make one run stricter, and a project's CI configuration cannot lift the company
+  policy. A longer `SKILLCASK_MIN_RELEASE_AGE` raises the per-repository floor of D28 with it.
 - `SKILLCASK_HOME`, `XDG_CONFIG_HOME` and `HOME` (else `USERPROFILE`, through the
   `~/.config/skillcask` fallback) choose which `config.toml` is read; pointed at another
   directory, no key is enforced at all.
@@ -153,5 +154,5 @@ with its layer: `allow-sources = ["acme"] (config.toml, enforced)`.
   `github = false`.
 - Integration: allow-sources limited to a private repository blocks a Packagist-only package
   without a request to it; a lock entry from a blocked source fails `install --frozen`; an
-  enforced key in `config.toml` beats the project and the environment beats both; a dependency
+  enforced key in `config.toml` beats the project, and the environment may only tighten it; a dependency
   from a blocked source fails; `status` shows the origin.

@@ -341,7 +341,10 @@ pub fn parse_with(text: &str, global: bool, outer: &crate::policy::Outer) -> Res
     }
     // A public package must never shadow a private one with the same name.
     repositories.sort_by_key(is_packagist);
-    if let Some((V::Age(enforced), crate::policy::ENFORCED)) = policy.effective.get("min-release-age") {
+    // The environment can only lengthen an enforced cooldown (D18), and the floor follows it.
+    if let Some((V::Age(enforced), crate::policy::ENFORCED | crate::policy::ENVIRONMENT)) = policy.effective.get("min-release-age")
+        && outer.config.enforce.contains(&"min-release-age")
+    {
         for r in &mut repositories {
             let floor = crate::policy::repository_floor(outer, &r.url, *enforced);
             match r.min_release_age {
@@ -925,13 +928,16 @@ min-release-age = "12h"
         let packagist = m(r#""https://other.example/packages.json", min-release-age = "4d""#).unwrap();
         assert_eq!(packagist.min_release_age(&packagist.repositories[1]), SignedDuration::from_hours(72));
 
-        let env = crate::policy::env_layer(|k| (k == "SKILLCASK_MIN_RELEASE_AGE").then(|| "1h".to_string())).unwrap();
-        let lifted = parse_with(
-            "[repositories]\nr = { url = \"https://other.example/p.json\", min-release-age = \"0\" }",
-            false,
-            &crate::policy::Outer { env, ..o },
-        );
-        assert_eq!(age(lifted.unwrap()), SignedDuration::ZERO, "the environment lifts enforcement");
+        // The environment cannot lift the enforced cooldown, only lengthen it, and the floor follows.
+        let env = |v: &str| crate::policy::env_layer(|k| (k == "SKILLCASK_MIN_RELEASE_AGE").then(|| v.to_string())).unwrap();
+        let repo = |extra: &str| format!("[repositories]\nr = {{ url = \"https://other.example/p.json\"{extra} }}");
+        let o = |v: &str| crate::policy::Outer { env: env(v), ..o.clone() };
+        {
+            let e = parse_with(&repo(""), false, &o("1h")).unwrap_err().msg;
+            assert!(e.contains("SKILLCASK_MIN_RELEASE_AGE = \"1h\" loosens policy.min-release-age = \"72h\""), "{e}");
+        }
+        assert_eq!(age(parse_with(&repo(""), false, &o("7d")).unwrap()), SignedDuration::from_hours(168));
+        assert!(parse_with(&repo(", min-release-age = \"0\""), false, &o("7d")).unwrap_err().msg.contains("shorter than \"168h\""));
     }
 
     #[test]

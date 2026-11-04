@@ -87,7 +87,7 @@ fn a_cooldown_the_project_cannot_change_also_holds_the_lock() {
 }
 
 #[test]
-fn the_environment_repeating_an_enforced_cooldown_keeps_the_repository_floor() {
+fn the_environment_cannot_shorten_an_enforced_cooldown_or_its_repository_floor() {
     let s = Server::start();
     young_and_old(&s);
     let mut p = Project::new(&s);
@@ -102,10 +102,13 @@ fn the_environment_repeating_an_enforced_cooldown_keeps_the_repository_floor() {
     assert!(p.expect(&["add", "acme/one"], 1).contains("is shorter than \"72h\""));
     p.env.push(("SKILLCASK_MIN_RELEASE_AGE".into(), "3d".into()));
     assert!(p.expect(&["add", "acme/one"], 1).contains("is shorter than \"72h\""), "the same value lifts nothing");
+    // A shorter value cannot lift it (D18); a longer one raises the floor with it.
     p.env.retain(|(k, _)| k != "SKILLCASK_MIN_RELEASE_AGE");
     p.env.push(("SKILLCASK_MIN_RELEASE_AGE".into(), "1h".into()));
-    let out = p.ok(&["add", "acme/one"]);
-    assert!(out.contains("warning: SKILLCASK_MIN_RELEASE_AGE overrides policy.min-release-age"), "{out}");
+    assert!(p.expect(&["add", "acme/one"], 1).contains("SKILLCASK_MIN_RELEASE_AGE = \"1h\" loosens policy.min-release-age"));
+    p.env.retain(|(k, _)| k != "SKILLCASK_MIN_RELEASE_AGE");
+    p.env.push(("SKILLCASK_MIN_RELEASE_AGE".into(), "7d".into()));
+    assert!(p.expect(&["add", "acme/one"], 1).contains("is shorter than \"168h\""));
 }
 
 #[test]

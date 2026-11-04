@@ -77,12 +77,16 @@ fn enforced_config_beats_the_project_and_the_environment_beats_both() {
     let st = p.ok(&["status"]);
     assert!(st.contains("policy.allow-sources = [") && st.contains("(config.toml, enforced)"), "{st}");
 
+    // A project's CI sets the environment too, so it cannot widen an enforced key (D18)...
     let mut env = two_repos(&s, "allow-sources = [\"pub\"]");
-    env.config(&format!("[policy]\nallow-sources = [\"{}\"]\nenforce = [\"allow-sources\"]\n", s.url("/packages.json")));
+    env.config(&format!("[policy]\nallow-sources = [\"{}\"]\nenforce = [\"allow-sources\"]\n", s.url("/")));
+    env.env.push(("SKILLCASK_ALLOW_SOURCES".into(), format!("{},packagist", s.url("/pub/"))));
+    let e = env.expect(&["add", "acme/public"], 1);
+    assert!(e.contains("SKILLCASK_ALLOW_SOURCES = [") && e.contains("loosens policy.allow-sources") && e.contains("config.toml"), "{e}");
+    // ...only narrow it.
+    env.env.retain(|(k, _)| k != "SKILLCASK_ALLOW_SOURCES");
     env.env.push(("SKILLCASK_ALLOW_SOURCES".into(), s.url("/pub/")));
-    let out = env.ok(&["add", "acme/public"]);
-    assert_eq!(out.matches("warning: SKILLCASK_ALLOW_SOURCES overrides policy.allow-sources").count(), 1, "{out}");
-    assert!(out.contains("enforced by") && out.contains("config.toml"), "{out}");
+    env.ok(&["add", "acme/public"]);
     assert!(env.ok(&["status"]).contains("(environment)"));
 
     // The same value as the enforced one changes nothing, so it is not worth a warning.
