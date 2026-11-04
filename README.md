@@ -263,10 +263,14 @@ enforce = ["min-release-age"]
 "https://gitlab.example.com/" = "0"   # internal skills, reviewed in merge requests
 ```
 
-`enforce` stops a project, its dependencies and its lock from loosening the policy. It does not
-stop the person running skillcask: the environment wins over it, and `SKILLCASK_HOME` or
-`XDG_CONFIG_HOME` can point at a config without it. For a rule nobody may skip, run
-`skillcask install --frozen` in a required CI job with the policy in the job's environment.
+`enforce` stops a project and its dependencies from loosening the policy for what they resolve,
+and a lock entry from a source outside an enforced `allow-sources` from installing. A version the
+lock already pins is not checked again against `min-release-age` or `deny-patterns`, so review
+lock changes. `enforce` does not stop the person running skillcask: the environment wins over it,
+and `SKILLCASK_HOME`, `XDG_CONFIG_HOME` or `HOME` can point at a config without it. For a rule
+nobody may skip, run `skillcask install --frozen` as a required check on pull requests, with the
+policy in the job's environment and `.github/workflows/` protected (CODEOWNERS or a required
+workflow), since a pull request runs its own copy of the workflow.
 
 `config.toml` and the environment take URL prefixes, not repository names, since a name means
 whatever a project calls it. `skillcask status` prints each key that is set and where it came
