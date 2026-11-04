@@ -281,11 +281,12 @@ pub fn remember_skills_sh(on: bool) -> Result<std::path::PathBuf> {
 pub const ENVIRONMENT: &str = "environment";
 pub const ENFORCED: &str = "config.toml, enforced";
 
-/// An `allow-sources` entry as the URL prefix it stands for.
+/// An entry of an enforced `allow-sources` as the URL prefix it stands for; `github` is public
+/// GitHub, which `SKILLCASK_GITHUB_API` and `GITHUB_API_URL` cannot move (D43).
 fn source_url(entry: &str) -> String {
     match entry {
         "packagist" => crate::manifest::PACKAGIST_URL.to_string(),
-        "github" => format!("{}/repos/", crate::github::trusted_api()),
+        "github" => format!("{}/repos/", crate::github::API),
         e => e.to_string(),
     }
 }

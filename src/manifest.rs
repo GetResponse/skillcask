@@ -130,6 +130,8 @@ pub struct Policy {
     pub allow_sources: Option<Vec<String>>,
     /// Packages refused by name, `vendor/name` or `vendor/*` (D57).
     pub deny_packages: Vec<String>,
+    /// `config.toml` enforces `allow-sources`, so `"github"` there is public GitHub only (D43).
+    pub github_public: bool,
     /// Keys set by a layer, with that layer, for `status`.
     pub effective: crate::policy::Effective,
 }
@@ -175,9 +177,16 @@ impl Manifest {
     }
 
     /// The API `"github"` in `allow-sources` stands for: the one in use, unless the list comes from
-    /// the environment or an enforced key, which a project's `github` url must not widen (D43).
+    /// the environment, which a project's `github` url must not widen, or is enforced, which the
+    /// environment must not move either (D43).
     fn github_api(&self) -> String {
-        if crate::policy::fixed(&self.policy.effective, "allow-sources") { crate::github::trusted_api() } else { crate::github::api() }
+        if self.policy.github_public {
+            crate::github::API.to_string()
+        } else if crate::policy::fixed(&self.policy.effective, "allow-sources") {
+            crate::github::trusted_api()
+        } else {
+            crate::github::api()
+        }
     }
 
     /// Why packages from `url` are refused, or `None` when they are allowed.
@@ -190,10 +199,12 @@ impl Manifest {
         let github = self.policy.allow_sources.as_ref().is_some_and(|l| l.iter().any(|e| e == "github"))
             && crate::policy::under(url, &format!("{}/repos/", crate::github::api()));
         let why = if github {
-            format!(
-                "; \"github\" there means {} (SKILLCASK_GITHUB_API names another)",
-                crate::http::shown_url(&crate::github::trusted_api())
-            )
+            let other = if self.policy.github_public {
+                "an enforced list names another by its https:// prefix"
+            } else {
+                "SKILLCASK_GITHUB_API names another"
+            };
+            format!("; \"github\" there means {} ({other})", crate::http::shown_url(&self.github_api()))
         } else {
             String::new()
         };
@@ -353,6 +364,7 @@ pub fn parse_with(text: &str, global: bool, outer: &crate::policy::Outer) -> Res
             Some((V::List(l), _)) => l.clone(),
             _ => Vec::new(),
         },
+        github_public: outer.config.enforce.contains("allow-sources") && outer.config.values.contains_key("allow-sources"),
         effective,
     };
     if let Some(list) = &policy.allow_sources

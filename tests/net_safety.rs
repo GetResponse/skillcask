@@ -145,22 +145,34 @@ fn an_enforced_github_source_is_not_widened_by_the_manifest() {
 }
 
 #[test]
-fn an_enforced_github_source_means_the_api_the_user_names() {
+fn an_enforced_github_source_is_public_github_only() {
     let gh = Server::start();
     let sha = "1".repeat(40);
     gh.put("/repos/acme/t/tags", json!([{ "name": "v1.0.0", "commit": { "sha": sha } }]).to_string());
     gh.put(&format!("/repos/acme/t/commits/{sha}"), gh_commit(&sha, 240).to_string());
     gh.put(&format!("/repos/acme/t/zipball/{sha}"), zipball(&[("SKILL.md", &skill_md("t"))]));
-    let p = with_github(Project::new(&gh), &gh);
+    // Regression: the environment's API used to be what an enforced "github" allowed, and
+    // GITHUB_TOKEN went along to it.
+    let mut p = with_github(Project::new(&gh), &gh);
+    p.env.push(("GITHUB_TOKEN".into(), "ght0ken".into()));
     p.config("[policy]\nallow-sources = [\"github\"]\nenforce = [\"allow-sources\"]\n");
     p.write("skills.toml", "[repositories]\npackagist = false\n");
+    let e = p.expect(&["add", "github:acme/t"], 1);
+    assert!(e.contains("\"github\" there means https://api.github.com"), "{e}");
+    p.env.retain(|(k, _)| k != "SKILLCASK_GITHUB_API");
+    p.env.push(("GITHUB_API_URL".into(), gh.base.clone()));
+    p.write("skills.toml", &format!("[repositories]\npackagist = false\ngithub = {{ type = \"github\", url = \"{}\" }}\n", gh.base));
+    p.expect(&["add", "github:acme/t"], 1);
+    assert!(gh.log().is_empty(), "{:?}", gh.log());
+    // Nor can the environment name it as a prefix inside the enforced alias.
+    p.env.push(("SKILLCASK_ALLOW_SOURCES".into(), format!("{}/repos/", gh.base)));
+    assert!(p.expect(&["status"], 1).contains("loosens policy.allow-sources"));
+
+    // GitHub Enterprise is enforced by its prefix.
+    p.env.retain(|(k, _)| k != "SKILLCASK_ALLOW_SOURCES" && k != "SKILLCASK_GITHUB_API");
+    p.env.push(("SKILLCASK_GITHUB_API".into(), gh.base.clone()));
+    p.config(&format!("[policy]\nallow-sources = [\"{}/repos/\"]\nenforce = [\"allow-sources\"]\n", gh.base));
     p.ok(&["add", "github:acme/t"]);
-    // A committed lock moves the repository to public GitHub, which the user did not name.
-    let lock = p.read("skills.lock").replace(&format!("{}/repos/acme/t", gh.base), "https://api.github.com/repos/acme/t");
-    assert!(lock.contains("https://api.github.com/repos/acme/t"), "{lock}");
-    p.write("skills.lock", &lock);
-    let e = p.expect(&["install", "--frozen"], 1);
-    assert!(e.contains("not in policy.allow-sources"), "{e}");
 }
 
 #[test]
