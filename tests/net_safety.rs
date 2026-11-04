@@ -183,19 +183,46 @@ fn a_locked_dist_outside_its_github_repository_is_refused() {
     gh.put(&format!("/repos/acme/t/commits/{sha}"), gh_commit(&sha, 240).to_string());
     let zip = zipball(&[("SKILL.md", &skill_md("t"))]);
     gh.put(&format!("/repos/acme/t/zipball/{sha}"), zip.clone());
+    gh.put(&format!("/repos/evil/x/zipball/{sha}"), zip.clone());
     evil.put(&format!("/repos/acme/t/zipball/{sha}"), zip);
     let p = with_github(Project::new(&gh), &gh);
+    p.config(&format!("[policy]\nallow-sources = [\"{}/repos/acme/\"]\nenforce = [\"allow-sources\"]\n", gh.base));
     p.write("skills.toml", "[repositories]\npackagist = false\n");
     p.ok(&["add", "github:acme/t"]);
+    let good = p.read("skills.lock");
+    let zipball = format!("{}/repos/acme/t/zipball/{sha}", gh.base);
+    assert!(good.contains(&zipball), "{good}");
+    let tamper = |lock: &str| {
+        p.write("skills.lock", lock);
+        let _ = std::fs::remove_dir_all(p.path().join(".agents"));
+    };
+
     // Regression: only `repository` was held to allow-sources; `dist.url` was fetched as written.
-    p.write(
-        "skills.lock",
-        &p.read("skills.lock").replace(&format!("{}/repos/acme/t/zipball/", gh.base), &format!("{}/repos/acme/t/zipball/", evil.base)),
-    );
-    std::fs::remove_dir_all(p.path().join(".agents")).unwrap();
+    let moved = good.replace(&zipball, &format!("{}/repos/acme/t/zipball/{sha}", evil.base));
+    tamper(&moved);
     let e = p.expect(&["install", "--frozen"], 1);
-    assert!(e.contains("dist url") && e.contains(&format!("is not {}/repos/acme/t/zipball/{sha}", gh.base)), "{e}");
+    assert!(e.contains("dist zip") && e.contains(&format!("is not zip {zipball}")), "{e}");
+    for args in [&["install"][..], &["info", "acme/t"]] {
+        let e = p.expect(args, 1);
+        assert!(e.contains("dist zip"), "{args:?}: {e}");
+    }
+    // `diff --from` shows the base lock's version from its archive when it is not installed.
+    let at = moved.find("dist-sha256 = \"").unwrap() + "dist-sha256 = \"".len();
+    p.write("base.lock", &format!("{}{}{}", &moved[..at], "0".repeat(64), &moved[at + 64..]));
+    tamper(&good);
+    let e = p.expect(&["diff", "--from", "base.lock"], 1);
+    assert!(e.contains("dist zip"), "{e}");
     assert!(evil.log().is_empty(), "{:?}", evil.log());
+
+    // Regression: `..` in the reference left the enforced prefix for another repository on the host.
+    let up = format!("../../../evil/x/zipball/{sha}");
+    tamper(
+        &good
+            .replace(&zipball, &format!("{}/repos/acme/t/zipball/{up}", gh.base))
+            .replace(&format!("reference = \"{sha}\""), &format!("reference = \"{up}\"")),
+    );
+    assert!(p.expect(&["install", "--frozen"], 1).contains("dist zip"));
+    assert!(!gh.log().iter().any(|l| l.contains("/repos/evil/")), "{:?}", gh.log());
 }
 
 #[test]

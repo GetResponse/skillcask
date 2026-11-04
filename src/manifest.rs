@@ -221,27 +221,37 @@ impl Manifest {
         Ok(())
     }
 
-    /// Errors when the lock entry `p` is refused by name or by source, or downloads from outside
-    /// its GitHub or git repository, which is what `allow-sources` checked (D18).
+    /// Errors when the lock entry `p` is refused by name or by source, or, under `allow-sources`,
+    /// downloads from outside what was checked: a GitHub entry only its zipball of a commit, a git
+    /// entry only its repository (D18). The rule follows `repository`, never the lock's dist type.
     pub fn check_locked(&self, p: &crate::lock::Package) -> Result<()> {
         self.check_name(&p.name)?;
         if let Some(why) = self.refuses(&p.repository) {
             bail!(MANIFEST, "{}: {why}", p.name);
         }
-        let repo = p.repository.trim_end_matches('/');
-        let expected = if p.dist.kind == crate::git::KIND {
-            Some(repo.to_string())
-        } else if repo.contains("/repos/") {
-            Some(format!("{repo}/zipball/{}", p.dist.reference.as_deref().unwrap_or("")))
-        } else {
-            // A Composer registry may serve dists from any host (Packagist: GitHub zipballs).
-            None
-        };
-        if let Some(e) = expected.filter(|e| p.dist.url.trim_end_matches('/') != e) {
-            let shown = |u: &str| url::Url::parse(u).map_or_else(|_| u.to_string(), |u| crate::http::redact(&u));
-            bail!(MANIFEST, "{}: {} dist url {} is not {}", p.name, crate::lock::FILE, shown(&p.dist.url), shown(&e));
+        if self.policy.allow_sources.is_none() {
+            return Ok(());
         }
-        Ok(())
+        let repo = p.repository.trim_end_matches('/');
+        let shown = |u: &str| url::Url::parse(u).map_or_else(|_| u.to_string(), |u| crate::http::redact(&u));
+        let refused = |want: &str| -> Result<()> {
+            bail!(MANIFEST, "{}: {} dist {} {} is not {want}", p.name, crate::lock::FILE, p.dist.kind, shown(&p.dist.url))
+        };
+        if github_repository(repo) {
+            let sha = p.dist.reference.as_deref().filter(|r| r.len() == 40 && r.bytes().all(|b| b.is_ascii_hexdigit()));
+            let want = format!("{repo}/zipball/{}", sha.unwrap_or("<commit sha>"));
+            // Parsed, so a `..` that `url` would resolve before the request cannot leave the path.
+            let ok = p.dist.kind == "zip"
+                && sha.is_some()
+                && url::Url::parse(&p.dist.url).ok().is_some_and(|u| url::Url::parse(&want).is_ok_and(|w| u == w));
+            return if ok { Ok(()) } else { refused(&format!("zip {}", shown(&want))) };
+        }
+        // A Composer registry may serve dists from any host (Packagist: GitHub zipballs).
+        let composer = repo == PACKAGIST_URL || self.repositories.iter().any(|r| r.url.trim_end_matches('/') == repo);
+        if composer || p.dist.kind == crate::git::KIND && p.dist.url.trim_end_matches('/') == repo {
+            return Ok(());
+        }
+        refused(&format!("git {}", shown(repo)))
     }
 
     /// GitHub is on and `allow-sources` admits at least some GitHub repository.
@@ -297,6 +307,13 @@ fn bad(what: impl std::fmt::Display) -> crate::error::Error {
 }
 
 /// The manifest alone, without the user config and the environment.
+/// A GitHub repository as the lock records it, `<api>/repos/<owner>/<name>`, whatever the API base.
+fn github_repository(url: &str) -> bool {
+    let Ok(u) = url::Url::parse(url) else { return false };
+    let segs: Vec<&str> = u.path_segments().map(|s| s.collect()).unwrap_or_default();
+    segs.len() >= 3 && segs[segs.len() - 3] == "repos" && segs[segs.len() - 2..].iter().all(|s| !s.is_empty())
+}
+
 pub fn parse(text: &str, global: bool) -> Result<Manifest> {
     parse_with(text, global, &crate::policy::Outer::default())
 }
@@ -791,30 +808,50 @@ mod tests {
 
     #[test]
     fn a_locked_github_or_git_dist_stays_in_its_repository() {
-        let m = parse("[skills]\n", false).unwrap();
-        let entry = |repository: &str, kind: &str, url: &str| crate::lock::Package {
+        let m = parse(
+            "[repositories]\nreg = { url = \"https://reg.example/repos/php\" }\n[policy]\nallow-sources = [\"https://api.github.com/\", \"https://git.example.com/\", \"https://ghe.example/\", \"packagist\", \"reg\"]\n",
+            false,
+        )
+        .unwrap();
+        let sha = "ab".repeat(20);
+        let entry = |repository: &str, kind: &str, url: &str, reference: &str| crate::lock::Package {
             name: "acme/t".into(),
             constraint: "^1.0".into(),
             git_ref: None,
             version: "1.0.0".into(),
             repository: repository.into(),
-            dist: crate::lock::Dist { kind: kind.into(), url: url.into(), reference: Some("ab12".into()) },
+            dist: crate::lock::Dist { kind: kind.into(), url: url.into(), reference: Some(reference.into()) },
             dist_sha256: "ab".repeat(32),
             released: None,
             selected: None,
             requires: BTreeMap::new(),
             skills: Vec::new(),
         };
+        let ok = |p: crate::lock::Package| m.check_locked(&p).is_ok();
         let gh = "https://api.github.com/repos/acme/t";
-        assert!(m.check_locked(&entry(gh, "zip", &format!("{gh}/zipball/ab12"))).is_ok());
+        let git = "https://git.example.com/acme/t.git";
+        assert!(ok(entry(gh, "zip", &format!("{gh}/zipball/{sha}"), &sha)));
         // Regression: allow-sources checked `repository` only, and `dist.url` was fetched as written.
-        let e = m.check_locked(&entry(gh, "zip", "https://evil.example/repos/acme/t/zipball/ab12")).unwrap_err();
-        assert!(e.msg.contains("dist url https://evil.example/") && e.msg.contains(&format!("is not {gh}/zipball/ab12")), "{}", e.msg);
-        assert!(m.check_locked(&entry(gh, "zip", &format!("{gh}/zipball/other"))).is_err());
-        assert!(m.check_locked(&entry("https://git.example.com/t.git", "git", "https://git.example.com/t.git/")).is_ok());
-        assert!(m.check_locked(&entry("https://git.example.com/t.git", "git", "https://evil.example/t.git")).is_err());
-        // Packagist serves GitHub zipballs: a Composer dist may live on another host.
-        assert!(m.check_locked(&entry(PACKAGIST_URL, "zip", "https://api.github.com/repos/acme/t/zipball/ab12")).is_ok());
+        let e = m.check_locked(&entry(gh, "zip", &format!("https://evil.example/repos/acme/t/zipball/{sha}"), &sha)).unwrap_err();
+        assert!(e.msg.contains("dist zip https://evil.example/") && e.msg.contains(&format!("is not zip {gh}/zipball/{sha}")), "{}", e.msg);
+        assert!(!ok(entry(gh, "zip", &format!("{gh}/zipball/{}", "cd".repeat(20)), &sha)));
+        // Regression: `..` in the reference left the zipball path for another repository on the host.
+        let up = format!("../../../evil/x/zipball/{sha}");
+        assert!(!ok(entry(gh, "zip", &format!("{gh}/zipball/{up}"), &up)));
+        assert!(!ok(entry(gh, "zip", &format!("{gh}/zipball/{sha}?x=1"), &sha)));
+        assert!(!ok(entry(gh, "git", &format!("{gh}/zipball/{sha}"), &sha)));
+        assert!(ok(entry(git, "git", &format!("{git}/"), &sha)));
+        assert!(!ok(entry(git, "git", "https://evil.example/t.git", &sha)));
+        // Regression: a git entry relabelled zip, or a GitHub API base without /repos/, chose no rule.
+        assert!(!ok(entry(git, "zip", "https://evil.example/t.zip", &sha)));
+        assert!(!ok(entry(git, "zip", git, &sha)));
+        assert!(!ok(entry("https://ghe.example/api/v3/", "zip", "https://evil.example/t.zip", &sha)));
+        // Composer registries serve dists from any host, also one whose URL has /repos/ in it.
+        assert!(ok(entry(PACKAGIST_URL, "zip", &format!("{gh}/zipball/{sha}"), &sha)));
+        assert!(ok(entry("https://reg.example/repos/php", "zip", "https://cdn.example/t.zip", &sha)));
+        // Without allow-sources the lock already names any source.
+        let open = parse("[skills]\n", false).unwrap();
+        assert!(open.check_locked(&entry(git, "zip", "https://evil.example/t.zip", &sha)).is_ok());
     }
 
     #[test]

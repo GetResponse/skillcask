@@ -93,6 +93,13 @@ impl Ctx {
         }
     }
 
+    /// A lock entry's archive, fetched only once `m` admits the entry and its dist URL: every
+    /// download of a `Package.dist` goes through here, for `info` and `diff` as for `install`.
+    fn fetch_locked(&self, m: &Manifest, p: &Package) -> Result<Fetched> {
+        m.check_locked(p)?;
+        Ok(self.fetch(&p.name, &p.dist, Some(&p.dist_sha256), None)?.1)
+    }
+
     fn fetch(&self, name: &str, dist: &Dist, expected: Option<&str>, shasum: Option<&str>) -> Result<(String, Fetched)> {
         let (bytes, sha) = match dist.kind.as_str() {
             "zip" => {
@@ -163,7 +170,7 @@ impl Ctx {
 
     /// Prints a unified diff from `old`'s skills, as installed (none for a package new to the
     /// lock), to `new`'s in `f`. `scan`: warn about invisible Unicode in the files that changed.
-    fn show_diff(&self, old: Option<&Package>, new: &Package, f: &Fetched, scan: bool) -> Result<()> {
+    fn show_diff(&self, m: &Manifest, old: Option<&Package>, new: &Package, f: &Fetched, scan: bool) -> Result<()> {
         let title = match old {
             Some(o) => format!("{} {} -> {}", new.name, o.version, new.version),
             None => format!("{} {} (new)", new.name, new.version),
@@ -184,7 +191,7 @@ impl Ctx {
                 read_tree(&dir, files, None)?
             } else {
                 if old_dist.is_none() {
-                    old_dist = Some(self.fetch(&old.name, &old.dist, Some(&old.dist_sha256), None)?.1);
+                    old_dist = Some(self.fetch_locked(m, old)?);
                 }
                 installed_tree(old_dist.as_ref().expect("fetched above"), old, sk)?
             };
@@ -616,7 +623,7 @@ impl Ctx {
                     skill_md_of(&project::store_dir(s, &sk.name))
                 } else {
                     if !prepared.contains_key(&p.name) {
-                        let f = self.fetch(&p.name, &p.dist, Some(&p.dist_sha256), None)?.1;
+                        let f = self.fetch_locked(m, p)?;
                         prepared.insert(p.name.clone(), f);
                     }
                     skill_md_of(&prepared[&p.name].dir.path().join(&sk.path))
@@ -642,7 +649,7 @@ impl Ctx {
             }
             let f = match prepared.remove(&p.name) {
                 Some(f) => f,
-                None => self.fetch(&p.name, &p.dist, Some(&p.dist_sha256), None)?.1,
+                None => self.fetch_locked(m, p)?,
             };
             for sk in need {
                 let mut files = f.skill_files(&p.name, sk.from.as_ref().unwrap_or(&sk.name), &sk.path)?;
@@ -1770,7 +1777,7 @@ pub fn update(ctx: &Ctx, names: &[String], diff: bool) -> Result<()> {
             && o.is_none_or(|o| o.dist_sha256 != p.dist_sha256)
         {
             // Resolving already warned about invisible Unicode in every file.
-            ctx.show_diff(o, p, f, false)?;
+            ctx.show_diff(&m, o, p, f, false)?;
         }
     }
     let m = settle_and_save(ctx, m, &mut lock, &old, &prepared, &newcomers)?;
@@ -2507,7 +2514,7 @@ pub fn diff(ctx: &Ctx, package: Option<&str>, to: Option<&str>) -> Result<()> {
         }
         let mut prepared = HashMap::new();
         let new = ctx.lock_candidate(&req, &repo, &c, None, &mut prepared)?;
-        ctx.show_diff(old, &new, &prepared[&new.name], true)?;
+        ctx.show_diff(&m, old, &new, &prepared[&new.name], true)?;
         shown += 1;
         after.upsert(new);
         for r in deps::wanted(&m, &after)?.reqs {
@@ -2547,8 +2554,7 @@ pub fn diff_from(ctx: &Ctx, base: &Path, package: Option<&str>) -> Result<()> {
             continue;
         }
         // The lock under review chooses the URL; the policy decides whether it is fetched at all.
-        m.check_locked(new)?;
-        let f = ctx.fetch(&new.name, &new.dist, Some(&new.dist_sha256), None)?.1;
+        let f = ctx.fetch_locked(&m, new)?;
         // Shows what `install` would place, or fails where `install` would.
         for sk in &new.skills {
             let mut files = f.skill_files(&new.name, sk.from.as_ref().unwrap_or(&sk.name), &sk.path)?;
@@ -2567,7 +2573,7 @@ pub fn diff_from(ctx: &Ctx, base: &Path, package: Option<&str>) -> Result<()> {
                 );
             }
         }
-        ctx.show_diff(before, new, &f, true)?;
+        ctx.show_diff(&m, before, new, &f, true)?;
         shown += 1;
     }
     for gone in old.packages.iter().filter(|p| wanted(&p.name) && lock.get(&p.name).is_none()) {
@@ -2644,7 +2650,7 @@ pub fn info(ctx: &Ctx, target: &str, json: bool) -> Result<()> {
     let req = SkillReq { name: name.clone(), github: gh.then_some(GitHub::Tags), ..Default::default() };
     // The locked version's skills are the lock's, whatever its metadata says now.
     let (pkg, f) = match locked {
-        Some(p) => (p.clone(), ctx.fetch(&name, &p.dist, Some(&p.dist_sha256), None)?.1),
+        Some(p) => (p.clone(), ctx.fetch_locked(&m, p)?),
         None => {
             let mut prepared = HashMap::new();
             let pkg = ctx.lock_candidate(&req, &repo, &c, None, &mut prepared)?;

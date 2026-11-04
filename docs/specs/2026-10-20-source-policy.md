@@ -120,6 +120,12 @@ A source is the URL a lock entry records in `repository`. Enforcement:
 - GitHub sources are checked before the first API request.
 - Every command that writes or installs checks every lock entry: a package from a blocked source
   is exit 1, also under `install --frozen`.
+- With `allow-sources` set, a lock entry's archive is downloaded (by `install`, `info` or `diff`)
+  only from what was checked: a GitHub repository (`…/repos/<owner>/<name>`) only as
+  `<repository>/zipball/<40-hex commit>`, any other non-Composer repository only as a git
+  checkout of itself. A Composer entry (Packagist or a repository of `[repositories]`) downloads
+  its dist from wherever the lock says, since registries serve dists from other hosts; review
+  lock changes for those.
 - Dependencies (D16) follow the same rules.
 
 ## Default sources
