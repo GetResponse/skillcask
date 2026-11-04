@@ -1,8 +1,10 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/GetResponse/skillcask/master/docs/assets/hero-dark.svg">
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/GetResponse/skillcask/master/docs/assets/hero-light.svg">
-  <img alt="skillcask: agent skills, pinned by hash" src="https://raw.githubusercontent.com/GetResponse/skillcask/master/docs/assets/hero-light.svg" width="100%">
-</picture>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/GetResponse/skillcask/master/docs/assets/wordmark-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/GetResponse/skillcask/master/docs/assets/wordmark-light.svg">
+    <img alt="skillcask" src="https://raw.githubusercontent.com/GetResponse/skillcask/master/docs/assets/wordmark-light.svg" width="480">
+  </picture>
+</p>
 
 <p align="center">
   <strong>A lockfile-first package manager for AI agent skills.</strong><br>
