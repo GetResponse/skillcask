@@ -25,11 +25,12 @@ reader of `skills.toml` does not see them.
 
 ## Layers
 
-Keys: `min-release-age`, `allow-ranges`, `packagist`, `github-requires`, `allow-sources`. The
-first layer that sets a key wins:
+Keys: `min-release-age`, `allow-ranges`, `packagist`, `github-requires`, `allow-sources`,
+`deny-patterns` (D31). The first layer that sets a key wins:
 
 1. Environment: `SKILLCASK_MIN_RELEASE_AGE`, `SKILLCASK_ALLOW_RANGES`, `SKILLCASK_PACKAGIST`,
-   `SKILLCASK_GITHUB_REQUIRES`, `SKILLCASK_ALLOW_SOURCES` (comma-separated). Empty is unset.
+   `SKILLCASK_GITHUB_REQUIRES`, `SKILLCASK_ALLOW_SOURCES` (comma-separated),
+   `SKILLCASK_DENY_PATTERNS`. Empty is unset.
 2. User config `config.toml` in the config dir of D13 (`$SKILLCASK_HOME`,
    `$XDG_CONFIG_HOME/skillcask`, `~/.config/skillcask`), keys listed in `enforce`. A project that
    sets an enforced key to another value is exit 1 naming the key and the file, unless the
@@ -60,6 +61,39 @@ a repository without one gets the enforced value. `config.toml` lists the except
 
 Only `[policy]` is read from `config.toml`; any other table is exit 1, so a typo does not
 silently drop a rule. CI without the file applies the project and the environment.
+
+## Threat model
+
+`enforce` keeps a project from loosening the policy for what it resolves: a cloned repository's
+`skills.toml` and its dependencies (D16) cannot change an enforced key, and no lock entry may come
+from a source outside an enforced `allow-sources` (checked at every install, also `--frozen`).
+`min-release-age` and `deny-patterns` apply when a version is resolved (D7, D23, D31), not to a
+version the lock already pins: a lock written under a looser policy installs unchanged under a
+stricter one, so the lock change is what to review.
+
+It guards against what a project brings, not against whoever runs skillcask:
+
+- The environment beats an enforced key (layer 1; a warning names a value that differs from the
+  enforced one), so a CI job or a wrapper can still set the policy for one run. Any
+  `SKILLCASK_MIN_RELEASE_AGE`, even the enforced value, also lifts the per-repository floor of D28
+  for that run.
+- `SKILLCASK_HOME`, `XDG_CONFIG_HOME` and `HOME` (else `USERPROFILE`, through the
+  `~/.config/skillcask` fallback) choose which `config.toml` is read; pointed at another
+  directory, no key is enforced at all.
+- The user owns `config.toml` and can edit it.
+
+Policy governs packages. A project's own skills (`local`, `.skills` by default) and skills written
+by hand into `.agents/skills` are its code, reviewed like it; `audit` scans them.
+
+skillcask runs with the user's rights and does not try to stop them; only the operating system
+could, with a config directory the user cannot write (managed by MDM, which also makes the global
+scope of D13 read-only) and a locked environment. A rule nobody may skip is checked where the
+developer does not control the run: a required check on pull requests to the default branch, with
+the policy in the job's environment, that runs `install --frozen`. That holds every merged lock to
+`allow-sources` and `allow-ranges`; the cooldown and `deny-patterns` of a version the lock pins are
+left to the review of the lock change. On `pull_request` GitHub runs the pull request's own copy
+of the workflow, so the job's environment is only as strong as the protection of
+`.github/workflows/` (a required workflow in a ruleset, or CODEOWNERS with required review).
 
 ## allow-sources
 
