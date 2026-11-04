@@ -352,7 +352,7 @@ Every command except `publish`, `validate` and `projects` takes `-g, --global`.
 | `info <vendor/name[@constraint]\|github:owner/repo\|git:url\|skill>` | A package's skills, versions, description, license and requirements, or which package installs a skill. |
 | `status` | Exit 1 when manifest, lock or installed files disagree. Also lists the repositories in use (name, type, URL without credentials) and whether `allow-sources` admits each. |
 | `doctor [--fix]` | Broken or committed links, stale gitignore block, modified skills; lists each check it ran. |
-| `audit [--json\|--sarif]` | What each installed skill reaches (commands, hosts, paths, env vars, scripts) and its findings: modified files, risky lines, invisible characters. Exit 1 on any finding. |
+| `audit [--json\|--sarif] [--advisories]` | What each installed skill reaches (commands, hosts, paths, env vars, scripts) and its findings: modified files, risky lines, invisible characters; with `--advisories` also published security advisories and abandoned packages. Exit 1 on any finding. |
 | `config [key [value…]] [--unset] [--json]` | Settings with where each comes from: `[policy]` and `[agents] targets` of `skills.toml`, or with `-g` of `config.toml` (also `policy.enforce` and `search.skills-sh`). `config policy.min-release-age 5d` sets a key, `--unset` removes it, each checked before the file is written; `config edit` opens the file in `$VISUAL`/`$EDITOR` and checks it afterwards. |
 | `search [query] [--skills-sh\|--no-skills-sh [--remember]]` | Packagist (`type=ai-agent-skill`) and skill packages of the other repositories, GitLab included; with skills.sh on, also the GitHub skills it lists, as `github:owner/repo/skill` with their install count. skills.sh is off until you turn it on, since it receives the query: the first search in a terminal asks once, `--remember` saves a flag's choice (no query needed), both in `config.toml`. |
 | `auth set\|remove <host>` | Keep a registry token in git's credential helper (Keychain, Credential Manager, libsecret). |
@@ -549,21 +549,36 @@ too young falls back to an older commit when the server supports partial fetches
 - `skillcask audit` reviews what is installed now, every skill in `.agents/skills` and the project
   skills: the commands its shell code blocks run, the hosts of its URLs, the paths in the home
   directory or under system roots, the environment variables it reads and the files an agent could
-  run. That is read from the text, so it is a hint for review, not a sandbox, and not a
-  vulnerability scan: no advisory database is checked, and a skill without findings is not known to
-  be safe. It also reports a locked skill that differs from the lock, and every risky line and
-  invisible character above, with no limit per file, and exits 1 on any of them. `--sarif` prints a
-  SARIF 2.1.0 log for code scanning, e.g. in GitHub Actions:
+  run. That is read from the text, so it is a hint for review, not a sandbox, and a skill without
+  findings is not known to be safe. It also reports a locked skill that differs from the lock, and
+  every risky line and invisible character above, with no limit per file, and exits 1 on any of
+  them.
+- `skillcask audit --advisories` also asks the sources of the locked packages what is published
+  about them: security advisories from a Composer repository that offers them (Packagist does) and
+  from a GitHub repository's security advisories, matched against the locked version, and
+  packages marked abandoned. An entry locked at a commit has no version to match, so only
+  advisories published after that commit count. A source that cannot be read fails the run;
+  packages whose source publishes no advisories, and plain git entries, are listed as unchecked.
+  Plain `audit` stays offline. To warn users of
+  your skill, publish a GitHub security advisory on its repository (for a Composer package, with
+  the `composer` ecosystem and the package name, so Packagist lists it too).
+- `--sarif` prints a SARIF 2.1.0 log for code scanning, e.g. in GitHub Actions. Scripts a skill
+  bundles with their own dependencies (`package.json`, `requirements.txt`) are not covered by
+  `--advisories`; [OSV-Scanner](https://github.com/google/osv-scanner) checks those:
 
   ```yaml
-  - uses: GetResponse/skillcask@v0.8.0
+  - uses: GetResponse/skillcask@v0.10.5
     with:
       args: install --frozen
-  - run: skillcask audit --sarif > skills.sarif
+  - run: skillcask audit --advisories --sarif > skills.sarif
+    env:
+      GITHUB_TOKEN: ${{ github.token }}   # anonymous GitHub API calls are limited to 60 an hour
   - uses: github/codeql-action/upload-sarif@v3
     if: always()
     with:
       sarif_file: skills.sarif
+  # optional, needs osv-scanner on PATH (e.g. google/osv-scanner-action): dependencies of bundled scripts
+  - run: osv-scanner scan source -r .agents/skills
   ```
 - Plain git sources pin the commit; the lock's `dist-sha256` hashes the commit's file list
   (path, mode, sha256 of the content), so it does not depend on how a server packs objects.

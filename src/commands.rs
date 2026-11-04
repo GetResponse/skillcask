@@ -2192,8 +2192,10 @@ struct Finding {
 }
 
 /// `(rule id, SARIF level, description)`; the rule ids are part of the output (D34).
-const AUDIT_RULES: [(&str, &str, &str); 3] = [
+const AUDIT_RULES: [(&str, &str, &str); 5] = [
     ("modified", "error", "Installed skill differs from skills.lock"),
+    ("advisory", "error", "Locked version has a published security advisory (D55)"),
+    ("abandoned", "warning", "Package is marked abandoned in its repository (D55)"),
     ("risky-pattern", "warning", "Line matches a risky pattern (D31)"),
     ("invisible-character", "warning", "Invisible or bidi control character (D23)"),
 ];
@@ -2201,7 +2203,7 @@ const AUDIT_RULES: [(&str, &str, &str); 3] = [
 /// A skill directory `audit` reads: name, package and locked skill if locked, kind, path.
 type OnDisk<'a> = (String, Option<&'a Package>, Option<&'a LockedSkill>, &'static str, String);
 
-pub fn audit(ctx: &Ctx, json: bool, sarif: bool) -> Result<()> {
+pub fn audit(ctx: &Ctx, json: bool, sarif: bool, advisories: bool) -> Result<()> {
     let s = &ctx.s;
     let m = Manifest::load(&s.config, s.global)?;
     let lock = Lock::load(&s.config)?;
@@ -2247,10 +2249,23 @@ pub fn audit(ctx: &Ctx, json: bool, sarif: bool) -> Result<()> {
         report.push((name, *p, *kind, dir, reach, found.len()));
         findings.extend(found.into_iter().map(|f| (name.clone(), f)));
     }
+    let checked = if advisories { advisory_findings(ctx, &m, &lock)? } else { AdvisoryCheck::default() };
+    for (package, rule, message) in &checked.found {
+        for (n, _) in locked.iter().filter(|(_, (p, _))| p.name == *package) {
+            let path = format!("{STORE}/{n}");
+            findings.push((n.clone(), Finding { rule, path, line: None, message: message.clone() }));
+        }
+    }
+    for f in &checked.failed {
+        ui::warn(format!("advisories could not be read: {f}"));
+    }
+    if !checked.unchecked.is_empty() && !json && !sarif {
+        ui::note(format!("advisories not checked: {}", checked.unchecked.join(", ")));
+    }
 
-    let problems = findings.len();
+    let problems = findings.len() + checked.failed.len();
     if sarif {
-        print_json(&sarif_log(&findings));
+        print_json(&sarif_log(&findings, &checked.failed));
     } else if json {
         let set = |b: &BTreeSet<String>| b.iter().map(|x| skill::shown(x)).collect::<Vec<_>>();
         let entries: Vec<Value> = report
@@ -2268,7 +2283,8 @@ pub fn audit(ctx: &Ctx, json: bool, sarif: bool) -> Result<()> {
                 })
             })
             .collect();
-        print_json(&json!({ "ok": problems == 0, "skills": entries }));
+        let shown = advisories.then(|| json!({ "unchecked": checked.unchecked, "failed": checked.failed }));
+        print_json(&json!({ "ok": problems == 0, "skills": entries, "advisories": shown }));
     } else {
         for (name, p, kind, _, r, _) in &report {
             let from = p.map_or(kind.to_string(), |p| format!("{} {}", p.name, p.version));
@@ -2279,7 +2295,8 @@ pub fn audit(ctx: &Ctx, json: bool, sarif: bool) -> Result<()> {
             println!("{}", if ui::agent() { head } else { ui::out(ui::Color::Cyan, head) });
             for (_, f) in findings.iter().filter(|(n, _)| n == *name) {
                 let at = f.line.map_or(s.show(&f.path), |l| format!("{}:{l}", s.show(&f.path)));
-                let (mark, c) = if f.rule == "modified" { ("✗", ui::Color::Red) } else { ("!", ui::Color::Yellow) };
+                let error = AUDIT_RULES.iter().any(|r| r.0 == f.rule && r.1 == "error");
+                let (mark, c) = if error { ("✗", ui::Color::Red) } else { ("!", ui::Color::Yellow) };
                 println!("  {} {}: {}", ui::out(c, mark), skill::shown(&at), f.message);
             }
             for (label, set) in
@@ -2305,8 +2322,77 @@ pub fn audit(ctx: &Ctx, json: bool, sarif: bool) -> Result<()> {
     Ok(())
 }
 
+/// What `audit --advisories` found (D55). `found`: `(package, rule, message)` for each advisory that
+/// affects a locked version and each package its repository marks abandoned; `unchecked`: packages
+/// no source publishes advisories for; `failed`: sources that could not be read.
+#[derive(Default)]
+struct AdvisoryCheck {
+    found: Vec<(String, &'static str, String)>,
+    unchecked: Vec<String>,
+    failed: Vec<String>,
+}
+
+fn advisory_findings(ctx: &Ctx, m: &Manifest, lock: &Lock) -> Result<AdvisoryCheck> {
+    let http = ctx.http()?;
+    let reg = Registry::new(http);
+    let repos = m.allowed_repositories();
+    let github_repos = format!("{}/repos/", github::api());
+    let mut out = AdvisoryCheck::default();
+    let found = |list: &[registry::Advisory], p: &Package, out: &mut AdvisoryCheck| {
+        let pinned = (p.git_ref == Some(true)).then_some(p.released);
+        for a in list.iter().filter(|a| a.package == p.name && a.affects(&p.version, pinned)) {
+            out.found.push((p.name.clone(), "advisory", format!("{} {}: {}", p.name, p.version, a.describe())));
+        }
+    };
+    let mut composer: Vec<(&Repository, Vec<&Package>)> = Vec::new();
+    for p in &lock.packages {
+        if m.refuses(&p.repository).is_some() || p.dist.kind == git::KIND {
+            out.unchecked.push(p.name.clone());
+        } else if p.repository.starts_with(&github_repos) {
+            if !m.github_allowed() {
+                out.unchecked.push(p.name.clone());
+                continue;
+            }
+            match github::advisories(http, &p.repository, &p.name) {
+                Ok(Some(list)) => found(&list, p, &mut out),
+                Ok(None) => out.unchecked.push(p.name.clone()),
+                Err(e) => out.failed.push(format!("{}: {}", p.name, e.msg)),
+            }
+        } else if let Some(r) = repos.iter().find(|r| r.url == p.repository) {
+            match composer.iter_mut().find(|(x, _)| x.url == r.url) {
+                Some((_, ps)) => ps.push(p),
+                None => composer.push((r, vec![p])),
+            }
+        } else {
+            out.unchecked.push(p.name.clone());
+        }
+    }
+    for (r, ps) in composer {
+        let names: Vec<&str> = ps.iter().map(|p| p.name.as_str()).collect();
+        match reg.advisories(r, &names) {
+            Ok(Some(list)) => ps.iter().for_each(|p| found(&list, p, &mut out)),
+            Ok(None) => out.unchecked.extend(names.iter().map(|n| n.to_string())),
+            Err(e) => {
+                // An unreadable root would fail every package again.
+                let prefix = format!("repository {}: ", r.name);
+                out.failed.push(format!("{prefix}{}", e.msg.strip_prefix(&prefix).unwrap_or(&e.msg)));
+                continue;
+            }
+        }
+        for p in ps {
+            match reg.versions(r, &p.name) {
+                Ok(Some(c)) => out.found.extend(registry::abandoned(&c).map(|msg| (p.name.clone(), "abandoned", msg))),
+                Ok(None) => ui::note(format!("{}: no longer in repository {}", p.name, r.name)),
+                Err(e) => out.failed.push(format!("{}: {}", p.name, e.msg)),
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// SARIF 2.1.0, which GitHub code scanning and GitLab read; one result per finding.
-fn sarif_log(findings: &[(String, Finding)]) -> Value {
+/// `failed`: sources `--advisories` could not read, as tool execution notifications.
+fn sarif_log(findings: &[(String, Finding)], failed: &[String]) -> Value {
     let rules: Vec<Value> = AUDIT_RULES
         .iter()
         .map(|(id, level, text)| json!({ "id": id, "shortDescription": { "text": text }, "defaultConfiguration": { "level": level } }))
@@ -2338,6 +2424,10 @@ fn sarif_log(findings: &[(String, Finding)]) -> Value {
                 "rules": rules,
             } },
             "results": results,
+            "invocations": [{
+                "executionSuccessful": failed.is_empty(),
+                "toolExecutionNotifications": failed.iter().map(|f| json!({ "level": "error", "message": { "text": format!("advisories could not be read: {f}") } })).collect::<Vec<_>>(),
+            }],
         }],
     })
 }

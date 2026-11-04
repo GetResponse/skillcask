@@ -41,6 +41,51 @@ pub struct Candidate {
     pub license: Vec<String>,
 }
 
+/// A published security advisory (D55). `affected`: Composer constraints, any of which matches an
+/// affected version; empty, or a `None` among them, means every version.
+pub struct Advisory {
+    pub package: String,
+    pub id: Option<String>,
+    pub cve: Option<String>,
+    pub title: Option<String>,
+    pub severity: Option<String>,
+    pub link: Option<String>,
+    pub published: Option<Timestamp>,
+    pub affected: Vec<Option<String>>,
+}
+
+impl Advisory {
+    /// Whether the locked `version` is affected. `pinned`: the entry is locked at a commit, with
+    /// the time it was released; a commit has no version to match, so only an advisory published
+    /// after it counts (one published before is taken as fixed by then). A version or range
+    /// skillcask cannot read counts as affected, so no advisory is dropped for its format.
+    pub fn affects(&self, version: &str, pinned: Option<Option<Timestamp>>) -> bool {
+        if let Some(released) = pinned {
+            return self.published.zip(released).is_none_or(|(p, r)| p > r);
+        }
+        let Some(v) = Version::parse(version) else { return true };
+        self.affected.is_empty()
+            || self.affected.iter().any(|r| r.as_deref().is_none_or(|r| Constraint::parse(r).ok().is_none_or(|c| c.matches(&v))))
+    }
+
+    pub fn describe(&self) -> String {
+        let mut tags: Vec<String> = self.id.iter().cloned().collect();
+        tags.extend(self.cve.clone().filter(|c| self.id.as_ref() != Some(c)));
+        tags.extend(self.severity.clone());
+        let mut s = if tags.is_empty() { "advisory".to_string() } else { format!("advisory {}", tags.join(", ")) };
+        if let Some(t) = &self.title {
+            s.push_str(&format!(": {t}"));
+        }
+        if let Some(l) = &self.link {
+            s.push_str(&format!(" ({l})"));
+        }
+        crate::skill::shown(&s)
+    }
+}
+
+/// Names per advisories request: Packagist answers 414 above about 8 KB of query.
+const ADVISORY_BATCH: usize = 50;
+
 const SEARCH_LIMIT: usize = 30;
 
 type Versions = Vec<Map<String, Value>>;
@@ -228,6 +273,41 @@ impl<'a> Registry<'a> {
         let r = Rc::new((url, json));
         self.roots.borrow_mut().insert(repo.url.clone(), r.clone());
         Ok(r)
+    }
+
+    /// Advisories for `packages` from the API the repository's `packages.json` names in
+    /// `security-advisories.api-url` (Packagist does); `None` when it names none (D55).
+    pub fn advisories(&self, repo: &Repository, packages: &[&str]) -> Result<Option<Vec<Advisory>>> {
+        let root = self.root(repo)?;
+        let Some(api) = root.1.get("security-advisories").and_then(|a| a.get("api-url")).and_then(Value::as_str) else {
+            return Ok(None);
+        };
+        let base = root.0.join(api).map_err(|e| Error::new(NETWORK, format!("bad security-advisories api-url {api:?}: {e}")))?;
+        let s = |a: &Value, k: &str| a.get(k).and_then(Value::as_str).filter(|s| !s.is_empty()).map(String::from);
+        let mut out = Vec::new();
+        for batch in packages.chunks(ADVISORY_BATCH) {
+            let mut url = base.clone();
+            for p in batch {
+                url.query_pairs_mut().append_pair("packages[]", p);
+            }
+            let json =
+                self.http.get_json(url.as_str())?.ok_or_else(|| Error::new(NETWORK, format!("{} not found", crate::http::redact(&url))))?;
+            for p in batch {
+                for a in json.get("advisories").and_then(|m| m.get(*p)).and_then(Value::as_array).into_iter().flatten() {
+                    out.push(Advisory {
+                        package: p.to_string(),
+                        id: s(a, "advisoryId"),
+                        cve: s(a, "cve"),
+                        title: s(a, "title"),
+                        severity: s(a, "severity"),
+                        link: s(a, "link"),
+                        published: s(a, "reportedAt").and_then(|t| release_time(&t)),
+                        affected: vec![s(a, "affectedVersions")],
+                    });
+                }
+            }
+        }
+        Ok(Some(out))
     }
 
     pub fn versions(&self, repo: &Repository, package: &str) -> Result<Option<Vec<Candidate>>> {
@@ -449,16 +529,20 @@ pub fn select(cands: &[Candidate], name: &str, constraint: &str, min_age: Signed
     }
 }
 
-/// Composer marks the whole package, so the newest version's metadata decides.
+/// Composer marks the whole package, so the newest version's metadata decides. The replacement is
+/// registry text: named only when it is a valid package name, and shown escaped.
+pub fn abandoned(cands: &[Candidate]) -> Option<String> {
+    let c = cands.first()?;
+    let msg = match c.abandoned.as_ref()? {
+        Some(r) if crate::manifest::valid_package_name(r) => format!("{} is abandoned; use {r} instead", c.name),
+        _ => format!("{} is abandoned", c.name),
+    };
+    Some(crate::skill::shown(&msg))
+}
+
 pub fn warn_abandoned(cands: &[Candidate]) {
-    let Some(c) = cands.first() else { return };
-    match &c.abandoned {
-        // The replacement is registry text: printed only when it cannot carry escapes or lines.
-        Some(Some(r)) if crate::manifest::valid_package_name(r) => {
-            crate::ui::warn(crate::skill::shown(&format!("{} is abandoned; use {r} instead", c.name)))
-        }
-        Some(_) => crate::ui::warn(crate::skill::shown(&format!("{} is abandoned", c.name))),
-        None => {}
+    if let Some(m) = abandoned(cands) {
+        crate::ui::warn(m);
     }
 }
 
@@ -476,6 +560,38 @@ pub fn newest<'c>(cands: &'c [Candidate], constraint: Option<&Constraint>) -> Op
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn an_advisory_affects_what_its_ranges_match_and_what_it_cannot_read() {
+        let a = |ranges: &[Option<&str>], published: Option<&str>| Advisory {
+            package: "acme/x".into(),
+            id: Some("PKSA-1".into()),
+            cve: None,
+            title: None,
+            severity: None,
+            link: None,
+            published: published.map(|t| t.parse().unwrap()),
+            affected: ranges.iter().map(|r| r.map(String::from)).collect(),
+        };
+        let at = |v: &str, adv: &Advisory| adv.affects(v, None);
+        let composer = a(&[Some(">=1.0.0,<1.0.2|>=2.0.0,<2.1.0")], None);
+        assert!(at("1.0.1", &composer) && at("v2.0.5", &composer));
+        assert!(!at("1.0.2", &composer) && !at("3.0.0", &composer));
+        let github = a(&[Some(">= 6, < 6.4.48"), Some("= 7.0.0")], None);
+        assert!(at("6.4.47", &github) && at("7.0.0", &github) && !at("6.4.48", &github));
+        // No range or an unreadable one: affected.
+        assert!(at("1.0.0", &a(&[], None)) && at("1.0.0", &a(&[None], None)));
+        assert!(at("1.0.0", &a(&[Some("not a range")], None)));
+        // A commit pin is decided by time, not by whether its short sha parses as a version
+        // (`123456789012` does, as 123456789012.0.0.0).
+        let old = a(&[Some("<1.0.2")], Some("2026-01-01T00:00:00Z"));
+        let commit = |released: &str| Some(Some(released.parse().unwrap()));
+        assert!(!old.affects("123456789012", commit("2026-02-01T00:00:00Z")), "published before the commit");
+        assert!(old.affects("abcdef123456", commit("2025-12-01T00:00:00Z")), "published after it");
+        assert!(
+            old.affects("123456789012", Some(None)) && a(&[Some("<1.0.2")], None).affects("123456789012", commit("2026-02-01T00:00:00Z"))
+        );
+    }
 
     fn p2() -> Value {
         json!({"minified": "composer/2.0", "packages": {"acme/x": [
