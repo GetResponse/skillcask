@@ -13,7 +13,8 @@ reader of `skills.toml` does not see them.
 ## Goals
 
 1. `allow-sources` lists the only sources skills may come from; everything else is refused at
-   resolution and at install from the lock.
+   resolution and at install from the lock, except the dist host of a registry the list admits
+   (see Enforcement).
 2. Policy comes in layers: environment, user config, project. The user config can fix a key so a
    project cannot change it, or only provide a default.
 3. `init` lists the default sources in `[repositories]`.
@@ -121,11 +122,13 @@ A source is the URL a lock entry records in `repository`. Enforcement:
 - Every command that writes or installs checks every lock entry: a package from a blocked source
   is exit 1, also under `install --frozen`.
 - With `allow-sources` set, a lock entry's archive is downloaded (by `install`, `info` or `diff`)
-  only from what was checked: a GitHub repository (`…/repos/<owner>/<name>`) only as
-  `<repository>/zipball/<40-hex commit>`, any other non-Composer repository only as a git
-  checkout of itself. A Composer entry (Packagist or a repository of `[repositories]`) downloads
-  its dist from wherever the lock says, since registries serve dists from other hosts; review
-  lock changes for those.
+  only from what was checked. A repository under the GitHub API in use (`<api>/repos/`) must be
+  exactly `<api>/repos/<owner>/<name>` and downloads only `<repository>/zipball/<40-hex commit>`.
+  Packagist, and a repository of `[repositories]` the list names or gives by its exact URL,
+  download their dist from wherever the lock says, since registries serve dists from other hosts;
+  review lock changes for those. Any other repository of `[repositories]` is admitted only by a
+  prefix, which a project can declare a registry under, so its dist must pass `allow-sources` too.
+  Everything else downloads only as a git checkout of itself.
 - Dependencies (D16) follow the same rules.
 
 ## Default sources

@@ -9,15 +9,15 @@ fn public(s: &Server) {
     public_at(s, "/pub");
 }
 
-/// `acme/public` listed by a repository at `at`; the dist stays under `/pub/`.
+/// `acme/public` listed by a repository at `at`, with its dist under `at`.
 fn public_at(s: &Server, at: &str) {
-    let dist = "/pub/acme/public/1.0.0.zip";
-    s.put(dist, zipball(&[("SKILL.md", &skill_md("public"))]));
+    let dist = format!("{at}/acme/public/1.0.0.zip");
+    s.put(&dist, zipball(&[("SKILL.md", &skill_md("public"))]));
     s.put(
         &format!("{at}/packages.json"),
         json!({ "packages": { "acme/public": { "1.0.0": {
             "name": "acme/public", "version": "1.0.0", "version_normalized": "1.0.0.0", "type": "ai-agent-skill",
-            "time": ago(240), "dist": { "type": "zip", "url": s.url(dist) },
+            "time": ago(240), "dist": { "type": "zip", "url": s.url(&dist) },
         } } } })
         .to_string(),
     );

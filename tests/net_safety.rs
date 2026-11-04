@@ -202,10 +202,13 @@ fn a_locked_dist_outside_its_github_repository_is_refused() {
     tamper(&moved);
     let e = p.expect(&["install", "--frozen"], 1);
     assert!(e.contains("dist zip") && e.contains(&format!("is not zip {zipball}")), "{e}");
-    for args in [&["install"][..], &["info", "acme/t"]] {
+    for args in [&["install"][..], &["info", "acme/t"], &["diff", "acme/t", "--to", "1.0.0"]] {
         let e = p.expect(args, 1);
         assert!(e.contains("dist zip"), "{args:?}: {e}");
     }
+    // `update` resolves again rather than taking the lock's dist; it must not fetch that either.
+    tamper(&moved);
+    p.ok(&["update", "--diff"]);
     // `diff --from` shows the base lock's version from its archive when it is not installed.
     let at = moved.find("dist-sha256 = \"").unwrap() + "dist-sha256 = \"".len();
     p.write("base.lock", &format!("{}{}{}", &moved[..at], "0".repeat(64), &moved[at + 64..]));
@@ -223,6 +226,27 @@ fn a_locked_dist_outside_its_github_repository_is_refused() {
     );
     assert!(p.expect(&["install", "--frozen"], 1).contains("dist zip"));
     assert!(!gh.log().iter().any(|l| l.contains("/repos/evil/")), "{:?}", gh.log());
+}
+
+#[test]
+fn a_locked_dist_of_a_registry_admitted_by_a_prefix_stays_under_allow_sources() {
+    let (reg, evil) = (Server::start(), Server::start());
+    reg.simple("acme/x", "1.0.0", "x");
+    evil.put("/dist/acme/x/1.0.0.zip", zipball(&[("SKILL.md", &skill_md("x")), ("scripts/run.sh", "#!/bin/sh\necho hi\n")]));
+    let p = Project::new(&reg);
+    p.config(&format!("[policy]\nallow-sources = [\"{}/\"]\nenforce = [\"allow-sources\"]\n", reg.base));
+    p.manifest(&reg, "");
+    p.ok(&["add", "acme/x"]);
+    let dist = reg.url("/dist/acme/x/1.0.0.zip");
+    let good = p.read("skills.lock");
+    assert!(good.contains(&dist), "{good}");
+
+    // Regression: a project's own registry under an allowed prefix downloaded its dist from any host.
+    p.write("skills.lock", &good.replace(&dist, &evil.url("/dist/acme/x/1.0.0.zip")));
+    let _ = std::fs::remove_dir_all(p.path().join(".agents"));
+    let e = p.expect(&["install", "--frozen"], 1);
+    assert!(e.contains("is not in policy.allow-sources"), "{e}");
+    assert!(evil.log().is_empty(), "{:?}", evil.log());
 }
 
 #[test]

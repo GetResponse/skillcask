@@ -282,8 +282,8 @@ a lock entry from a source outside an enforced `allow-sources`, or younger than 
 environment `min-release-age`, from installing. The environment, which a project's CI configuration
 also sets, may only make an enforced key stricter. A pinned version is not scanned again for `deny-
 patterns`, and its release time is what the lock says. Under `allow-sources`, a GitHub or git entry downloads only
-from its repository, but a Composer entry's archive URL is also what the lock says, so review lock
-changes. `enforce` does not
+from its repository, and a registry the list admits only by a prefix only from inside the list; the
+archive URL of Packagist or a registry the list names or gives by its exact URL is what the lock says, so review lock changes. `enforce` does not
 stop the person running skillcask: `SKILLCASK_HOME`, `XDG_CONFIG_HOME` or `HOME` can point at a
 config without it. For a rule nobody may skip, run `skillcask install --frozen` as a required check
 on pull requests, with the policy in the job's environment and `.github/workflows/` protected
