@@ -26,7 +26,7 @@ reader of `skills.toml` does not see them.
 ## Layers
 
 Keys: `min-release-age`, `allow-ranges`, `packagist`, `github-requires`, `allow-sources`,
-`deny-patterns` (D31). The first layer that sets a key wins:
+`deny-patterns` (D31), `deny-packages` (D57, an enforced list is a floor). The first layer that sets a key wins:
 
 1. Environment: `SKILLCASK_MIN_RELEASE_AGE`, `SKILLCASK_ALLOW_RANGES`, `SKILLCASK_PACKAGIST`,
    `SKILLCASK_GITHUB_REQUIRES`, `SKILLCASK_ALLOW_SOURCES` (comma-separated),

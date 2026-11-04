@@ -227,7 +227,10 @@ pub struct Invisible {
 
 fn invisible_name(c: char) -> Option<&'static str> {
     Some(match c {
+        '\u{00AD}' => "SOFT HYPHEN",
+        '\u{034F}' => "COMBINING GRAPHEME JOINER",
         '\u{061C}' => "ARABIC LETTER MARK",
+        '\u{180E}' => "MONGOLIAN VOWEL SEPARATOR",
         '\u{200B}' => "ZERO WIDTH SPACE",
         '\u{200C}' => "ZERO WIDTH NON-JOINER",
         '\u{200D}' => "ZERO WIDTH JOINER",
@@ -243,6 +246,11 @@ fn invisible_name(c: char) -> Option<&'static str> {
         '\u{2067}' => "RIGHT-TO-LEFT ISOLATE",
         '\u{2068}' => "FIRST STRONG ISOLATE",
         '\u{2069}' => "POP DIRECTIONAL ISOLATE",
+        '\u{2061}'..='\u{2064}' => "INVISIBLE OPERATOR",
+        '\u{206A}'..='\u{206F}' => "DEPRECATED FORMAT CHARACTER",
+        // One byte per selector is the usual way to smuggle text after an emoji.
+        '\u{FE00}'..='\u{FE0F}' => "VARIATION SELECTOR",
+        '\u{E0100}'..='\u{E01EF}' => "VARIATION SELECTOR SUPPLEMENT",
         '\u{FEFF}' => "ZERO WIDTH NO-BREAK SPACE",
         '\u{E0001}' => "LANGUAGE TAG",
         '\u{E007F}' => "CANCEL TAG",
@@ -251,8 +259,9 @@ fn invisible_name(c: char) -> Option<&'static str> {
     })
 }
 
-/// Bidi controls, zero-width characters and Unicode tags in `text`, except a leading byte order
-/// mark and a zero width joiner between two emoji (`👩‍💻`).
+/// Bidi controls, zero-width characters, Unicode tags and variation selectors in `text`, except a
+/// leading byte order mark, a zero width joiner between two emoji (`👩‍💻`) and one U+FE0F right
+/// after a visible character (`❤️`, `⬆️`, `1️⃣`).
 pub fn invisible(text: &str) -> Vec<Invisible> {
     let emoji = |c: Option<char>| c.is_some_and(|c| matches!(c, '\u{2600}'..='\u{27BF}' | '\u{FE0F}' | '\u{1F000}'..='\u{1FAFF}'));
     let mut out = Vec::new();
@@ -264,6 +273,7 @@ pub fn invisible(text: &str) -> Vec<Invisible> {
             line += 1;
         } else if let Some(name) = invisible_name(c)
             && !(c == '\u{200D}' && emoji(prev) && emoji(chars.peek().copied()))
+            && !(c == '\u{FE0F}' && prev.is_some_and(|p: char| !p.is_whitespace() && invisible_name(p).is_none()))
         {
             out.push(Invisible { line, ch: c, name });
         }
@@ -712,6 +722,13 @@ mod tests {
         assert_eq!(found("\u{feff}x\u{feff}"), [(1, 0xFEFF)], "only a leading BOM is fine");
         assert_eq!(found("\u{1F469}\u{200D}\u{1F4BB} \u{2764}\u{FE0F}\u{200D}\u{1F525}"), [], "emoji ZWJ sequences");
         assert_eq!(found("a\u{200D}b \u{1F469}\u{200D}"), [(1, 0x200D), (1, 0x200D)]);
+        // ASCII smuggling: one variation selector per byte after an emoji.
+        let smuggled: String = "\u{1F600}".chars().chain("hi".bytes().map(|b| char::from_u32(0xE0100 + u32::from(b)).unwrap())).collect();
+        assert_eq!(found(&smuggled), [(1, 0xE0168), (1, 0xE0169)]);
+        assert_eq!(found("\u{1F600}\u{FE01}"), [(1, 0xFE01)]);
+        assert_eq!(found("\u{2764}\u{FE0F} \u{2B06}\u{FE0F} 1\u{FE0F}\u{20E3}"), [], "emoji presentation");
+        assert_eq!(found("\u{2764}\u{FE0F}\u{FE0F} \u{FE0F}"), [(1, 0xFE0F), (1, 0xFE0F)], "a second one, or one after a space");
+        assert_eq!(found("Silben\u{00AD}trennung"), [(1, 0xAD)]);
         assert_eq!(found("\u{E0001}\u{E0041}\u{E007F}\u{E0080}"), [(1, 0xE0001), (1, 0xE0041), (1, 0xE007F)]);
         for c in ['\u{061C}', '\u{200C}', '\u{200E}', '\u{200F}', '\u{202A}', '\u{202D}', '\u{2060}', '\u{2066}', '\u{2069}'] {
             assert_eq!(found(&c.to_string()).len(), 1, "{c:?}");

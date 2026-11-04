@@ -179,7 +179,8 @@ fn deny_packages_refuses_by_name_before_any_download_and_in_a_lock() {
     let p = two_repos(&s, "deny-packages = [\"acme/*\"]");
     let e = p.expect(&["add", "acme/public"], 1);
     assert!(e.contains("acme/public is refused by policy.deny-packages (skills.toml)"), "{e}");
-    assert!(!s.log().iter().any(|l| l.contains(".zip")), "{:?}", s.log());
+    assert!(e.contains("hint: pick another package"), "{e}");
+    assert!(s.log().is_empty(), "refused before any request: {:?}", s.log());
     let e = p.expect(&["add", "github:acme/tools"], 1);
     assert!(e.contains("acme/tools is refused by policy.deny-packages"), "GitHub sources too: {e}");
 
@@ -191,4 +192,16 @@ fn deny_packages_refuses_by_name_before_any_download_and_in_a_lock() {
     let e = c.expect(&["install"], 1);
     assert!(e.contains("acme/public is refused by policy.deny-packages"), "a committed lock cannot bring it in: {e}");
     assert!(!c.exists(".agents/skills/public"));
+}
+
+#[test]
+fn an_enforced_deny_packages_is_a_floor_a_project_can_add_to() {
+    let s = Server::start();
+    let p = two_repos(&s, "deny-packages = [\"acme/private\", \"acme/public\"]");
+    p.config("[policy]\ndeny-packages = [\"acme/public\"]\nenforce = [\"deny-packages\"]\n");
+    assert!(p.expect(&["add", "acme/private"], 1).contains("acme/private is refused by policy.deny-packages (config.toml, enforced)"));
+    assert!(p.expect(&["add", "acme/public"], 1).contains("acme/public is refused"));
+    p.write("skills.toml", &p.read("skills.toml").replace("\"acme/private\", \"acme/public\"", "\"acme/private\""));
+    let e = p.expect(&["add", "acme/private"], 1);
+    assert!(e.contains("policy.deny-packages is enforced as [\"acme/public\"]"), "a project cannot drop an entry: {e}");
 }

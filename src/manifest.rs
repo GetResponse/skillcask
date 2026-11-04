@@ -204,7 +204,8 @@ impl Manifest {
     pub fn check_name(&self, name: &str) -> Result<()> {
         if crate::policy::denied(&self.policy.deny_packages, name) {
             let from = self.policy.effective.get("deny-packages").map_or("", |(_, f)| f);
-            bail!(MANIFEST, "{name} is refused by policy.deny-packages ({from})");
+            return Err(crate::error::Error::new(MANIFEST, format!("{name} is refused by policy.deny-packages ({from})"))
+                .hint(format!("pick another package, or ask whoever sets policy.deny-packages in {from} to drop it")));
         }
         Ok(())
     }

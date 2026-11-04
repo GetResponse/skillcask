@@ -80,3 +80,13 @@ fn deny_patterns_also_refuses_invisible_characters() {
     assert!(out.contains("invisible characters found, refused by policy.deny-patterns"), "{out}");
     assert!(!q.exists("skills.lock") && !q.exists(".agents/skills/foo"));
 }
+
+#[test]
+fn deny_patterns_lets_a_clean_skill_in() {
+    let s = Server::start();
+    s.simple("acme/clean", "1.0.0", "bar");
+    let p = Project::new(&s);
+    manifest(&p, &s, "deny-patterns = true\n");
+    p.ok(&["add", "acme/clean"]);
+    assert!(p.exists(".agents/skills/bar"));
+}

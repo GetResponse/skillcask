@@ -80,9 +80,9 @@ fn check_source(s: &str, names: bool) -> std::result::Result<(), String> {
     })
 }
 
+/// `vendor/name` or `vendor/*`, each part as a package name allows it (lowercase).
 fn valid_package_pattern(p: &str) -> bool {
-    let part = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "-_.".contains(c));
-    p.split_once('/').is_some_and(|(v, n)| part(v) && (n == "*" || part(n)))
+    p.split_once('/').is_some_and(|(v, n)| crate::manifest::valid_package_name(&format!("{v}/{}", if n == "*" { "x" } else { n })))
 }
 
 /// Whether package `name` (`vendor/name`) matches a `deny-packages` entry (D57).
@@ -99,10 +99,14 @@ fn value(k: &'static str, raw: Raw, names: bool) -> std::result::Result<Value, S
             l.iter().try_for_each(|s| check_source(s, names))?;
             Ok(Value::List(l))
         }
-        ("deny-packages", Raw::List(l)) => match l.iter().find(|p| !valid_package_pattern(p)) {
-            Some(p) => Err(format!("{p:?} is not vendor/name or vendor/*")),
-            None => Ok(Value::List(l)),
-        },
+        // Matching ignores case, so the entries are read as lowercase.
+        ("deny-packages", Raw::List(l)) => {
+            let l: Vec<String> = l.iter().map(|p| p.to_ascii_lowercase()).collect();
+            match l.iter().find(|p| !valid_package_pattern(p)) {
+                Some(p) => Err(format!("{p:?} is not vendor/name or vendor/*")),
+                None => Ok(Value::List(l)),
+            }
+        }
         ("allow-sources" | "deny-packages", _) => Err("must be a list".into()),
         (_, Raw::Bool(b)) => Ok(Value::Bool(b)),
         (_, Raw::Str(s)) if s == "true" || s == "false" => Ok(Value::Bool(s == "true")),
@@ -294,6 +298,8 @@ pub fn tightens(k: &str, v: &Value, e: &Value) -> bool {
         (Value::Age(v), Value::Age(e)) => v >= e,
         (Value::Bool(v), Value::Bool(e)) if k == "deny-patterns" => v >= e,
         (Value::Bool(v), Value::Bool(e)) => v <= e,
+        // A deny list tightens by denying at least everything the enforced one does.
+        (Value::List(v), Value::List(e)) if k == "deny-packages" => e.iter().all(|y| denied(v, y)),
         (Value::List(v), Value::List(e)) => v.iter().all(|x| e.iter().any(|y| x == y || under(&source_url(x), &source_url(y)))),
         _ => false,
     }
@@ -313,8 +319,9 @@ pub fn resolve(project: &Layer, o: &Outer) -> Result<Effective> {
                 .hint(format!("unset {var} or make it stricter, or ask whoever manages {} to lift it", o.config_path)));
         }
         // With the key in the environment the project's value is unused, so it cannot clash.
+        // A project may add to an enforced deny list (D57), not change any other enforced key.
         if let (Some(e), Some(p), None) = (enforced, project.values.get(k), o.env.values.get(k))
-            && e != p
+            && if k == "deny-packages" { !tightens(k, p, e) } else { e != p }
         {
             return Err(Error::new(MANIFEST, format!("policy.{k} is enforced as {e} by {}", o.config_path)).hint(format!(
                 "remove policy.{k} from {}, or ask whoever manages {} to lift it",
@@ -326,7 +333,8 @@ pub fn resolve(project: &Layer, o: &Outer) -> Result<Effective> {
         let pick = if let Some(v) = o.env.values.get(k).filter(|v| enforced != Some(*v)) {
             Some((v, ENVIRONMENT))
         } else if let Some(v) = enforced {
-            Some((v, ENFORCED))
+            let added = project.values.get(k).filter(|p| k == "deny-packages" && tightens(k, p, v));
+            Some((added.unwrap_or(v), ENFORCED))
         } else if let Some(v) = project.values.get(k) {
             Some((v, "skills.toml"))
         } else {
@@ -463,14 +471,31 @@ mod tests {
     #[test]
     fn deny_packages() {
         assert!(proj("[policy]\ndeny-packages = [\"evil/*\", \"acme/bad\"]").values.contains_key("deny-packages"));
-        for bad in ["evil", "*/x", "Evil/x", "evil/x*", "/x", "evil/"] {
+        // Entries no valid package name can match are refused, not left to never fire.
+        for bad in ["evil", "*/x", "evil/x*", "/x", "evil/", "acme/-x", "a./b", "evil./*"] {
             let doc: DocumentMut = format!("[policy]\ndeny-packages = [{bad:?}]").parse().unwrap();
             assert!(layer(doc.get("policy").and_then(Item::as_table_like), "skills.toml", false).is_err(), "{bad}");
         }
+        assert_eq!(
+            proj("[policy]\ndeny-packages = [\"Evil/X\"]").values["deny-packages"],
+            Value::List(vec!["evil/x".into()]),
+            "read as lowercase"
+        );
         let l = vec!["evil/*".to_string(), "acme/bad".to_string()];
         assert!(denied(&l, "evil/x") && denied(&l, "Acme/Bad") && !denied(&l, "acme/good") && !denied(&l, "evilx/y"));
         let env = env_layer(|k| (k == "SKILLCASK_DENY_PACKAGES").then(|| "evil/*, acme/bad".to_string())).unwrap();
         assert_eq!(env.values["deny-packages"], Value::List(l));
+
+        // Enforced, the list is a floor: a project or the environment may add to it, in any order.
+        let config = cfg("[policy]\ndeny-packages = [\"evil/*\"]\nenforce = [\"deny-packages\"]").unwrap();
+        let o = Outer { config, config_path: "config.toml".into(), ..Default::default() };
+        let more = proj("[policy]\ndeny-packages = [\"acme/bad\", \"evil/*\"]");
+        assert_eq!(resolve(&more, &o).unwrap()["deny-packages"], (Value::List(vec!["acme/bad".into(), "evil/*".into()]), ENFORCED));
+        let fewer = resolve(&proj("[policy]\ndeny-packages = [\"evil/x\"]"), &o).unwrap_err();
+        assert!(fewer.msg.contains("policy.deny-packages is enforced as [\"evil/*\"]"), "{}", fewer.msg);
+        let env = |v: &str| env_layer(|k| (k == "SKILLCASK_DENY_PACKAGES").then(|| v.to_string())).unwrap();
+        assert!(resolve(&proj(""), &Outer { env: env("evil/*, acme/bad"), ..o.clone() }).is_ok());
+        assert!(resolve(&proj(""), &Outer { env: env(","), ..o }).unwrap_err().msg.contains("SKILLCASK_DENY_PACKAGES = [] loosens"));
     }
 
     #[test]
