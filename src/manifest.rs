@@ -236,8 +236,13 @@ impl Manifest {
         let refused = |want: &str| -> Result<()> {
             bail!(MANIFEST, "{}: {} dist {} {} is not {want}", p.name, crate::lock::FILE, p.dist.kind, shown(&p.dist.url))
         };
-        // The API in use, not the path shape, says what is GitHub: a registry may have /repos/ in its path.
-        let github = [crate::github::api(), self.github_api()].iter().find_map(|api| github_repository(repo, api));
+        // The APIs in use or trusted, and any the list names a `/repos/` prefix of, say what is GitHub,
+        // not the path shape alone: a registry may have /repos/ in its path, and a project must not
+        // turn an enforced GHE prefix into "not GitHub" by leaving `github` at its default.
+        let listed =
+            list.iter().filter(|e| e.starts_with("https://")).filter_map(|e| e.split_once("/repos/").map(|(api, _)| api.to_string()));
+        let apis: Vec<String> = [crate::github::api(), self.github_api(), crate::github::trusted_api()].into_iter().chain(listed).collect();
+        let github = apis.iter().find_map(|api| github_repository(repo, api));
         if github == Some(false) {
             bail!(
                 MANIFEST,
@@ -260,10 +265,13 @@ impl Manifest {
             return Ok(());
         }
         // A Composer registry may serve dists from any host (Packagist: GitHub zipballs). A project's
-        // own registry gets that only when the list names it or its exact URL; under a prefix it is
-        // the project's word.
+        // own registry gets that only when the list names it, never through the "github" or
+        // "packagist" keyword, or gives its exact URL without a trailing `/`, which is a prefix;
+        // under a prefix it is the project's word.
         let registry = self.repositories.iter().find(|r| r.url.trim_end_matches('/') == repo);
-        let named = |r: &Repository| list.iter().any(|e| *e == r.name || e.trim_end_matches('/') == repo);
+        let named = |r: &Repository| {
+            list.iter().any(|e| !matches!(e.as_str(), "github" | "packagist") && *e == r.name || !e.ends_with('/') && e == repo)
+        };
         if repo == PACKAGIST_URL || registry.is_some_and(named) {
             return Ok(());
         }
@@ -912,6 +920,33 @@ mod tests {
         assert!(ok(entry(fake, "zip", "https://git.example.com/acme/dists/x.zip", &sha)));
         // The exact URL names the registry, as an enforced list cannot name it otherwise.
         assert!(ok(entry("https://exact.example/packages.json", "zip", "https://cdn.example/x.zip", &sha)));
+        // Regression: a registry keyed like a keyword was "named" by it, and one at exactly a prefix
+        // was "given by its exact URL".
+        for key in ["github", "packagist"] {
+            let m = parse(
+                &format!("[repositories]\n{key} = {{ url = \"https://git.example.com/acme/fake\" }}\n[policy]\nallow-sources = [\"{key}\", \"https://git.example.com/acme/\"]\n"),
+                false,
+            )
+            .unwrap();
+            assert!(
+                m.check_locked(&entry("https://git.example.com/acme/fake", "zip", "https://evil.example/x.zip", &sha)).is_err(),
+                "{key}"
+            );
+        }
+        let at = parse("[repositories]\nr = { url = \"https://git.example.com/acme/\" }\n[policy]\nallow-sources = [\"https://git.example.com/acme/\"]\n", false).unwrap();
+        assert!(at.check_locked(&entry("https://git.example.com/acme/", "zip", "https://evil.example/x.zip", &sha)).is_err());
+        // Regression: an enforced GHE prefix counted as GitHub only when the project's API was GHE.
+        let ghe = "https://ghe.example/api/v3/repos/acme";
+        let m = parse(
+            &format!("[repositories]\nr = {{ url = \"{ghe}/t\" }}\ns = {{ url = \"{ghe}/\" }}\n[policy]\nallow-sources = [\"{ghe}/\"]\n"),
+            false,
+        )
+        .unwrap();
+        let e = m.check_locked(&entry(&format!("{ghe}/t"), "zip", "https://evil.example/x.zip", &sha)).unwrap_err();
+        assert!(e.msg.contains(&format!("is not zip {ghe}/t/zipball/{sha}")), "{}", e.msg);
+        assert!(m.check_locked(&entry(&format!("{ghe}/t"), "zip", &format!("{ghe}/t/zipball/{sha}"), &sha)).is_ok());
+        let e = m.check_locked(&entry(&format!("{ghe}/"), "zip", "https://evil.example/x.zip", &sha)).unwrap_err();
+        assert!(e.msg.contains("is not a GitHub repository"), "{}", e.msg);
         // A registry with /repos/ in its path off the GitHub API is not held to the zipball rule.
         assert!(ok(entry("https://host.example/repos/php/packages.json", "zip", "https://host.example/dists/x.zip", &sha)));
     }

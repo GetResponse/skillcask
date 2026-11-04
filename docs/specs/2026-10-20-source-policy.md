@@ -84,6 +84,10 @@ It guards against what a project brings, not against whoever runs skillcask:
   directory, no key is enforced at all.
 - The user owns `config.toml` and can edit it.
 
+Redirects are followed without checking `allow-sources` per hop (only the credential is looked up
+again), so a server inside an allowed prefix can send a download elsewhere; an allowed prefix
+vouches for every server under it.
+
 Policy governs packages. A project's own skills (`local`, `.skills` by default) and skills written
 by hand into `.agents/skills` are its code, reviewed like it; `audit` scans them.
 
@@ -122,13 +126,15 @@ A source is the URL a lock entry records in `repository`. Enforcement:
 - Every command that writes or installs checks every lock entry: a package from a blocked source
   is exit 1, also under `install --frozen`.
 - With `allow-sources` set, a lock entry's archive is downloaded (by `install`, `info` or `diff`)
-  only from what was checked. A repository under the GitHub API in use (`<api>/repos/`) must be
-  exactly `<api>/repos/<owner>/<name>` and downloads only `<repository>/zipball/<40-hex commit>`.
-  Packagist, and a repository of `[repositories]` the list names or gives by its exact URL,
-  download their dist from wherever the lock says, since registries serve dists from other hosts;
-  review lock changes for those. Any other repository of `[repositories]` is admitted only by a
-  prefix, which a project can declare a registry under, so its dist must pass `allow-sources` too.
-  Everything else downloads only as a git checkout of itself.
+  only from what was checked. A repository under a GitHub API (`<api>/repos/`: the one in use, the
+  trusted one of D43, or one the list gives a `/repos/` prefix of) must be exactly
+  `<api>/repos/<owner>/<name>` and downloads only `<repository>/zipball/<40-hex commit>`.
+  Packagist, and a repository of `[repositories]` the list names (never through the `github` or
+  `packagist` keyword) or gives by its exact URL without a trailing `/`, download their dist from
+  wherever the lock says, since registries serve dists from other hosts; review lock changes for
+  those. Any other repository of `[repositories]` is admitted only by a prefix, which a project
+  can declare a registry under or at, so its dist must pass `allow-sources` too. Everything else
+  downloads only as a git checkout of itself.
 - Dependencies (D16) follow the same rules.
 
 ## Default sources
