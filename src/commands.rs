@@ -392,6 +392,31 @@ impl Ctx {
                 bail!(MANIFEST, "{}: {why}", p.name);
             }
         }
+        // Nor a version younger than a cooldown the project cannot change: a lock written under a
+        // looser one would install unchanged (D7). Its `released` is the lock's word, as at resolution.
+        if let Some((_, from)) =
+            m.policy.effective.get("min-release-age").filter(|_| crate::policy::fixed(&m.policy.effective, "min-release-age"))
+        {
+            let now = Timestamp::now();
+            for p in &lock.packages {
+                let age = m.repositories.iter().find(|r| r.url == p.repository).map_or(m.policy.min_release_age, |r| m.min_release_age(r));
+                let Some(t) = p.released.filter(|t| now.checked_sub(age).is_ok_and(|cutoff| *t > cutoff)) else { continue };
+                let eligible = t.checked_add(age).unwrap_or(Timestamp::MAX);
+                return Err(Error::new(
+                    MANIFEST,
+                    format!(
+                        "{} {} was released {} and is newer than policy.min-release-age ({age:#}, {from})",
+                        p.name,
+                        p.version,
+                        t.round(jiff::Unit::Second).unwrap_or(t)
+                    ),
+                )
+                .hint(format!(
+                    "it becomes eligible at {}; until then lock an older version",
+                    eligible.round(jiff::Unit::Second).unwrap_or(eligible)
+                )));
+            }
+        }
         if let Some(c) = self.conflicts(m, lock, old, &BTreeSet::new())?.first() {
             let renames = m.skill(&c.package).map(|r| &r.rename);
             bail!(MANIFEST, "{}", hint(c, &self.taken_names(m, lock)?, renames));
