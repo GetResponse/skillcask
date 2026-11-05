@@ -41,3 +41,80 @@ fn a_repository_can_set_its_own_min_release_age() {
     p.write("skills.toml", &p.read("skills.toml").replace("min-release-age = \"0\"", "min-release-age = 3"));
     assert!(p.expect(&["install"], 1).contains("repository internal: min-release-age must be a string"));
 }
+
+fn young_and_old(s: &Server) {
+    let z = || zipball(&[("SKILL.md", &skill_md("one"))]);
+    s.package(
+        "acme/one",
+        vec![
+            Ver { version: "1.1.0", time: Some(ago(1)), zip: z(), extra: None },
+            Ver { version: "1.0.0", time: Some(ago(240)), zip: z(), extra: None },
+        ],
+    );
+}
+
+#[test]
+fn a_cooldown_the_project_cannot_change_also_holds_the_lock() {
+    let s = Server::start();
+    young_and_old(&s);
+    let mut p = Project::new(&s);
+    p.manifest(&s, "");
+    p.env.push(("SKILLCASK_MIN_RELEASE_AGE".into(), "0".into()));
+    p.ok(&["add", "acme/one"]);
+    assert!(p.read("skills.lock").contains("version = \"1.1.0\""), "{}", p.read("skills.lock"));
+    p.env.retain(|(k, _)| k != "SKILLCASK_MIN_RELEASE_AGE");
+
+    // The project's own cooldown does not reach a version it already locked (D7).
+    p.write("skills.toml", &p.read("skills.toml").replace("[policy]\n", "[policy]\nmin-release-age = \"3d\"\n"));
+    p.ok(&["install", "--frozen"]);
+
+    p.env.push(("SKILLCASK_MIN_RELEASE_AGE".into(), "3d".into()));
+    let e = p.expect(&["install", "--frozen"], 1);
+    assert!(e.contains("acme/one 1.1.0 was released") && e.contains("newer than policy.min-release-age (72h, environment)"), "{e}");
+    assert!(e.contains("hint: it becomes eligible at"), "{e}");
+    p.env.retain(|(k, _)| k != "SKILLCASK_MIN_RELEASE_AGE");
+
+    p.write("skills.toml", &p.read("skills.toml").replace("min-release-age = \"3d\"\n", ""));
+    p.config("[policy]\nmin-release-age = \"3d\"\nenforce = [\"min-release-age\"]\n");
+    let e = p.expect(&["install", "--frozen"], 1);
+    assert!(e.contains("newer than policy.min-release-age (72h, config.toml, enforced)"), "{e}");
+    // An exception for the repository lets it through, as at resolution (D28).
+    p.config(&format!(
+        "[policy]\nmin-release-age = \"3d\"\nenforce = [\"min-release-age\"]\n\n[policy.repository-min-release-age]\n\"{}\" = \"0\"\n",
+        s.url("/")
+    ));
+    p.ok(&["install", "--frozen"]);
+}
+
+#[test]
+fn the_environment_repeating_an_enforced_cooldown_keeps_the_repository_floor() {
+    let s = Server::start();
+    young_and_old(&s);
+    let mut p = Project::new(&s);
+    p.write(
+        "skills.toml",
+        &format!(
+            "[repositories]\ninternal = {{ url = \"{}\", min-release-age = \"0\" }}\n[policy]\npackagist = false\n",
+            s.url("/packages.json")
+        ),
+    );
+    p.config("[policy]\nmin-release-age = \"3d\"\nenforce = [\"min-release-age\"]\n");
+    assert!(p.expect(&["add", "acme/one"], 1).contains("is shorter than \"72h\""));
+    p.env.push(("SKILLCASK_MIN_RELEASE_AGE".into(), "3d".into()));
+    assert!(p.expect(&["add", "acme/one"], 1).contains("is shorter than \"72h\""), "the same value lifts nothing");
+    p.env.retain(|(k, _)| k != "SKILLCASK_MIN_RELEASE_AGE");
+    p.env.push(("SKILLCASK_MIN_RELEASE_AGE".into(), "1h".into()));
+    let out = p.ok(&["add", "acme/one"]);
+    assert!(out.contains("warning: SKILLCASK_MIN_RELEASE_AGE overrides policy.min-release-age"), "{out}");
+}
+
+#[test]
+fn a_bad_cooldown_in_config_toml_names_only_that_file() {
+    let s = Server::start();
+    let p = Project::new(&s);
+    p.manifest(&s, "");
+    p.config("[policy]\nmin-release-age = \"bogus\"\n");
+    let e = p.expect(&["status"], 1);
+    assert!(e.contains("config.toml: policy.min-release-age invalid duration \"bogus\""), "{e}");
+    assert!(!e.contains("skills.toml"), "{e}");
+}

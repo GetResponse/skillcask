@@ -65,18 +65,18 @@ silently drop a rule. CI without the file applies the project and the environmen
 ## Threat model
 
 `enforce` keeps a project from loosening the policy for what it resolves: a cloned repository's
-`skills.toml` and its dependencies (D16) cannot change an enforced key, and no lock entry may come
-from a source outside an enforced `allow-sources` (checked at every install, also `--frozen`).
-`min-release-age` and `deny-patterns` apply when a version is resolved (D7, D23, D31), not to a
-version the lock already pins: a lock written under a looser policy installs unchanged under a
-stricter one, so the lock change is what to review.
+`skills.toml` and its dependencies (D16) cannot change an enforced key. Every install, also
+`--frozen`, holds the lock to an enforced `allow-sources` and to an enforced or environment
+`min-release-age` (D7), the latter by the `released` time the lock records. `deny-patterns` applies
+when a version is resolved (D23, D31), not to a version the lock already pins, and a forged
+`released` is not detected, so the lock change is still what to review.
 
 It guards against what a project brings, not against whoever runs skillcask:
 
 - The environment beats an enforced key (layer 1; a warning names a value that differs from the
-  enforced one), so a CI job or a wrapper can still set the policy for one run. Any
-  `SKILLCASK_MIN_RELEASE_AGE`, even the enforced value, also lifts the per-repository floor of D28
-  for that run.
+  enforced one), so a CI job or a wrapper can still set the policy for one run. A
+  `SKILLCASK_MIN_RELEASE_AGE` other than the enforced value also lifts the per-repository floor of
+  D28 for that run; the enforced value repeated keeps it.
 - `SKILLCASK_HOME`, `XDG_CONFIG_HOME` and `HOME` (else `USERPROFILE`, through the
   `~/.config/skillcask` fallback) choose which `config.toml` is read; pointed at another
   directory, no key is enforced at all.
@@ -90,8 +90,8 @@ could, with a config directory the user cannot write (managed by MDM, which also
 scope of D13 read-only) and a locked environment. A rule nobody may skip is checked where the
 developer does not control the run: a required check on pull requests to the default branch, with
 the policy in the job's environment, that runs `install --frozen`. That holds every merged lock to
-`allow-sources` and `allow-ranges`; the cooldown and `deny-patterns` of a version the lock pins are
-left to the review of the lock change. On `pull_request` GitHub runs the pull request's own copy
+`allow-sources`, `allow-ranges` and the cooldown; `deny-patterns` of a version the lock pins, and the
+truth of its `released`, are left to the review of the lock change. On `pull_request` GitHub runs the pull request's own copy
 of the workflow, so the job's environment is only as strong as the protection of
 `.github/workflows/` (a required workflow in a ruleset, or CODEOWNERS with required review).
 

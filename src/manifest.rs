@@ -550,25 +550,30 @@ fn age(i: &Item, what: &str) -> Result<SignedDuration> {
 
 /// `"3d"`, `"12h"`, `"30m"`, `"1w"`, `"90s"`, `"0"`.
 pub fn parse_age(s: &str) -> Result<SignedDuration> {
+    duration(s).map_err(bad)
+}
+
+/// `parse_age` without naming a file, for `config.toml` and the environment.
+pub fn duration(s: &str) -> std::result::Result<SignedDuration, String> {
     let s = s.trim();
     if s == "0" {
         return Ok(SignedDuration::ZERO);
     }
     let (num, unit) = s.split_at(s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len()));
-    let n: i64 = num.parse().map_err(|_| bad(format!("invalid duration {s:?}")))?;
+    let n: i64 = num.parse().map_err(|_| format!("invalid duration {s:?}"))?;
     let secs = match unit {
         "s" => 1,
         "m" => 60,
         "h" => 3600,
         "d" => 86400,
         "w" => 7 * 86400,
-        _ => return Err(bad(format!("invalid duration {s:?}, use s, m, h, d or w"))),
+        _ => return Err(format!("invalid duration {s:?}, use s, m, h, d or w")),
     };
     // Past this the cutoff arithmetic in resolution could overflow and disable the cooldown.
     const MAX: i64 = 36525 * 86400;
     match n.checked_mul(secs) {
         Some(total) if total <= MAX => Ok(SignedDuration::from_secs(total)),
-        _ => Err(bad(format!("duration {s:?} is longer than 100 years"))),
+        _ => Err(format!("duration {s:?} is longer than 100 years")),
     }
 }
 

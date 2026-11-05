@@ -81,7 +81,7 @@ fn check_source(s: &str, names: bool) -> std::result::Result<(), String> {
 
 fn value(k: &'static str, raw: Raw, names: bool) -> std::result::Result<Value, String> {
     match (k, raw) {
-        ("min-release-age", Raw::Str(s)) => crate::manifest::parse_age(&s).map(Value::Age).map_err(|e| e.msg),
+        ("min-release-age", Raw::Str(s)) => crate::manifest::duration(&s).map(Value::Age),
         ("min-release-age", _) => Err("must be a string such as \"3d\"".into()),
         ("allow-sources", Raw::List(l)) => {
             l.iter().try_for_each(|s| check_source(s, names))?;
@@ -132,7 +132,7 @@ pub fn layer(t: Option<&dyn TableLike>, file: &str, config: bool) -> Result<Laye
                     return Err(bad(k, format!("{prefix:?} is not an https:// URL prefix")));
                 }
                 let age = age.as_str().ok_or_else(|| bad(k, format!("{prefix:?} must be a string such as \"3d\"")))?;
-                let age = crate::manifest::parse_age(age).map_err(|e| bad(k, format!("{prefix:?}: {}", e.msg)))?;
+                let age = crate::manifest::duration(age).map_err(|e| bad(k, format!("{prefix:?}: {e}")))?;
                 out.repository_ages.insert(prefix.to_string(), age);
             }
             continue;
@@ -286,7 +286,9 @@ pub fn resolve(project: &Layer, o: &Outer) -> Result<Effective> {
                 o.config_path
             )));
         }
-        let pick = if let Some(v) = o.env.values.get(k) {
+        // The environment repeating the enforced value lifts nothing: it stays enforced, so the
+        // per-repository floor of D28 still applies.
+        let pick = if let Some(v) = o.env.values.get(k).filter(|v| enforced != Some(*v)) {
             Some((v, ENVIRONMENT))
         } else if let Some(v) = enforced {
             Some((v, ENFORCED))

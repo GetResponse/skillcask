@@ -264,9 +264,9 @@ enforce = ["min-release-age"]
 ```
 
 `enforce` stops a project and its dependencies from loosening the policy for what they resolve,
-and a lock entry from a source outside an enforced `allow-sources` from installing. A version the
-lock already pins is not checked again against `min-release-age` or `deny-patterns`, so review
-lock changes. `enforce` does not stop the person running skillcask: the environment wins over it,
+and a lock entry from a source outside an enforced `allow-sources`, or younger than an enforced
+or environment `min-release-age`, from installing. A pinned version is not scanned again for
+`deny-patterns`, and its release time is what the lock says, so review lock changes. `enforce` does not stop the person running skillcask: the environment wins over it,
 and `SKILLCASK_HOME`, `XDG_CONFIG_HOME` or `HOME` can point at a config without it. For a rule
 nobody may skip, run `skillcask install --frozen` as a required check on pull requests, with the
 policy in the job's environment and `.github/workflows/` protected (CODEOWNERS or a required
