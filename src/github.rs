@@ -310,6 +310,40 @@ pub fn discover(entries: &[FileEntry]) -> Vec<String> {
     out.into_iter().map(|d| if d.is_empty() { SKILL_MD.to_string() } else { format!("{d}/{SKILL_MD}") }).collect()
 }
 
+/// Published security advisories of the repository a GitHub entry was locked from (D55);
+/// `None` when the API has none for it (404, e.g. GitHub Enterprise without the feature).
+/// Withdrawn advisories stay `published` with `withdrawn_at` set, and are dropped.
+pub fn advisories(http: &Http, repository: &str, package: &str) -> Result<Option<Vec<registry::Advisory>>> {
+    const PAGE: usize = 100;
+    let Some(json) = http.get_json(&format!("{repository}/security-advisories?state=published&per_page={PAGE}"))? else {
+        return Ok(None);
+    };
+    let all = json.as_array().map_or(&[][..], Vec::as_slice);
+    if all.len() >= PAGE {
+        crate::ui::warn(format!("{package}: only the newest {PAGE} security advisories were read"));
+    }
+    let s = |a: &Value, k: &str| a.get(k).and_then(Value::as_str).filter(|s| !s.is_empty()).map(String::from);
+    let list = all.iter().filter(|a| s(a, "withdrawn_at").is_none()).map(|a| registry::Advisory {
+        package: package.to_string(),
+        id: s(a, "ghsa_id"),
+        cve: s(a, "cve_id"),
+        title: s(a, "summary"),
+        severity: s(a, "severity"),
+        link: s(a, "html_url"),
+        published: s(a, "published_at").and_then(|t| t.parse().ok()),
+        // Semver ranges (`>= 6, < 6.4.48`), read as Composer constraints: the same for release
+        // versions, while `< 1.0.2` does not match a `1.0.2-beta.1`.
+        affected: a
+            .get("vulnerabilities")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .map(|v| v.get("vulnerable_version_range").and_then(Value::as_str).filter(|r| !r.is_empty()).map(String::from))
+            .collect(),
+    });
+    Ok(Some(list.collect()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
