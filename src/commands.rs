@@ -227,9 +227,7 @@ impl Ctx {
         prepared: &mut HashMap<String, Fetched>,
     ) -> Result<Option<Package>> {
         let Some(p) = p.filter(|p| !source_changed(m, req, p)) else { return Ok(None) };
-        if let Some(why) = m.refuses(&p.repository) {
-            bail!(MANIFEST, "{}: {why}", p.name);
-        }
+        m.check_locked(p)?;
         let fits = || {
             let c = Constraint::parse(&req.constraint).ok();
             c.zip(version::Version::parse(&p.version)).is_some_and(|(c, v)| c.allows(&v))
@@ -388,9 +386,7 @@ impl Ctx {
         }
         // A committed lock must not bring in what the policy refuses.
         for p in &lock.packages {
-            if let Some(why) = m.refuses(&p.repository) {
-                bail!(MANIFEST, "{}: {why}", p.name);
-            }
+            m.check_locked(p)?;
         }
         // Nor a version younger than a cooldown the project cannot change: a lock written under a
         // looser one would install unchanged (D7). Its `released` is the lock's word, as at resolution.
@@ -734,28 +730,27 @@ impl Ctx {
     }
 }
 
-/// Warns about invisible Unicode in `p`'s skill files (D23).
 /// Warns about invisible characters (D23) and risky patterns (D31) in the skills of a fresh
-/// download; `deny`: risky patterns fail instead (policy.deny-patterns).
+/// download; `deny`: either fails instead (policy.deny-patterns, D56).
 fn scan_new(f: &Fetched, p: &Package, deny: bool) -> Result<()> {
-    let mut risky = 0;
+    let mut found = 0;
     for sk in &p.skills {
         for e in f.skill_files(&p.name, sk.from.as_ref().unwrap_or(&sk.name), &sk.path)? {
             let path = if sk.path.is_empty() { e.path } else { format!("{}/{}", sk.path, e.path) };
             let bytes = std::fs::read(f.dir.path().join(&path))?;
-            for w in skill::invisible_warnings(&path, &bytes) {
-                ui::warn(format!("{}: {w}", p.name));
-            }
-            let found = skill::risky_warnings(&path, &bytes);
-            risky += found.len();
-            for w in found {
+            let warnings = [skill::invisible_warnings(&path, &bytes), skill::risky_warnings(&path, &bytes)].concat();
+            found += warnings.len();
+            for w in warnings {
                 ui::warn(format!("{}: {w}", p.name));
             }
         }
     }
-    if deny && risky > 0 {
-        return Err(Error::new(MANIFEST, format!("{} {}: risky patterns found, refused by policy.deny-patterns", p.name, p.version))
-            .hint("review the lines above; if they are fine, lift deny-patterns for this run with SKILLCASK_DENY_PATTERNS=false"));
+    if deny && found > 0 {
+        return Err(Error::new(
+            MANIFEST,
+            format!("{} {}: risky patterns or invisible characters found, refused by policy.deny-patterns", p.name, p.version),
+        )
+        .hint("review the lines above; if they are fine, lift deny-patterns for this run with SKILLCASK_DENY_PATTERNS=false"));
     }
     Ok(())
 }
@@ -1354,6 +1349,7 @@ fn locked_repository<'a>(m: &'a Manifest, req: &SkillReq, locked: Option<&Packag
 }
 
 fn find(reg: &Registry, m: &Manifest, req: &SkillReq, locked: Option<&Package>) -> Result<(Repository, Vec<Candidate>)> {
+    m.check_name(&req.name)?;
     // A blocked repository fails here; searching the others could pick a namesake elsewhere.
     let blocked = |r: &Repository| m.refuses(&r.url).map(|why| Error::new(MANIFEST, format!("{}: {why}", req.name)));
     let Some(repo) = locked_repository(m, req, locked) else {
@@ -2551,9 +2547,7 @@ pub fn diff_from(ctx: &Ctx, base: &Path, package: Option<&str>) -> Result<()> {
             continue;
         }
         // The lock under review chooses the URL; the policy decides whether it is fetched at all.
-        if let Some(why) = m.refuses(&new.repository) {
-            bail!(MANIFEST, "{}: {why}", new.name);
-        }
+        m.check_locked(new)?;
         let f = ctx.fetch(&new.name, &new.dist, Some(&new.dist_sha256), None)?.1;
         // Shows what `install` would place, or fails where `install` would.
         for sk in &new.skills {

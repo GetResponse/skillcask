@@ -77,6 +77,7 @@ pub fn check(key: &str, value: &str) -> std::result::Result<(Target, Option<GitH
         github_requires: true,
         deny_patterns: false,
         allow_sources: None,
+        deny_packages: Vec::new(),
         github_public: false,
         effective: Default::default(),
     };

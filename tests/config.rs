@@ -128,6 +128,7 @@ fn json_names_where_each_setting_comes_from() {
             "policy.github-requires": { "value": false, "from": "default" },
             "policy.allow-sources": { "value": ["github"], "from": "config.toml, enforced" },
             "policy.deny-patterns": { "value": true, "from": "environment" },
+            "policy.deny-packages": { "value": null, "from": null },
             "agents.targets": { "value": ["kiro"], "from": "config.toml" },
             "search.skills-sh": { "value": null, "from": null },
         })
