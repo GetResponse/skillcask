@@ -238,45 +238,19 @@ struct ScopeOverviewView: View {
         }
     }
 
-    /// The six cards in rows that measure their height: each row is an `HStack(alignment: .top)` fixed to its
-    /// ideal height, so the cards of a row stretch to the taller one and a wrapping cell never makes a row draw
-    /// taller than it was measured (a `LazyVGrid` row overlapped the next one).
-    @ViewBuilder private func cardRows(_ snapshot: ScopeSnapshot, columns: Int) -> some View {
+    /// The six cards in rows that measure their height (`CardRows`): the cards of a row stretch to the taller one
+    /// and a wrapping cell never makes a row draw taller than it was measured (a `LazyVGrid` row overlapped the
+    /// next one). The same six cards in one or two columns, so a column change keeps them.
+    private func cardRows(_ snapshot: ScopeSnapshot, columns: Int) -> some View {
         let quiet = Self.isQuiet(snapshot)
-        if columns >= 2 {
-            VStack(alignment: .leading, spacing: Self.gridGap) {
-                row {
-                    health(snapshot)
-                    updates(snapshot)
-                }
-                row {
-                    security(snapshot)
-                    SourcesCard(snapshot: snapshot, isCompact: quiet)
-                }
-                row {
-                    PolicyCard(snapshot: snapshot, isCompact: quiet)
-                    AgentsCard(snapshot: snapshot, agents: store.agentIndex, isCompact: quiet)
-                }
-            }
-        } else {
-            VStack(alignment: .leading, spacing: Self.gridGap) {
-                row { health(snapshot) }
-                row { updates(snapshot) }
-                row { security(snapshot) }
-                row { SourcesCard(snapshot: snapshot, isCompact: quiet) }
-                row { PolicyCard(snapshot: snapshot, isCompact: quiet) }
-                row { AgentsCard(snapshot: snapshot, agents: store.agentIndex, isCompact: quiet) }
-            }
+        return CardRows(columns: columns, spacing: Self.gridGap) {
+            health(snapshot)
+            updates(snapshot)
+            security(snapshot)
+            SourcesCard(snapshot: snapshot, isCompact: quiet)
+            PolicyCard(snapshot: snapshot, isCompact: quiet)
+            AgentsCard(snapshot: snapshot, agents: store.agentIndex, isCompact: quiet)
         }
-    }
-
-    private func row<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        HStack(alignment: .top, spacing: Self.gridGap) {
-            // A modifier on a Group applies to each card: equal shares, as the board's two equal columns.
-            Group { content() }
-                .frame(minWidth: 0, maxWidth: .infinity)
-        }
-        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func health(_ snapshot: ScopeSnapshot) -> some View {

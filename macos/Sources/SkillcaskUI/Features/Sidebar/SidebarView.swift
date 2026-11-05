@@ -37,7 +37,10 @@ struct SidebarView: View {
         }
         .listStyle(.sidebar)
         .accessibilityLabel(ShellCopy.scopesLabel)
-        .safeAreaInset(edge: .bottom, spacing: 0) { footer }
+        // The inset is outside the `List`: the split view was observed (macOS 26 and 27) to take the sidebar's minimum
+        // height from it measured at zero width, where any vertically fixed text wraps a letter per line and pushes
+        // the columns out of the window (`SidebarCardLayoutTests`). At the column's own minimum width it cannot.
+        .safeAreaInset(edge: .bottom, spacing: 0) { footer.frame(minWidth: Size.sidebarMinWidth) }
         .dropDestination(for: URL.self) { urls, _ in app.open(dropped: urls) != nil }
     }
 

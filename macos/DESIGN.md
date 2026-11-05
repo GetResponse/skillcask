@@ -227,6 +227,21 @@ them by number; the numbers have gaps.
   policy, credentials, token hosts, TLS roots, `PATH`/`HOME`, loader or git variables; proxies and a
   few harmless `SKILLCASK_*` names are allowed. Run records list the names it applied, never values.
 
+## Layout
+
+- No `fixedSize(horizontal: false, vertical: true)` on text that can wrap in a split-view column outside
+  a `List`, `ScrollView` or `GeometryReader`. In the sidebar's bottom inset on macOS 26 and 27 the
+  `NavigationSplitView` was observed to take the column's minimum height from that content measured at
+  zero width, where vertically fixed text wraps a letter per line and pushes every column out of the
+  window. The inset (the U1 card and Open Folder…) also has the column's minimum width, so a fixed text
+  there is measured at 180 pt. A single-line `.fixedSize()` label, such as a card header's, is fine.
+- A switch between layouts by width keeps the views: one layout that places the same views (the
+  Overview's `CardRows`, one or two columns), not `if` branches that rebuild them and lose their state
+  (an open disclosure) at the break.
+- Rows of cards full of wrapping text are not a flexible `HStack`: it measures each card at zero and
+  infinite width as well as its share of the row, and every line breaks again for each: an avoidable
+  extra cost each time the row is laid out. `CardRows` measures a card only at its column's width.
+
 ## Previews and renders
 
 Every view state is registered in `Sources/SkillcaskUI/Previews/` (`PreviewRegistry`), drawn from

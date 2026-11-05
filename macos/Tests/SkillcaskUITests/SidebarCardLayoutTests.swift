@@ -11,7 +11,9 @@ import Testing
 /// minimum, measured narrow, onto the split view (observed on macOS 27): after either Copy button of the update
 /// sheet (the card turns to "Waiting for the update") the columns were laid out 1220 pt tall in a 726 pt window,
 /// centred, so they started 221 pt above it; the consent prompt at first launch made them 1844 pt tall. The real
-/// `MainWindow`, in an on-screen window of the reporter's size: the split view must fill the window.
+/// `MainWindow`, in an on-screen window of the reporter's size or the minimum size: the split view must fill the
+/// window. The sidebar footer's minimum width (`SidebarView`) keeps that true even with a vertical `fixedSize`, so
+/// `AppUpdateCardTextTests` measures the card's own minimum height too.
 @Suite(.serialized) @MainActor struct SidebarCardLayoutTests {
     static let installed = Version(0, 10, 3)
     static let latest = Version(0, 10, 5)
@@ -39,7 +41,39 @@ import Testing
         }
     }
 
+    /// The available card, the one a daily check brings without input, in the minimum window: a vertical
+    /// `fixedSize` on the card made the sidebar 711 pt tall in its 652 pt of content. The reporter's larger window
+    /// had room for it, so only the minimum size caught it.
+    @Test(.timeLimit(.minutes(1))) func theAvailableCardKeepsTheColumnsInTheWindow() throws {
+        let updates = Self.updates(UpdateState(consent: .declined, latestSeen: Self.latest))
+        try Self.withMainWindow(updates: updates, size: Self.minimumSize) { window in
+            #expect(updates.card == .available(Self.latest))
+            try Self.expectColumnsFill(window)
+        }
+    }
+
+    /// The card appears in a settled minimum window (a skipped version un-skipped, as the daily check's find would
+    /// show it).
+    @Test(.timeLimit(.minutes(1))) func aCardAppearingLaterKeepsTheColumnsInTheWindow() throws {
+        let updates = Self.updates(
+            UpdateState(consent: .declined, latestSeen: Self.latest, skippedVersion: Self.latest))
+        try Self.withMainWindow(updates: updates, size: Self.minimumSize) { window in
+            #expect(updates.card == .none)
+            try Self.expectColumnsFill(window)
+            updates.resetSkipped()
+            try Self.settle(window)
+
+            #expect(updates.card == .available(Self.latest))
+            try Self.expectColumnsFill(window)
+        }
+    }
+
     // MARK: - Helpers
+
+    /// The window's minimum (`MainWindow`'s 960 × 600, which the unified toolbar makes 652 pt of content) and the
+    /// reporter's size.
+    static let minimumSize = CGSize(width: 960, height: 600)
+    static let reporterSize = CGSize(width: 1315, height: 726)
 
     /// The split view, in the window's content view, starts at its top and ends at its bottom: a split view taller
     /// than the window is centred and overflows both edges.
@@ -93,9 +127,11 @@ import Testing
             })
     }
 
-    /// `MainWindow` on the fixtures in a titled, unified-toolbar window of the reporter's size (1315 × 726), shown
-    /// and settled, for `body`; then the window closes and the activation policy is restored.
-    static func withMainWindow(updates: AppUpdateStore, _ body: (NSWindow) throws -> Void) throws {
+    /// `MainWindow` on the fixtures in a titled, unified-toolbar window of `size` (the reporter's 1315 × 726 by
+    /// default), shown and settled, for `body`; then the window closes and the activation policy is restored.
+    static func withMainWindow(
+        updates: AppUpdateStore, size: CGSize = reporterSize, _ body: (NSWindow) throws -> Void
+    ) throws {
         _ = NSApplication.shared
         let policy = NSApp.activationPolicy()
         NSApp.setActivationPolicy(.accessory)
@@ -108,7 +144,7 @@ import Testing
         let window = NSWindow(contentViewController: NSHostingController(rootView: root))
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.toolbarStyle = .unified
-        window.setFrame(NSRect(x: 131, y: 125, width: 1315, height: 726), display: true)
+        window.setFrame(NSRect(origin: CGPoint(x: 131, y: 125), size: size), display: true)
         // Closed here, released by ARC: AppKit's release on close would free it a second time.
         window.isReleasedWhenClosed = false
         defer { window.close() }
@@ -135,6 +171,30 @@ import Testing
         let words = Self.words(.consentPrompt, width: width)
         #expect(words.text.contains(AppUpdateCopy.consentTitle), "\(words.place) reads: \(words.text)")
         #expect(words.text.contains("skill information."), "\(words.place), the last line is cut: \(words.text)")
+    }
+
+    /// The card's own minimum height, measured with no footer around it: at zero or 1 pt width and no height (the
+    /// minimum the split view asks of the sidebar), the card is no taller than its ideal height at the sidebar's
+    /// minimum width. A vertical `fixedSize` on the heading makes that minimum the text wrapped a letter per line
+    /// (1755 pt for the consent prompt); the footer's minimum width in `SidebarView` would hide it from the window
+    /// tests above, so this one measures the card alone.
+    @Test(arguments: [UpdateCard.none, .consentPrompt, .available(Version(0, 10, 5)), .awaitingRelaunch])
+    func theCardIsNoTallerMeasuredNarrow(card: UpdateCard) {
+        let ideal = Self.height(card, in: CGSize(width: Size.sidebarMinWidth, height: .greatestFiniteMagnitude))
+        for width: CGFloat in [0, 1] {
+            let minimum = Self.height(card, in: CGSize(width: width, height: 0))
+            #expect(
+                minimum <= ideal,
+                "\(card) is \(minimum) pt tall measured at \(width) × 0 pt, \(ideal) pt at \(Size.sidebarMinWidth) pt")
+        }
+    }
+
+    /// The height of the card, padded as the slot pads it, measured in `size` by a hosting controller.
+    static func height(_ card: UpdateCard, in size: CGSize) -> CGFloat {
+        _ = NSApplication.shared
+        let controller = NSHostingController(
+            rootView: AppUpdateCard(card: card, installed: installed).padding(.horizontal, AppUpdateCard.padding))
+        return controller.sizeThatFits(in: size).height
     }
 
     /// The card padded as the slot pads it, in a hosting view of its fitting size (the width given, the ideal
