@@ -85,6 +85,51 @@ pub fn template(global: bool) -> &'static str {
     if global { GLOBAL_TEMPLATE } else { TEMPLATE }
 }
 
+/// D58: the project template with the `[repositories]` of the global manifest `global`, entries
+/// and their comments as written there; the template's when `global` has no such table.
+pub fn project_template(global: &str) -> Result<String> {
+    let src: DocumentMut = global.parse::<DocumentMut>().map_err(|e| crate::error::Error::new(MANIFEST, e.to_string()))?;
+    let mut doc: DocumentMut = TEMPLATE.parse().map_err(bad)?;
+    let Some(from) = src.get("repositories").and_then(Item::as_table_like) else { return Ok(TEMPLATE.into()) };
+    let to = doc["repositories"].as_table_mut().expect("template has [repositories]");
+    to.clear();
+    for (name, _) in from.iter() {
+        let (key, item) = from.get_key_value(name).expect("listed key");
+        let mut key = key.clone();
+        // `[repositories.name]` sub-tables would land after `[policy]`; one table keeps them together.
+        let item = match item.clone() {
+            Item::Table(t) => {
+                let comments = t.decor().prefix().cloned();
+                key.fmt();
+                if let Some(c) = comments {
+                    key.leaf_decor_mut().set_prefix(c);
+                }
+                let mut t = t.into_inline_table();
+                t.fmt();
+                Item::Value(Value::InlineTable(t))
+            }
+            i => i,
+        };
+        to.insert_formatted(&key, item);
+    }
+    let text = doc.to_string();
+    // The caller names the global file; `skills.toml: ` would read as the project's.
+    let unprefixed = |m: String| m.strip_prefix(&format!("{FILE}: ")).map(str::to_owned).unwrap_or(m);
+    let m = parse_with(&text, false, &crate::policy::Outer::default()).map_err(|e| e.map_msg(unprefixed))?;
+    // The global file is private to the machine; the project's is committed.
+    let urls = m.repositories.iter().map(|r| (r.name.as_str(), r.url.as_str())).chain(m.github.as_deref().map(|u| ("github", u)));
+    for (name, url) in urls {
+        if url::Url::parse(url).is_ok_and(|u| !u.username().is_empty() || u.password().is_some() || u.query().is_some()) {
+            return Err(crate::error::Error::new(
+                MANIFEST,
+                format!("repository {name}: its URL carries credentials or a query, which init would commit"),
+            )
+            .hint("move them to auth.json next to it"));
+        }
+    }
+    Ok(text)
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Repository {
     pub name: String,

@@ -4,7 +4,7 @@ Every command except `publish`, `validate` and `projects` takes `-g, --global`.
 
 | Command | |
 |---|---|
-| `init` | Create `skills.toml`. |
+| `init` | Create `skills.toml`; `[repositories]` comes from the global `skills.toml` when it has one. |
 | `add <vendor/name>[@constraint] [--repository r]` | Resolve, lock and install. |
 | `add github:<owner/repo>[/skill][@version-or-ref]` | The same from a GitHub repository, [see Sources](sources.md#skills-from-github-and-skillssh). |
 | `add git:<https-url>[@version-or-ref]` | The same from any git repository over HTTPS, [see Sources](sources.md#skills-from-any-git-repository). |

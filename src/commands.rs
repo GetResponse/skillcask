@@ -1419,8 +1419,13 @@ pub fn init(ctx: &Ctx) -> Result<()> {
     if path.exists() {
         bail!(MANIFEST, "{shown} already exists");
     }
+    let global = crate::scope::config_dir().map(|d| d.join(manifest::FILE)).filter(|g| !ctx.s.global && g.is_file());
+    let text = match global {
+        Some(g) => manifest::project_template(&std::fs::read_to_string(&g).ctx(g.display())?).ctx(g.display())?,
+        None => manifest::template(ctx.s.global).into(),
+    };
     std::fs::create_dir_all(&ctx.s.config).ctx(ctx.s.config.display())?;
-    std::fs::write(&path, manifest::template(ctx.s.global)).ctx(&shown)?;
+    std::fs::write(&path, text).ctx(&shown)?;
     crate::ui::done("created", &shown);
     Ok(())
 }
