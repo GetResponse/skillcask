@@ -2352,7 +2352,8 @@ pub fn audit(ctx: &Ctx, json: bool, sarif: bool, advisories: bool) -> Result<()>
 
 /// What `audit --advisories` found (D55). `found`: `(package, rule, message)` for each advisory that
 /// affects a locked version and each package its repository marks abandoned; `unchecked`: packages
-/// no source publishes advisories for; `failed`: sources that could not be read.
+/// no source publishes advisories for, or whose repository no longer serves them; `failed`: sources
+/// that could not be read.
 #[derive(Default)]
 struct AdvisoryCheck {
     found: Vec<(String, &'static str, String)>,
@@ -2410,7 +2411,10 @@ fn advisory_findings(ctx: &Ctx, m: &Manifest, lock: &Lock) -> Result<AdvisoryChe
         for p in ps {
             match reg.versions(r, &p.name) {
                 Ok(Some(c)) => out.found.extend(registry::abandoned(&c).map(|msg| (p.name.clone(), "abandoned", msg))),
-                Ok(None) => ui::note(format!("{}: no longer in repository {}", p.name, r.name)),
+                Ok(None) => {
+                    ui::note(format!("{}: no longer in repository {}", p.name, r.name));
+                    out.unchecked.push(p.name.clone());
+                }
                 Err(e) => out.failed.push(format!("{}: {}", p.name, e.msg)),
             }
         }

@@ -69,8 +69,9 @@ silently drop a rule. CI without the file applies the project and the environmen
 
 `enforce` keeps a project from loosening the policy for what it resolves: a cloned repository's
 `skills.toml` and its dependencies (D16) cannot change an enforced key. Every install, also
-`--frozen`, holds the lock to an enforced `allow-sources` and to an enforced or environment
-`min-release-age` (D7), the latter by the `released` time the lock records. `deny-patterns` applies
+`--frozen`, holds the lock to every key but `deny-patterns`: an enforced `allow-sources`, `allow-ranges`
+(through the manifest's constraint), `github-requires`, `packagist = false`, and an enforced or
+environment `min-release-age` (D7), the latter by the `released` time the lock records. `deny-patterns` applies
 when a version is resolved (D23, D31), not to a version the lock already pins, and a forged
 `released` is not detected, so the lock change is still what to review.
 
@@ -93,10 +94,10 @@ by hand into `.agents/skills` are its code, reviewed like it; `audit` scans them
 
 skillcask runs with the user's rights and does not try to stop them; only the operating system
 could, with a config directory the user cannot write (managed by MDM, which also makes the global
-scope of D13 read-only) and a locked environment. A rule nobody may skip is checked where the
+`skills.toml` and `skills.lock` of D13 read-only, not the store they install into) and a locked environment. A rule nobody may skip is checked where the
 developer does not control the run: a required check on pull requests to the default branch, with
 the policy in the job's environment, that runs `install --frozen`. That holds every merged lock to
-`allow-sources`, `allow-ranges` and the cooldown; `deny-patterns` of a version the lock pins, and the
+every key but `deny-patterns`; `deny-patterns` of a version the lock pins, and the
 truth of its `released`, are left to the review of the lock change. On `pull_request` GitHub runs the pull request's own copy
 of the workflow, so the job's environment is only as strong as the protection of
 `.github/workflows/` (a required workflow in a ruleset, or CODEOWNERS with required review).
