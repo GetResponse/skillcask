@@ -27,7 +27,8 @@ reader of `skills.toml` does not see them.
 ## Layers
 
 Keys: `min-release-age`, `allow-ranges`, `packagist`, `github-requires`, `allow-sources`,
-`deny-patterns` (D31), `deny-packages` (D57, an enforced list is a floor). The first layer that sets a key wins:
+`deny-patterns` (D31), `deny-packages` (D57, an enforced list is a floor). The first layer that sets
+a key wins:
 
 1. Environment: `SKILLCASK_MIN_RELEASE_AGE`, `SKILLCASK_ALLOW_RANGES`, `SKILLCASK_PACKAGIST`,
    `SKILLCASK_GITHUB_REQUIRES`, `SKILLCASK_ALLOW_SOURCES` (comma-separated),
@@ -69,19 +70,24 @@ silently drop a rule. CI without the file applies the project and the environmen
 
 `enforce` keeps a project from loosening the policy for what it resolves: a cloned repository's
 `skills.toml` and its dependencies (D16) cannot change an enforced key. Every install, also
-`--frozen`, holds the lock to an enforced `allow-sources` and to an enforced or environment
-`min-release-age` (D7), the latter by the `released` time the lock records. `deny-patterns` applies
-when a version is resolved (D23, D31), not to a version the lock already pins, and a forged
-`released` is not detected, so the lock change is still what to review.
+`--frozen`, holds the lock to every key but `deny-patterns`: an enforced `allow-sources`,
+`allow-ranges` (through the manifest's constraint), `github-requires`, `packagist = false`, and an
+enforced or environment `min-release-age` (D7), the latter by the `released` time the lock records;
+a repository's own `min-release-age` (D15) still applies under an environment cooldown.
+`deny-patterns` applies when a version is resolved (D23, D31), not to a version the lock already
+pins, and a forged `released` is not detected, so the lock change is still what to review.
 
 It guards against what a project brings, not against whoever runs skillcask:
 
-- The environment cannot loosen an enforced key, only tighten it (layer 1), so a CI job or a
-  wrapper can make one run stricter, and a project's CI configuration cannot lift the company
-  policy. A longer `SKILLCASK_MIN_RELEASE_AGE` raises the per-repository floor of D28 with it.
+- The environment cannot loosen an enforced key, only tighten it (layer 1), so a CI job or a wrapper
+  can make one run stricter, and a project's CI configuration cannot lift an enforced key through
+  the `SKILLCASK_*` policy variables; it can still point `SKILLCASK_HOME`, `XDG_CONFIG_HOME` or
+  `HOME` elsewhere (next bullet), so a rule nobody may skip also needs the job and
+  `.github/workflows/` protected. A longer `SKILLCASK_MIN_RELEASE_AGE` raises the per-repository
+  floor of D28 with it.
 - `SKILLCASK_HOME`, `XDG_CONFIG_HOME` and `HOME` (else `USERPROFILE`, through the
-  `~/.config/skillcask` fallback) choose which `config.toml` is read; pointed at another
-  directory, no key is enforced at all.
+  `~/.config/skillcask` fallback) choose which `config.toml` is read; pointed at another directory,
+  no key is enforced at all.
 - The user owns `config.toml` and can edit it.
 
 Redirects are followed without checking `allow-sources` per hop (only the credential is looked up
@@ -93,13 +99,15 @@ by hand into `.agents/skills` are its code, reviewed like it; `audit` scans them
 
 skillcask runs with the user's rights and does not try to stop them; only the operating system
 could, with a config directory the user cannot write (managed by MDM, which also makes the global
-scope of D13 read-only) and a locked environment. A rule nobody may skip is checked where the
-developer does not control the run: a required check on pull requests to the default branch, with
-the policy in the job's environment, that runs `install --frozen`. That holds every merged lock to
-`allow-sources`, `allow-ranges` and the cooldown; `deny-patterns` of a version the lock pins, and the
-truth of its `released`, are left to the review of the lock change. On `pull_request` GitHub runs the pull request's own copy
-of the workflow, so the job's environment is only as strong as the protection of
-`.github/workflows/` (a required workflow in a ruleset, or CODEOWNERS with required review).
+`skills.toml` and `skills.lock` of D13 read-only, not the store they install into) and a locked
+environment. A rule nobody may skip is checked where the developer does not control the run: a
+required check on pull requests to the default branch, with the policy in the job's environment,
+that runs `install --frozen`. That holds every merged lock to every key but `deny-patterns` (a
+repository's own `min-release-age` included, unless `config.toml` enforces the key); `deny-patterns`
+of a version the lock pins, and the truth of its `released`, are left to the review of the lock
+change. On `pull_request` GitHub runs the pull request's own copy of the workflow, so the job's
+environment is only as strong as the protection of `.github/workflows/` (a required workflow in a
+ruleset, or CODEOWNERS with required review).
 
 ## allow-sources
 
@@ -171,10 +179,9 @@ with its layer: `allow-sources = ["acme"] (config.toml, enforced)`.
 ## Testing
 
 - Unit: layer precedence for each layer, enforce conflict, env parsing, URL prefix boundary
-  (`https://git.example.com` does not allow `https://git.example.com.evil/`, `<prefix>/../other/`
-  or `<prefix>/..%2Fother/`), names refused in `config.toml`, Packagist ordered last,
-  `github = false`.
-- Integration: allow-sources limited to a private repository blocks a Packagist-only package
-  without a request to it; a lock entry from a blocked source fails `install --frozen`; an
-  enforced key in `config.toml` beats the project, and the environment may only tighten it; a dependency
-  from a blocked source fails; `status` shows the origin.
+  (`https://git.example.com` does not allow `https://git.example.com.evil/`, `<prefix>/../other/` or
+  `<prefix>/..%2Fother/`), names refused in `config.toml`, Packagist ordered last, `github = false`.
+- Integration: allow-sources limited to a private repository blocks a Packagist-only package without
+  a request to it; a lock entry from a blocked source fails `install --frozen`; an enforced key in
+  `config.toml` beats the project, and the environment may only tighten it; a dependency from a
+  blocked source fails; `status` shows the origin.

@@ -135,7 +135,8 @@ fn advisories_flag_a_locked_version_and_an_abandoned_package() {
         "{out}"
     );
     assert!(!out.contains("PKSA-2"), "{out}");
-    assert!(out.contains(".agents/skills/baz: acme/old is abandoned; use acme/fresh instead"), "{out}");
+    assert!(out.contains("! .agents/skills/baz: acme/old is abandoned; use acme/fresh instead"), "{out}");
+    assert!(!out.contains("advisories not checked"), "no empty note when every package was checked: {out}");
     assert!(out.contains("2 skill(s), 2 finding(s)"), "{out}");
     let asked = s.requests().into_iter().find(|r| r.path.starts_with("/api/security-advisories/")).unwrap();
     assert!(asked.path.contains("packages%5B%5D=acme%2Fclean") && asked.path.contains("packages%5B%5D=acme%2Fold"), "{}", asked.path);
@@ -264,9 +265,61 @@ fn advisories_of_a_github_repository_match_the_locked_tag() {
     assert!(out.contains("acme/tagged v1.0.0: advisory GHSA-aaaa-bbbb-cccc, critical: Leaks tokens"), "{out}");
     assert!(!out.contains("GHSA-dddd"), "{out}");
 
+    let full: Vec<Value> = (0..100)
+        .map(|i| json!({ "ghsa_id": format!("GHSA-full-{i:04}-aaaa"), "vulnerabilities": [{ "vulnerable_version_range": "< 0.1" }] }))
+        .collect();
+    s.put("/repos/acme/tagged/security-advisories", Value::Array(full).to_string());
+    let out = p.ok(&["audit", "--advisories"]);
+    assert!(out.contains("acme/tagged: only the newest 100 security advisories were read"), "{out}");
+
     s.respond("/repos/acme/tagged/security-advisories", 500, &[], "");
     let out = p.expect(&["audit", "--advisories"], 1);
     assert!(out.contains("advisories could not be read: acme/tagged:"), "{out}");
+
+    let toml = std::fs::read_to_string(p.path().join("skills.toml")).unwrap();
+    p.write("skills.toml", &toml.replacen("[repositories]\n", "[repositories]\ngithub = false\n", 1));
+    let before = s.log().len();
+    let v = json_of(&p, &["audit", "--advisories", "--json"]);
+    assert_eq!(v["advisories"], json!({ "unchecked": ["acme/tagged"], "failed": [] }), "{v}");
+    assert!(!s.log()[before..].iter().any(|l| l.contains("security-advisories")), "{:?}", s.log());
+}
+
+#[test]
+fn advisories_ask_for_50_packages_per_request() {
+    let s = Server::start();
+    let names: Vec<String> = (0..51).map(|i| format!("acme/s{i:02}")).collect();
+    for n in &names {
+        s.simple(n, "1.0.0", &n.replace('/', "-"));
+    }
+    with_advisories_api(&s);
+    s.put("/api/security-advisories/", json!({ "advisories": {} }).to_string());
+    let p = Project::new(&s);
+    p.manifest(&s, &names.iter().map(|n| format!("\"{n}\" = \"^1.0\"\n")).collect::<String>());
+    p.ok(&["install"]);
+    p.ok(&["audit", "--advisories"]);
+    let asked: Vec<usize> = s
+        .requests()
+        .into_iter()
+        .filter(|r| r.path.starts_with("/api/security-advisories/"))
+        .map(|r| r.path.matches("packages%5B%5D=").count())
+        .collect();
+    assert_eq!(asked, [50, 1]);
+}
+
+#[test]
+fn a_package_its_repository_no_longer_serves_is_unchecked() {
+    let s = Server::start();
+    s.simple("acme/clean", "1.0.0", "bar");
+    with_advisories_api(&s);
+    s.put("/api/security-advisories/", json!({ "advisories": {} }).to_string());
+    let p = Project::new(&s);
+    manifest(&p, &s, "");
+    p.ok(&["add", "acme/clean"]);
+    s.respond("/p2/acme/clean.json", 404, &[], "");
+    let o = p.run(&["audit", "--advisories", "--json"]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let v: Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v["advisories"], json!({ "unchecked": ["acme/clean"], "failed": [] }), "{v}");
 }
 
 #[test]
