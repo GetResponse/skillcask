@@ -84,6 +84,21 @@ enum AuthCmd {
 }
 
 #[derive(Subcommand)]
+enum RepositoryCmd {
+    /// Add a repository to [repositories] of skills.toml, or replace the one of that name.
+    Add {
+        name: String,
+        /// https:// URL of its packages.json (Composer), or for `github` of the GitHub API.
+        url: String,
+        /// Cooldown for packages resolved here, e.g. 0 or 7d.
+        #[arg(long)]
+        min_release_age: Option<String>,
+    },
+    /// Remove a repository from [repositories]; packagist and github are turned off (= false).
+    Remove { name: String },
+}
+
+#[derive(Subcommand)]
 enum Cmd {
     /// Create skills.toml with defaults.
     Init,
@@ -214,6 +229,9 @@ enum Cmd {
         #[arg(long, conflicts_with_all = ["value", "unset"])]
         json: bool,
     },
+    /// Add, replace or remove a repository in [repositories] of skills.toml (D59).
+    #[command(subcommand)]
+    Repository(RepositoryCmd),
     /// Keep a registry token in git's credential helper (Keychain, Credential Manager, libsecret).
     #[command(subcommand)]
     Auth(AuthCmd),
@@ -367,6 +385,10 @@ fn run(cli: Cli) -> Result<(), Error> {
             commands::search(&ctx, query.as_deref(), json, choice, remember)
         }
         Cmd::Config { key, value, unset, json } => config::run(&ctx.s, key.as_deref(), &value, unset, json),
+        Cmd::Repository(RepositoryCmd::Add { name, url, min_release_age }) => {
+            config::add_repository(&ctx.s, &name, &url, min_release_age.as_deref())
+        }
+        Cmd::Repository(RepositoryCmd::Remove { name }) => config::remove_repository(&ctx.s, &name),
         Cmd::External(_)
         | Cmd::Auth(_)
         | Cmd::Validate { .. }

@@ -114,7 +114,6 @@ pub fn project_template(global: &str) -> Result<String> {
     }
     let text = doc.to_string();
     // The caller names the global file; `skills.toml: ` would read as the project's.
-    let unprefixed = |m: String| m.strip_prefix(&format!("{FILE}: ")).map(str::to_owned).unwrap_or(m);
     let m = parse_with(&text, false, &crate::policy::Outer::default()).map_err(|e| e.map_msg(unprefixed))?;
     // The global file is private to the machine; the project's is committed.
     let urls = m.repositories.iter().map(|r| (r.name.as_str(), r.url.as_str())).chain(m.github.as_deref().map(|u| ("github", u)));
@@ -383,6 +382,11 @@ impl Manifest {
     pub fn min_release_age(&self, repo: &Repository) -> SignedDuration {
         repo.min_release_age.unwrap_or(self.policy.min_release_age)
     }
+}
+
+/// A message without the `skills.toml: ` that `bad` puts first, for a caller naming the file itself.
+pub fn unprefixed(m: String) -> String {
+    m.strip_prefix(&format!("{FILE}: ")).map(str::to_owned).unwrap_or(m)
 }
 
 fn bad(what: impl std::fmt::Display) -> crate::error::Error {
