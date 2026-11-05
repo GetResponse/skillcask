@@ -1,6 +1,6 @@
 [package]
 name = "skillcask"
-version = "0.10.6"
+version = "0.11.0"
 edition = "2024"
 rust-version = "1.89"
 description = "A lockfile-first package manager for AI agent skills (SKILL.md), backed by Composer repositories"
