@@ -10,6 +10,10 @@ import SwiftUI
 /// Add shows its progress in place of the body, Cancel stops it, exit 0 closes the sheet with the runner's toast
 /// and selects the first new skill, and a failure stays in the preview pane with the CLI's hint as the action
 /// until the field or the selection changes.
+///
+/// Resizable from `Size.addSkillSheet` up to `maximum`, opening at `ideal` (`AddSkillSheetHost` supplies both;
+/// previews and renders keep the defaults, so they draw at the board size). The results column widens with the
+/// sheet (`ResultsColumn.width(in:)`), the preview takes the rest (gap G16).
 struct AddSkillSheet: View {
     /// What the previews draw in place of a live run.
     enum PreviewState: Sendable {
@@ -30,19 +34,33 @@ struct AddSkillSheet: View {
     /// The spec of the Add whose failure is on screen; nil once the field or the selection moved on.
     @State private var failedSpec: String?
     private let previewState: PreviewState?
+    /// The size the sheet opens at.
+    private let ideal: CGSize
+    /// The most the sheet grows to.
+    private let maximum: CGSize
 
     /// The live sheet; `query` is the text the field starts with ("Find “…” in sources"), nil for an empty field.
-    init(query: String?, store: ScopeStore, onClose: @escaping () -> Void) {
+    init(
+        query: String?, store: ScopeStore, ideal: CGSize = Size.addSkillSheet,
+        maximum: CGSize = Size.addSkillSheetMax, onClose: @escaping () -> Void
+    ) {
         self.store = store
         self.onClose = onClose
+        self.ideal = ideal
+        self.maximum = maximum
         _search = State(initialValue: SearchStore(store: store, query: query))
         previewState = nil
     }
 
     /// Previews: a preloaded `search`, and optionally a run in flight or a failed Add.
-    init(search: SearchStore, previewState: PreviewState? = nil, onClose: @escaping () -> Void = {}) {
+    init(
+        search: SearchStore, previewState: PreviewState? = nil, ideal: CGSize = Size.addSkillSheet,
+        maximum: CGSize = Size.addSkillSheetMax, onClose: @escaping () -> Void = {}
+    ) {
         store = search.store
         self.onClose = onClose
+        self.ideal = ideal
+        self.maximum = maximum
         _search = State(initialValue: search)
         self.previewState = previewState
         if case .addFailure = previewState {
@@ -58,7 +76,7 @@ struct AddSkillSheet: View {
                 if let progress {
                     AddSkillProgress(model: progress)
                 } else {
-                    HStack(spacing: 0) {
+                    AddSkillColumns {
                         ResultsColumn(search: search)
                         Rectangle()
                             .fill(Color.separator)
@@ -72,7 +90,10 @@ struct AddSkillSheet: View {
             hairline
             footer
         }
-        .frame(width: Size.addSkillSheet.width, height: Size.addSkillSheet.height)
+        .frame(
+            minWidth: Size.addSkillSheet.width, idealWidth: ideal.width, maxWidth: maximum.width,
+            minHeight: Size.addSkillSheet.height, idealHeight: ideal.height, maxHeight: maximum.height
+        )
         .background(Color.surfaceWindow)
         .interactiveDismissDisabled(isRunning)
         .task { search.begin() }

@@ -24,6 +24,8 @@ public struct MainWindow: View {
     @State private var columns = NavigationSplitViewVisibility.all
     /// The Remove alert built once per request (its plan is computed when asked for, not on every render).
     @State private var pinnedRemoval: (id: UUID, alert: RemoveAlert)?
+    /// This window, for the sheets that size themselves from it (`AddSkillSheetHost`).
+    @State private var hostWindow = WindowRef()
 
     public init() {}
 
@@ -47,7 +49,7 @@ public struct MainWindow: View {
         .frame(minWidth: Size.windowMinWidth, minHeight: Self.minHeight)
         .sheet(item: presentedSheet) { presentation in
             if let store = app.store(for: presentation.scope) {
-                SheetHost(sheet: presentation.sheet, store: store) { app.dismiss(presentation) }
+                SheetHost(sheet: presentation.sheet, store: store, presenter: hostWindow) { app.dismiss(presentation) }
             } else {
                 // The pinned scope has no store (the CLI went away): close rather than show an empty sheet.
                 Color.surfaceWindow.task { app.dropOrphanedPresentation() }
@@ -65,6 +67,7 @@ public struct MainWindow: View {
         .onChange(of: app.cli) { app.dropOrphanedPresentation() }
         .onChange(of: app.scopes) { app.dropOrphanedPresentation() }
         .background { onboarding }
+        .background(WindowObserver(onWindow: { [hostWindow] in hostWindow.window = $0 }))
         .modifier(AppUpdateHost(app: app, updates: updates))
         .modifier(LiveRefreshHost(app: app))
         .task { await app.boot() }

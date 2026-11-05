@@ -55,6 +55,7 @@ import SkillcaskCore
         static let lastScope = "lastScope"
         static let checkUpdatesOnOpen = "checkUpdatesOnOpen"
         static let environmentVariables = "environmentVariables"
+        static let addSkillSheetSize = "addSkillSheetSize"
         /// The value stored under `lastScope` for the personal scope; a project stores its path.
         static let personalScope = "personal"
     }
@@ -101,6 +102,16 @@ import SkillcaskCore
         }
     }
 
+    /// The size the user left the Add Skill sheet at, as written: `SheetSizing.ideal` clamps it to the minimum, the
+    /// cap and the screen it opens on. A value that is not two finite, positive numbers reads as nil. Not observed:
+    /// the sheet reads it once when it opens, so a save never re-runs a view.
+    @ObservationIgnored public var addSkillSheetSize: CGSize? {
+        didSet {
+            defaults.set(
+                addSkillSheetSize.map { [Double($0.width), Double($0.height)] }, forKey: Key.addSkillSheetSize)
+        }
+    }
+
     /// The value of each row at its last commit; rows read from disk start committed.
     @ObservationIgnored private var committedValues: [UUID: String] = [:]
 
@@ -118,6 +129,7 @@ import SkillcaskCore
                 row["name"].map { EnvironmentVariable(name: $0, value: row["value"] ?? "") }
             }
         committedValues = Dictionary(uniqueKeysWithValues: environmentVariables.map { ($0.id, $0.value) })
+        addSkillSheetSize = Self.size(stored: defaults.object(forKey: Key.addSkillSheetSize))
     }
 
     /// Takes every row's current value as committed and writes the table (values only where
@@ -165,5 +177,12 @@ import SkillcaskCore
 
     static func scope(stored text: String) -> Scope? {
         text == Key.personalScope ? .personal : .project(at: text)
+    }
+
+    /// `[width, height]` as written by `addSkillSheetSize`; nil for anything else (a hand-edited plist, a wrong type).
+    static func size(stored value: Any?) -> CGSize? {
+        guard let numbers = value as? [Double], numbers.count == 2 else { return nil }
+        let size = CGSize(width: numbers[0], height: numbers[1])
+        return SheetSizing.isUsable(size) ? size : nil
     }
 }

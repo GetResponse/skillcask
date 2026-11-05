@@ -13,6 +13,7 @@ extension PreviewRegistry {
     /// filter's states search My Skills for "pocock": `filter-source` narrows to skills.sh (GitHub dimmed at 0),
     /// `filter-empty` keeps a GitHub filter from an earlier query ("No results from GitHub", Show All), and
     /// `installs-column` is the unfiltered list whose long `github:` names truncate before the 4- and 5-digit counts.
+    /// `preview-large` and `progress-large` draw the resizable sheet at 1280×860.
     static let addSkill: [Entry] = [
         sheet("preview", boardScope: true) {
             $0.preload(
@@ -96,18 +97,30 @@ extension PreviewRegistry {
                 query: DesignFixtures.pocockQuery, results: .loaded(DesignFixtures.pocockSearch), skillsSh: .enabled,
                 selection: AddSkillSamples.pocockSelection)
         },
+        // The resizable sheet enlarged: the results column at its 520 pt cap, the preview in the rest.
+        sheet("preview-large", boardScope: true, size: AddSkillSamples.largeSheet) {
+            $0.preload(
+                query: DesignFixtures.jiraQuery, results: .loaded(DesignFixtures.jiraSearch), skillsSh: .undecided,
+                selection: AddSkillSamples.jiraPackage, info: AddSkillSamples.jiraInfo)
+        },
+        sheet("progress-large", boardScope: true, previewState: .progress, size: AddSkillSamples.largeSheet) {
+            $0.preload(
+                query: DesignFixtures.jiraQuery, results: .loaded(DesignFixtures.jiraSearch), skillsSh: .disabled,
+                selection: AddSkillSamples.jiraPackage, info: AddSkillSamples.jiraInfo)
+        },
         Entry(id: "P3-9", state: "success", size: CGSize(width: 1280, height: 800)) {
             AnyView(AddSkillSuccessSample())
         },
     ]
 
-    /// A sheet over api (`boardScope`: the AddSkill board's variant), or over My Skills when `personal`.
+    /// A sheet over api (`boardScope`: the AddSkill board's variant), or over My Skills when `personal`, at its
+    /// minimum (the board size) unless `size` says otherwise.
     private static func sheet(
         _ state: String, capable: Bool = false, boardScope: Bool = false, personal: Bool = false,
-        previewState: AddSkillSamples.State? = nil,
+        previewState: AddSkillSamples.State? = nil, size: CGSize = Size.addSkillSheet,
         _ setUp: @escaping @MainActor @Sendable (SearchStore) -> Void
     ) -> Entry {
-        Entry(id: "P3-9", state: state, size: Size.addSkillSheet) {
+        Entry(id: "P3-9", state: state, size: size) {
             AnyView(
                 AddSkillSample(
                     capable: capable, previewState: previewState?.sheetState,
@@ -134,6 +147,8 @@ enum AddSkillSamples {
         }
     }
 
+    /// The enlarged sheet of `preview-large` and `progress-large`.
+    static let largeSheet = CGSize(width: 1280, height: 860)
     static let jiraPackage = "netresearch/agent-jira-skill"
     static let kolyaPackage = "kolya/pdf-tools"
     /// The selected row of `installs-column`: the longest name, so its count shows in the selected style too.
