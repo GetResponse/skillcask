@@ -1,4 +1,4 @@
-//! Layered policy and `allow-sources` (D18).
+//! Layered policy, `allow-sources` (D18) and `deny-packages` (D57).
 mod common;
 
 use common::*;
@@ -77,12 +77,16 @@ fn enforced_config_beats_the_project_and_the_environment_beats_both() {
     let st = p.ok(&["status"]);
     assert!(st.contains("policy.allow-sources = [") && st.contains("(config.toml, enforced)"), "{st}");
 
+    // A project's CI sets the environment too, so it cannot widen an enforced key (D18)...
     let mut env = two_repos(&s, "allow-sources = [\"pub\"]");
-    env.config(&format!("[policy]\nallow-sources = [\"{}\"]\nenforce = [\"allow-sources\"]\n", s.url("/packages.json")));
+    env.config(&format!("[policy]\nallow-sources = [\"{}\"]\nenforce = [\"allow-sources\"]\n", s.url("/")));
+    env.env.push(("SKILLCASK_ALLOW_SOURCES".into(), format!("{},packagist", s.url("/pub/"))));
+    let e = env.expect(&["add", "acme/public"], 1);
+    assert!(e.contains("SKILLCASK_ALLOW_SOURCES = [") && e.contains("loosens policy.allow-sources") && e.contains("config.toml"), "{e}");
+    // ...only narrow it.
+    env.env.retain(|(k, _)| k != "SKILLCASK_ALLOW_SOURCES");
     env.env.push(("SKILLCASK_ALLOW_SOURCES".into(), s.url("/pub/")));
-    let out = env.ok(&["add", "acme/public"]);
-    assert_eq!(out.matches("warning: SKILLCASK_ALLOW_SOURCES overrides policy.allow-sources").count(), 1, "{out}");
-    assert!(out.contains("enforced by") && out.contains("config.toml"), "{out}");
+    env.ok(&["add", "acme/public"]);
     assert!(env.ok(&["status"]).contains("(environment)"));
 
     // The same value as the enforced one changes nothing, so it is not worth a warning.
@@ -167,4 +171,37 @@ fn init_lists_the_default_sources() {
     p.ok(&["init"]);
     let t = p.read("skills.toml");
     assert!(t.contains("packagist = { url = \"https://repo.packagist.org\" }") && t.contains("github = { type = \"github\""), "{t}");
+}
+
+#[test]
+fn deny_packages_refuses_by_name_before_any_download_and_in_a_lock() {
+    let s = Server::start();
+    let p = two_repos(&s, "deny-packages = [\"acme/*\"]");
+    let e = p.expect(&["add", "acme/public"], 1);
+    assert!(e.contains("acme/public is refused by policy.deny-packages (skills.toml)"), "{e}");
+    assert!(e.contains("hint: pick another package"), "{e}");
+    assert!(s.log().is_empty(), "refused before any request: {:?}", s.log());
+    let e = p.expect(&["add", "github:acme/tools"], 1);
+    assert!(e.contains("acme/tools is refused by policy.deny-packages"), "GitHub sources too: {e}");
+
+    let q = two_repos(&s, "");
+    q.ok(&["add", "acme/public"]);
+    q.write("skills.toml", &q.read("skills.toml").replace("packagist = false", "packagist = false\ndeny-packages = [\"acme/public\"]"));
+    let mut c = clone_of(&q, &s);
+    c.env.push(("CI".into(), "true".into()));
+    let e = c.expect(&["install"], 1);
+    assert!(e.contains("acme/public is refused by policy.deny-packages"), "a committed lock cannot bring it in: {e}");
+    assert!(!c.exists(".agents/skills/public"));
+}
+
+#[test]
+fn an_enforced_deny_packages_is_a_floor_a_project_can_add_to() {
+    let s = Server::start();
+    let p = two_repos(&s, "deny-packages = [\"acme/private\", \"acme/public\"]");
+    p.config("[policy]\ndeny-packages = [\"acme/public\"]\nenforce = [\"deny-packages\"]\n");
+    assert!(p.expect(&["add", "acme/private"], 1).contains("acme/private is refused by policy.deny-packages (config.toml, enforced)"));
+    assert!(p.expect(&["add", "acme/public"], 1).contains("acme/public is refused"));
+    p.write("skills.toml", &p.read("skills.toml").replace("\"acme/private\", \"acme/public\"", "\"acme/private\""));
+    let e = p.expect(&["add", "acme/private"], 1);
+    assert!(e.contains("policy.deny-packages is enforced as [\"acme/public\"]"), "a project cannot drop an entry: {e}");
 }

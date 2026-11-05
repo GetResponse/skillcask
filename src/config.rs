@@ -15,7 +15,7 @@ use crate::ui;
 
 /// Keys only `config.toml` has: a person's choices, not a repository's.
 const PERSONAL: [&str; 2] = ["policy.enforce", "search.skills-sh"];
-const LISTS: [&str; 3] = ["policy.allow-sources", "policy.enforce", "agents.targets"];
+const LISTS: [&str; 4] = ["policy.allow-sources", "policy.deny-packages", "policy.enforce", "agents.targets"];
 
 /// A key, its value (`None`: not set) and the layer it came from.
 type Setting = (String, Option<Value>, &'static str);

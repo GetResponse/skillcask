@@ -53,7 +53,8 @@ local = ".skills"   # project skills, linked into .agents/skills
 min-release-age = "3d"
 allow-ranges = true
 # allow-sources = ["packagist", "github"]   # only these: repository names, packagist, github, https:// prefixes
-# deny-patterns = true   # risky patterns (curl | sh, ~/.ssh, "ignore previous instructions") fail instead of warning
+# deny-patterns = true   # risky patterns (curl | sh, ~/.ssh, "ignore previous instructions") and invisible characters fail instead of warning
+# deny-packages = ["vendor/*", "vendor/name"]   # refused by name, from any source
 "#;
 
 pub const GLOBAL_TEMPLATE: &str = r#"# skillcask global manifest: personal skills in ~/.agents/skills. Lock: skills.lock.
@@ -76,7 +77,8 @@ github = { type = "github", url = "https://api.github.com" }
 min-release-age = "3d"
 allow-ranges = true
 # allow-sources = ["packagist", "github"]   # only these: repository names, packagist, github, https:// prefixes
-# deny-patterns = true   # risky patterns (curl | sh, ~/.ssh, "ignore previous instructions") fail instead of warning
+# deny-patterns = true   # risky patterns (curl | sh, ~/.ssh, "ignore previous instructions") and invisible characters fail instead of warning
+# deny-packages = ["vendor/*", "vendor/name"]   # refused by name, from any source
 "#;
 
 pub fn template(global: bool) -> &'static str {
@@ -126,6 +128,10 @@ pub struct Policy {
     pub deny_patterns: bool,
     /// The only sources allowed; `None`: all (D18).
     pub allow_sources: Option<Vec<String>>,
+    /// Packages refused by name, `vendor/name` or `vendor/*` (D57).
+    pub deny_packages: Vec<String>,
+    /// `config.toml` enforces `allow-sources`, so `"github"` there is public GitHub only (D43).
+    pub github_public: bool,
     /// Keys set by a layer, with that layer, for `status`.
     pub effective: crate::policy::Effective,
 }
@@ -171,9 +177,16 @@ impl Manifest {
     }
 
     /// The API `"github"` in `allow-sources` stands for: the one in use, unless the list comes from
-    /// the environment or an enforced key, which a project's `github` url must not widen (D43).
+    /// the environment, which a project's `github` url must not widen, or is enforced, which the
+    /// environment must not move either (D43).
     fn github_api(&self) -> String {
-        if crate::policy::fixed(&self.policy.effective, "allow-sources") { crate::github::trusted_api() } else { crate::github::api() }
+        if self.policy.github_public {
+            crate::github::API.to_string()
+        } else if crate::policy::fixed(&self.policy.effective, "allow-sources") {
+            crate::github::trusted_api()
+        } else {
+            crate::github::api()
+        }
     }
 
     /// Why packages from `url` are refused, or `None` when they are allowed.
@@ -186,14 +199,35 @@ impl Manifest {
         let github = self.policy.allow_sources.as_ref().is_some_and(|l| l.iter().any(|e| e == "github"))
             && crate::policy::under(url, &format!("{}/repos/", crate::github::api()));
         let why = if github {
-            format!(
-                "; \"github\" there means {} (SKILLCASK_GITHUB_API names another)",
-                crate::http::shown_url(&crate::github::trusted_api())
-            )
+            let other = if self.policy.github_public {
+                "an enforced list names another by its https:// prefix"
+            } else {
+                "SKILLCASK_GITHUB_API names another"
+            };
+            format!("; \"github\" there means {} ({other})", crate::http::shown_url(&self.github_api()))
         } else {
             String::new()
         };
         Some(format!("source {shown} is not in policy.allow-sources ({from}){why}"))
+    }
+
+    /// Errors when `name` (`vendor/name`) is in `deny-packages`.
+    pub fn check_name(&self, name: &str) -> Result<()> {
+        if crate::policy::denied(&self.policy.deny_packages, name) {
+            let from = self.policy.effective.get("deny-packages").map_or("", |(_, f)| f);
+            return Err(crate::error::Error::new(MANIFEST, format!("{name} is refused by policy.deny-packages ({from})"))
+                .hint(format!("pick another package, or ask whoever sets policy.deny-packages in {from} to drop it")));
+        }
+        Ok(())
+    }
+
+    /// Errors when the lock entry `p` is refused by name or by source.
+    pub fn check_locked(&self, p: &crate::lock::Package) -> Result<()> {
+        self.check_name(&p.name)?;
+        if let Some(why) = self.refuses(&p.repository) {
+            bail!(MANIFEST, "{}: {why}", p.name);
+        }
+        Ok(())
     }
 
     /// GitHub is on and `allow-sources` admits at least some GitHub repository.
@@ -209,8 +243,9 @@ impl Manifest {
         self.repositories.iter().filter(|r| self.allows(&r.url)).cloned().collect()
     }
 
-    /// Errors unless the GitHub or plain git source of `req` may be used.
+    /// Errors unless `req` and its GitHub or plain git source may be used.
     pub fn check_source(&self, req: &SkillReq) -> Result<()> {
+        self.check_name(&req.name)?;
         let Some(url) = &req.git else { return self.check_github(&req.name) };
         if let Some(why) = self.refuses(url) {
             bail!(MANIFEST, "{}: {why}", req.name);
@@ -325,6 +360,11 @@ pub fn parse_with(text: &str, global: bool, outer: &crate::policy::Outer) -> Res
             Some((V::List(l), _)) => Some(l.clone()),
             _ => None,
         },
+        deny_packages: match effective.get("deny-packages") {
+            Some((V::List(l), _)) => l.clone(),
+            _ => Vec::new(),
+        },
+        github_public: outer.config.enforce.contains("allow-sources") && outer.config.values.contains_key("allow-sources"),
         effective,
     };
     if let Some(list) = &policy.allow_sources
@@ -341,7 +381,10 @@ pub fn parse_with(text: &str, global: bool, outer: &crate::policy::Outer) -> Res
     }
     // A public package must never shadow a private one with the same name.
     repositories.sort_by_key(is_packagist);
-    if let Some((V::Age(enforced), crate::policy::ENFORCED)) = policy.effective.get("min-release-age") {
+    // The environment can only lengthen an enforced cooldown (D18), and the floor follows it.
+    if let Some((V::Age(enforced), crate::policy::ENFORCED | crate::policy::ENVIRONMENT)) = policy.effective.get("min-release-age")
+        && outer.config.enforce.contains(&"min-release-age")
+    {
         for r in &mut repositories {
             let floor = crate::policy::repository_floor(outer, &r.url, *enforced);
             match r.min_release_age {
@@ -925,13 +968,16 @@ min-release-age = "12h"
         let packagist = m(r#""https://other.example/packages.json", min-release-age = "4d""#).unwrap();
         assert_eq!(packagist.min_release_age(&packagist.repositories[1]), SignedDuration::from_hours(72));
 
-        let env = crate::policy::env_layer(|k| (k == "SKILLCASK_MIN_RELEASE_AGE").then(|| "1h".to_string())).unwrap();
-        let lifted = parse_with(
-            "[repositories]\nr = { url = \"https://other.example/p.json\", min-release-age = \"0\" }",
-            false,
-            &crate::policy::Outer { env, ..o },
-        );
-        assert_eq!(age(lifted.unwrap()), SignedDuration::ZERO, "the environment lifts enforcement");
+        // The environment cannot lift the enforced cooldown, only lengthen it, and the floor follows.
+        let env = |v: &str| crate::policy::env_layer(|k| (k == "SKILLCASK_MIN_RELEASE_AGE").then(|| v.to_string())).unwrap();
+        let repo = |extra: &str| format!("[repositories]\nr = {{ url = \"https://other.example/p.json\"{extra} }}");
+        let o = |v: &str| crate::policy::Outer { env: env(v), ..o.clone() };
+        {
+            let e = parse_with(&repo(""), false, &o("1h")).unwrap_err().msg;
+            assert!(e.contains("SKILLCASK_MIN_RELEASE_AGE = \"1h\" loosens policy.min-release-age = \"72h\""), "{e}");
+        }
+        assert_eq!(age(parse_with(&repo(""), false, &o("7d")).unwrap()), SignedDuration::from_hours(168));
+        assert!(parse_with(&repo(", min-release-age = \"0\""), false, &o("7d")).unwrap_err().msg.contains("shorter than \"168h\""));
     }
 
     #[test]

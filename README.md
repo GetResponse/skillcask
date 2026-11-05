@@ -190,7 +190,8 @@ allow-ranges = true      # false: every version must be exact
 packagist = true         # false: drop the implicit Packagist repository
 github-requires = false  # true: dependencies may come from GitHub or git URLs
 allow-sources = ["acme", "own", "packagist", "github"]   # only these sources; default: all
-deny-patterns = false    # true: risky patterns in new skill text fail instead of warning
+deny-patterns = false    # true: risky patterns and invisible characters in new skill text fail instead of warning
+deny-packages = ["evil/*"]   # refused by name from any source, also in a lock; default: none
 ```
 
 ### Agents
@@ -234,12 +235,21 @@ organisation). Other repositories get no request, and `install` refuses a lock e
 also with `--frozen`, so a committed lock cannot bring them back. Dependencies follow the same
 rule.
 
+`deny-packages` refuses packages by name, `vendor/name` or a whole `vendor/*`, whatever source
+serves them (a GitHub `owner/repo` counts as `owner/repo`). A plain git entry is matched by its key
+in `skills.toml`, which the project picks, so limit git URLs with `allow-sources`. It is checked
+before any download and again on every lock entry, so it also stops a dependency or a committed
+lock. Enforced in `config.toml`, the list is a floor: a project may add packages to it, not drop
+any.
+
 Policy can also come from `config.toml` next to the global manifest (`~/.config/skillcask`) and
 from the environment. The first layer that sets a key wins:
 
 1. `SKILLCASK_ALLOW_SOURCES`, `SKILLCASK_MIN_RELEASE_AGE`, `SKILLCASK_ALLOW_RANGES`,
-   `SKILLCASK_PACKAGIST`, `SKILLCASK_GITHUB_REQUIRES`, `SKILLCASK_DENY_PATTERNS` (overriding an
-   enforced key prints a warning);
+   `SKILLCASK_PACKAGIST`, `SKILLCASK_GITHUB_REQUIRES`, `SKILLCASK_DENY_PATTERNS`,
+   `SKILLCASK_DENY_PACKAGES` (lists comma-separated; against an enforced key only a stricter value
+   is accepted: a longer cooldown, `deny-patterns` on, the others off, narrower sources, more
+   denied packages);
 2. keys `config.toml` lists in `enforce`: a project that sets them otherwise fails;
 3. `[policy]` in `skills.toml`;
 4. the other keys of `config.toml`, as defaults.
@@ -250,6 +260,10 @@ from the environment. The first layer that sets a key wins:
 allow-sources = ["https://gitlab.example.com/", "github"]
 enforce = ["allow-sources"]
 ```
+
+`"github"` in an enforced `allow-sources` is public GitHub (`https://api.github.com/repos/`):
+`SKILLCASK_GITHUB_API` and `GITHUB_API_URL` do not move it. For GitHub Enterprise, enforce its
+prefix, e.g. `"https://ghe.example.com/api/v3/repos/"`.
 
 An enforced `min-release-age` also applies to a repository's own `min-release-age`: a project
 may only make it longer. Exceptions, by URL prefix, stay in `config.toml`:
@@ -263,14 +277,15 @@ enforce = ["min-release-age"]
 "https://gitlab.example.com/" = "0"   # internal skills, reviewed in merge requests
 ```
 
-`enforce` stops a project and its dependencies from loosening the policy for what they resolve,
-and a lock entry from a source outside an enforced `allow-sources`, or younger than an enforced
-or environment `min-release-age`, from installing. A pinned version is not scanned again for
-`deny-patterns`, and its release time is what the lock says, so review lock changes. `enforce` does not stop the person running skillcask: the environment wins over it,
-and `SKILLCASK_HOME`, `XDG_CONFIG_HOME` or `HOME` can point at a config without it. For a rule
-nobody may skip, run `skillcask install --frozen` as a required check on pull requests, with the
-policy in the job's environment and `.github/workflows/` protected (CODEOWNERS or a required
-workflow), since a pull request runs its own copy of the workflow.
+`enforce` stops a project and its dependencies from loosening the policy for what they resolve, and
+a lock entry from a source outside an enforced `allow-sources`, or younger than an enforced or
+environment `min-release-age`, from installing. The environment, which a project's CI configuration
+also sets, may only make an enforced key stricter. A pinned version is not scanned again for `deny-
+patterns`, and its release time is what the lock says, so review lock changes. `enforce` does not
+stop the person running skillcask: `SKILLCASK_HOME`, `XDG_CONFIG_HOME` or `HOME` can point at a
+config without it. For a rule nobody may skip, run `skillcask install --frozen` as a required check
+on pull requests, with the policy in the job's environment and `.github/workflows/` protected
+(CODEOWNERS or a required workflow), since a pull request runs its own copy of the workflow.
 
 `config.toml` and the environment take URL prefixes, not repository names, since a name means
 whatever a project calls it. `skillcask status` prints each key that is set and where it came
@@ -544,8 +559,8 @@ too young falls back to an older commit when the server supports partial fetches
   | tells the agent to ignore its instructions | "ignore (all) previous/prior instructions", "disregard all previous/prior" |
 
   Skills that teach shell setup trigger some of these legitimately, so they are warnings. With
-  `deny-patterns = true` under `[policy]` (or enforced in `config.toml`) they fail the command
-  with exit 1 and nothing is written.
+  `deny-patterns = true` under `[policy]` (or enforced in `config.toml`) they, and the invisible
+  characters above, fail the command with exit 1 and nothing is written.
 - `skillcask audit` reviews what is installed now, every skill in `.agents/skills` and the project
   skills: the commands its shell code blocks run, the hosts of its URLs, the paths in the home
   directory or under system roots, the environment variables it reads and the files an agent could
