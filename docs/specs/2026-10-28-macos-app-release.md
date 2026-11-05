@@ -107,7 +107,6 @@ signing job (`environment: release`) gets them:
 | `MACOS_CERTIFICATE_P12` | Developer ID Application certificate with its private key, base64 |
 | `MACOS_CERTIFICATE_PASSWORD` | password of the `.p12` |
 | `MACOS_SIGN_IDENTITY` | `Developer ID Application: <name> (<team id>)` |
-| `APPLE_TEAM_ID` | the team id |
 | `APP_STORE_CONNECT_API_KEY_P8` | App Store Connect team key for `notarytool` (role Developer), base64 |
 | `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID` | its key id and issuer id |
 

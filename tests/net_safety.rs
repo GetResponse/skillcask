@@ -176,6 +176,80 @@ fn an_enforced_github_source_is_public_github_only() {
 }
 
 #[test]
+fn a_locked_dist_outside_its_github_repository_is_refused() {
+    let (gh, evil) = (Server::start(), Server::start());
+    let sha = "1".repeat(40);
+    gh.put("/repos/acme/t/tags", json!([{ "name": "v1.0.0", "commit": { "sha": sha } }]).to_string());
+    gh.put(&format!("/repos/acme/t/commits/{sha}"), gh_commit(&sha, 240).to_string());
+    let zip = zipball(&[("SKILL.md", &skill_md("t"))]);
+    gh.put(&format!("/repos/acme/t/zipball/{sha}"), zip.clone());
+    gh.put(&format!("/repos/evil/x/zipball/{sha}"), zip.clone());
+    evil.put(&format!("/repos/acme/t/zipball/{sha}"), zip);
+    let p = with_github(Project::new(&gh), &gh);
+    p.config(&format!("[policy]\nallow-sources = [\"{}/repos/acme/\"]\nenforce = [\"allow-sources\"]\n", gh.base));
+    p.write("skills.toml", "[repositories]\npackagist = false\n");
+    p.ok(&["add", "github:acme/t"]);
+    let good = p.read("skills.lock");
+    let zipball = format!("{}/repos/acme/t/zipball/{sha}", gh.base);
+    assert!(good.contains(&zipball), "{good}");
+    let tamper = |lock: &str| {
+        p.write("skills.lock", lock);
+        let _ = std::fs::remove_dir_all(p.path().join(".agents"));
+    };
+
+    // Regression: only `repository` was held to allow-sources; `dist.url` was fetched as written.
+    let moved = good.replace(&zipball, &format!("{}/repos/acme/t/zipball/{sha}", evil.base));
+    tamper(&moved);
+    let e = p.expect(&["install", "--frozen"], 1);
+    assert!(e.contains("dist zip") && e.contains(&format!("is not zip {zipball}")), "{e}");
+    for args in [&["install"][..], &["info", "acme/t"], &["diff", "acme/t", "--to", "1.0.0"]] {
+        let e = p.expect(args, 1);
+        assert!(e.contains("dist zip"), "{args:?}: {e}");
+    }
+    // `update` resolves again rather than taking the lock's dist; it must not fetch that either.
+    tamper(&moved);
+    p.ok(&["update", "--diff"]);
+    // `diff --from` shows the base lock's version from its archive when it is not installed.
+    let at = moved.find("dist-sha256 = \"").unwrap() + "dist-sha256 = \"".len();
+    p.write("base.lock", &format!("{}{}{}", &moved[..at], "0".repeat(64), &moved[at + 64..]));
+    tamper(&good);
+    let e = p.expect(&["diff", "--from", "base.lock"], 1);
+    assert!(e.contains("dist zip"), "{e}");
+    assert!(evil.log().is_empty(), "{:?}", evil.log());
+
+    // Regression: `..` in the reference left the enforced prefix for another repository on the host.
+    let up = format!("../../../evil/x/zipball/{sha}");
+    tamper(
+        &good
+            .replace(&zipball, &format!("{}/repos/acme/t/zipball/{up}", gh.base))
+            .replace(&format!("reference = \"{sha}\""), &format!("reference = \"{up}\"")),
+    );
+    assert!(p.expect(&["install", "--frozen"], 1).contains("dist zip"));
+    assert!(!gh.log().iter().any(|l| l.contains("/repos/evil/")), "{:?}", gh.log());
+}
+
+#[test]
+fn a_locked_dist_of_a_registry_admitted_by_a_prefix_stays_under_allow_sources() {
+    let (reg, evil) = (Server::start(), Server::start());
+    reg.simple("acme/x", "1.0.0", "x");
+    evil.put("/dist/acme/x/1.0.0.zip", zipball(&[("SKILL.md", &skill_md("x")), ("scripts/run.sh", "#!/bin/sh\necho hi\n")]));
+    let p = Project::new(&reg);
+    p.config(&format!("[policy]\nallow-sources = [\"{}/\"]\nenforce = [\"allow-sources\"]\n", reg.base));
+    p.manifest(&reg, "");
+    p.ok(&["add", "acme/x"]);
+    let dist = reg.url("/dist/acme/x/1.0.0.zip");
+    let good = p.read("skills.lock");
+    assert!(good.contains(&dist), "{good}");
+
+    // Regression: a project's own registry under an allowed prefix downloaded its dist from any host.
+    p.write("skills.lock", &good.replace(&dist, &evil.url("/dist/acme/x/1.0.0.zip")));
+    let _ = std::fs::remove_dir_all(p.path().join(".agents"));
+    let e = p.expect(&["install", "--frozen"], 1);
+    assert!(e.contains("is not in policy.allow-sources"), "{e}");
+    assert!(evil.log().is_empty(), "{:?}", evil.log());
+}
+
+#[test]
 fn github_rate_limit_is_named() {
     let s = Server::start();
     s.respond("/repos/acme/x/tags", 403, &[("x-ratelimit-remaining", "0")], "");
