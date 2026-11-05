@@ -66,11 +66,30 @@ fn key(k: &str) -> Option<&'static str> {
     KEYS.iter().copied().find(|x| *x == k)
 }
 
+/// A `[repositories]` key, and so an `allow-sources` name entry: ASCII letters, digits and `-_.`.
+pub fn valid_name(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+}
+
 /// One `allow-sources` entry: `packagist`, `github`, an `https://` prefix, or (with `names`) a
 /// repository name, checked against `[repositories]` by the manifest.
 fn check_source(s: &str, names: bool) -> std::result::Result<(), String> {
-    let name = !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c));
-    if matches!(s, "packagist" | "github") || s.starts_with("https://") && url::Url::parse(s).is_ok() || names && name {
+    let name = valid_name(s);
+    if matches!(s, "packagist" | "github") || names && name {
+        return Ok(());
+    }
+    if s.starts_with("https://") {
+        // Prefix or exact URL is decided on the raw text (`/` at the end), matching on the parsed
+        // URL: the two agree only when parsing changes nothing. A stray space, `\`, `?` or `#`
+        // would otherwise read as an exact registry URL and still match as a prefix.
+        let u = url::Url::parse(s).map_err(|e| format!("{s:?}: {e}"))?;
+        if u.query().is_some() || u.fragment().is_some() {
+            return Err(format!("{s:?}: an allow-sources URL takes no ? or #"));
+        }
+        let canonical = u.as_str();
+        if canonical != s && canonical != format!("{s}/") {
+            return Err(format!("{s:?} is not written as its URL; use {canonical:?}"));
+        }
         return Ok(());
     }
     Err(if name {
@@ -381,6 +400,32 @@ pub fn under(url: &str, prefix: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Regression: `"https://h/acme/ "` parsed as the prefix `https://h/acme/`, while the lock dist
+    // rule read it as an exact registry URL and accepted that registry's dists from any host.
+    #[test]
+    fn an_allow_sources_url_must_be_written_as_it_parses() {
+        for ok in ["https://h/acme/", "https://h/acme", "https://h", "https://h/", "https://h:8443/a/"] {
+            assert_eq!(check_source(ok, false), Ok(()), "{ok}");
+        }
+        for bad in [
+            "https://h/acme/ ",
+            "https://h/acme/\t",
+            "https://h/acme/\r",
+            " https://h/acme/",
+            "https://h/acme/?",
+            "https://h/acme/#",
+            "https://h/acme/?x=1",
+            "https://h/acme/\u{200B}",
+            "https://h/acme\\",
+            "https://H/acme/",
+            "https://h/a/../acme/",
+            "https://h:443/acme/",
+        ] {
+            assert!(check_source(bad, false).is_err(), "{bad:?}");
+        }
+        assert!(check_source("https://H/acme/", false).unwrap_err().contains("use \"https://h/acme/\""));
+    }
 
     #[test]
     fn the_environment_may_only_tighten_an_enforced_value() {

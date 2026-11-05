@@ -377,6 +377,9 @@ pub fn parse_with(text: &str, global: bool, outer: &crate::policy::Outer) -> Res
     let mut packagist_off = false;
     if let Some(t) = doc.get("repositories").and_then(Item::as_table_like) {
         for (name, item) in t.iter() {
+            if !crate::policy::valid_name(name) {
+                return Err(bad(format!("repository key {name:?}: use ASCII letters, digits and -_.")));
+            }
             if matches!(name, "packagist" | "github") && item.as_bool().is_some() {
                 if item.as_bool() == Some(false) {
                     if name == "github" {
@@ -924,6 +927,7 @@ mod tests {
         let fake = "https://git.example.com/acme/fake";
         let e = m.check_locked(&entry(fake, "zip", "https://evil.example/x.zip", &sha)).unwrap_err();
         assert!(e.msg.ends_with("is not in policy.allow-sources"), "{}", e.msg);
+        assert!(e.hint.is_none(), "no / entry equals this registry: {:?}", e.hint);
         assert!(!ok(entry(fake, "git", "https://evil.example/x.git", &sha)));
         assert!(!ok(entry(fake, "zip", &format!("https://api.github.com/repos/evil/x/zipball/{sha}"), &sha)));
         assert!(ok(entry(fake, "zip", "https://git.example.com/acme/dists/x.zip", &sha)));
@@ -942,13 +946,12 @@ mod tests {
                 "{key}"
             );
         }
-        // Regression: a `[repositories]` key spelled like a URL entry was "named" by it.
-        let key = parse(
-            "[repositories]\n\"https://git.example.com/acme/\" = { url = \"https://git.example.com/acme/fake\" }\n[policy]\nallow-sources = [\"https://git.example.com/acme/\"]\n",
-            false,
-        )
-        .unwrap();
-        assert!(key.check_locked(&entry("https://git.example.com/acme/fake", "zip", "https://evil.example/x.zip", &sha)).is_err());
+        // Regression: a `[repositories]` key spelled like a URL entry was "named" by it; such keys,
+        // and keys that would add a line to an error, are now refused.
+        for key in ["https://git.example.com/acme/", "a\\nb", "my repo", ""] {
+            let e = parse(&format!("[repositories]\n{key:?} = {{ url = \"https://git.example.com/acme/fake\" }}\n"), false).unwrap_err();
+            assert!(e.msg.contains("repository key"), "{key:?}: {}", e.msg);
+        }
         let at = parse("[repositories]\nr = { url = \"https://git.example.com/acme/\" }\n[policy]\nallow-sources = [\"https://git.example.com/acme/\"]\n", false).unwrap();
         let e = at.check_locked(&entry("https://git.example.com/acme/", "zip", "https://evil.example/x.zip", &sha)).unwrap_err();
         assert!(e.hint.as_deref().is_some_and(|h| h.contains("drop the /")), "{:?}", e.hint);
