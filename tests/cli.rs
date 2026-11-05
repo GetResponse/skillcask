@@ -874,6 +874,48 @@ fn global_init_names_the_config_path() {
 }
 
 #[test]
+fn init_copies_the_global_repositories() {
+    let s = Server::start();
+    let p = Project::new(&s);
+    let global = p.home().join(".config").join("skillcask").join("skills.toml");
+    std::fs::create_dir_all(global.parent().unwrap()).unwrap();
+    std::fs::write(&global, "[skills]\n\"acme/x\" = \"^1\"\n").unwrap();
+    p.ok(&["init"]);
+    assert!(
+        p.read("skills.toml").contains("# name = { type = \"composer\"")
+            && p.read("skills.toml").contains("packagist = { url = \"https://repo.packagist.org\" }")
+    );
+
+    std::fs::remove_file(p.path().join("skills.toml")).unwrap();
+    std::fs::write(
+        &global,
+        "[repositories]\n# company mirror\nacme = { url = \"https://reg.example/packages.json?ref=master\", min-release-age = \"7d\" }\npackagist = false\ngithub = false\n\n[repositories.extra]\nurl = \"https://extra.example/packages.json\"\n\n[policy]\nallow-sources = [\"acme\"]\n",
+    )
+    .unwrap();
+    p.ok(&["init"]);
+    let text = p.read("skills.toml");
+    assert!(
+        text.contains("[repositories]\n# company mirror\nacme = { url = \"https://reg.example/packages.json?ref=master\", min-release-age = \"7d\" }\npackagist = false\ngithub = false\n\nextra = { url = \"https://extra.example/packages.json\" }\n"),
+        "{text}"
+    );
+    assert!(!text.contains("allow-sources = [\"acme\"]") && text.contains("[skills]") && !text.contains("repo.packagist.org"), "{text}");
+    p.ok(&["install"]);
+
+    std::fs::remove_file(p.path().join("skills.toml")).unwrap();
+    std::fs::write(&global, "[repositories]\nacme = { url = \"ftp://reg.example\" }\n").unwrap();
+    let out = p.expect(&["init"], 1);
+    assert!(out.contains(&format!("{}: repository acme: only https://", global.display())), "{out}");
+    assert!(!p.path().join("skills.toml").exists());
+
+    for url in ["https://bot:s3cret@reg.example/packages.json", "https://reg.example/packages.json?ref=master&private_token=s3cret"] {
+        std::fs::write(&global, format!("[repositories]\nacme = {{ url = \"{url}\" }}\n")).unwrap();
+        let out = p.expect(&["init"], 1);
+        assert!(out.contains("repository acme: its URL carries credentials") && !out.contains("s3cret"), "{out}");
+        assert!(!p.path().join("skills.toml").exists());
+    }
+}
+
+#[test]
 fn project_commands_do_not_treat_the_global_config_dir_as_a_project() {
     let s = Server::start();
     s.simple("acme/one", "1.0.0", "one");

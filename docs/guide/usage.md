@@ -148,3 +148,10 @@ skillcask -g install --frozen    # e.g. from a dotfiles repository
   `~/.config/skillcask/adopted/` and installs the package's skill of the same name in its place.
 - The list of managed paths is `~/.agents/skills/.skillcask-installed`, local to the machine;
   nothing touches git.
+- `skillcask init` in a project copies `[repositories]` of the global `skills.toml`, when it has
+  one, in place of the default sources, so a company registry (or `packagist = false`) set up on
+  the machine is in every new project. Only `init` reads it; the project's `skills.toml` stays
+  the whole truth afterwards.
+- `skillcask -g repository add <name> <url>` puts a registry into that table without touching your
+  skills, and creates the file when it is missing; `skillcask -g repository remove packagist` turns
+  Packagist off. Device management can run both on every check-in.

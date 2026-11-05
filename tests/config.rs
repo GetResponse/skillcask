@@ -205,3 +205,49 @@ fn edit_checks_the_file_and_keeps_a_broken_edit() {
     assert!(out.contains("checked"), "{out}");
     assert_eq!(config_toml(&p).replace("\r\n", "\n"), "[search]\nskills-sh = true\n");
 }
+
+#[test]
+fn repository_adds_replaces_and_turns_off_keeping_the_file() {
+    let s = Server::start();
+    let p = Project::new(&s);
+    // Device management runs it on machines without a global manifest: it starts from the template.
+    let out = p.global(&["repository", "add", "gr", "https://reg.example/raw?ref=master", "--min-release-age", "0"], 0);
+    assert!(out.contains("added repository gr in"), "{out}");
+    p.global(&["repository", "remove", "packagist"], 0);
+    p.global(&["repository", "remove", "github"], 0);
+    let path = p.home().join(".config/skillcask/skills.toml");
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.starts_with("# skillcask global manifest"), "{text}");
+    assert!(
+        text.contains(
+            "packagist = false\ngithub = false\ngr = { url = \"https://reg.example/raw?ref=master\", min-release-age = \"0\" }\n"
+        ),
+        "{text}"
+    );
+
+    std::fs::write(&path, text.replace("[skills]\n", "[skills]\n\"acme/mine\" = \"^1\"   # mine\n")).unwrap();
+    assert!(p.global(&["repository", "add", "gr", "https://reg.example/v2"], 0).contains("replaced repository gr"));
+    p.global(&["repository", "add", "github", "https://ghe.example/api/v3"], 0);
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("gr = { url = \"https://reg.example/v2\" }\n"), "{text}");
+    assert!(text.contains("github = { type = \"github\", url = \"https://ghe.example/api/v3\" }\n"), "{text}");
+    assert!(text.contains("\"acme/mine\" = \"^1\"   # mine\n"), "{text}");
+    assert!(p.global(&["repository", "remove", "gr"], 0).contains("removed repository gr"));
+    assert!(p.global(&["repository", "remove", "gr"], 0).contains("no repository gr"));
+}
+
+#[test]
+fn repository_checks_before_writing() {
+    let s = Server::start();
+    let p = Project::new(&s);
+    assert!(p.expect(&["repository", "add", "x", "https://x.example/p.json"], 1).contains("skills.toml not found"));
+    p.ok(&["init"]);
+    let before = p.read("skills.toml");
+    assert!(p.expect(&["repository", "add", "x", "ftp://x.example"], 1).contains("skills.toml: repository x: only https://"));
+    std::fs::create_dir_all(p.home().join(".config/skillcask")).unwrap();
+    std::fs::write(p.home().join(".config/skillcask/config.toml"), "[policy]\nmin-release-age = \"3d\"\nenforce = [\"min-release-age\"]\n")
+        .unwrap();
+    let e = p.expect(&["repository", "add", "x", "https://x.example/p.json", "--min-release-age", "0"], 1);
+    assert!(e.contains("shorter than"), "{e}");
+    assert_eq!(p.read("skills.toml"), before);
+}

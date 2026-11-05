@@ -33,7 +33,7 @@ fn check_key(s: &Scope, k: &str, values: &[String], unset: bool) -> Result<()> {
     let project_keys = || KEYS.iter().map(|k| format!("policy.{k}")).chain(["agents.targets".to_string()]);
     if !project_keys().any(|x| x == k) && !PERSONAL.contains(&k) {
         return Err(Error::new(MANIFEST, format!("unknown key {k:?}")).hint(format!(
-            "keys: {}; with -g also {}; tables only through skillcask config edit",
+            "keys: {}; with -g also {}; [repositories] through skillcask repository, other tables through skillcask config edit",
             project_keys().collect::<Vec<_>>().join(", "),
             PERSONAL.join(", ")
         )));
@@ -166,6 +166,64 @@ fn set(s: &Scope, k: &str, values: Option<&[String]>) -> Result<()> {
         ui::warn(format!("the environment overrides it here: {k} = {v}"));
     }
     Ok(())
+}
+
+/// D59: `repository add`. With `--global` a missing `skills.toml` is created from the template, so
+/// device management can run it on any machine.
+pub fn add_repository(s: &Scope, name: &str, url: &str, min_release_age: Option<&str>) -> Result<()> {
+    let mut t = toml_edit::InlineTable::new();
+    if name == "github" {
+        t.insert("type", "github".into());
+    }
+    t.insert("url", url.into());
+    if let Some(age) = min_release_age {
+        t.insert("min-release-age", age.into());
+    }
+    t.fmt();
+    let existed = edit_repositories(s, |r| {
+        let existed = r.contains_key(name);
+        manifest::set(r, name, Some(toml_edit::Value::InlineTable(t)));
+        existed
+    })?;
+    ui::done(if existed { "replaced" } else { "added" }, format!("repository {name} in {}", manifest_shown(s)));
+    Ok(())
+}
+
+/// D59: `repository remove`; the default sources have no entry to drop, so they are turned off.
+pub fn remove_repository(s: &Scope, name: &str) -> Result<()> {
+    let default = matches!(name, "packagist" | "github");
+    let existed = edit_repositories(s, |r| {
+        let existed = r.contains_key(name);
+        manifest::set(r, name, default.then(|| false.into()));
+        existed
+    })?;
+    let shown = manifest_shown(s);
+    match (default, existed) {
+        (true, _) => ui::done("turned off", format!("repository {name} in {shown}")),
+        (false, true) => ui::done("removed", format!("repository {name} from {shown}")),
+        (false, false) => ui::note(format!("no repository {name} in {shown}")),
+    }
+    Ok(())
+}
+
+fn edit_repositories<T>(s: &Scope, f: impl FnOnce(&mut dyn toml_edit::TableLike) -> T) -> Result<T> {
+    if !s.global {
+        need_manifest(s)?;
+    }
+    let mut out = None;
+    manifest::edit(&s.config, s.global, |doc| {
+        let r = doc.entry("repositories").or_insert_with(toml_edit::table);
+        let Some(r) = r.as_table_like_mut() else { bail!(MANIFEST, "repositories must be a table") };
+        out = Some(f(r));
+        // An enforced policy may refuse the entry (a cooldown shorter than its floor, D28).
+        manifest::parse_with(&doc.to_string(), s.global, &policy::outer()?).map(drop)
+    })
+    .map_err(|e| e.map_msg(|m| format!("{}: {}", manifest_shown(s), manifest::unprefixed(m))))?;
+    Ok(out.expect("edit ran"))
+}
+
+fn manifest_shown(s: &Scope) -> String {
+    if s.global { s.config.join(manifest::FILE).display().to_string() } else { manifest::FILE.to_string() }
 }
 
 /// `true`/`false` as a boolean, a list key as one entry per argument, anything else as a string;
