@@ -229,11 +229,12 @@ Constraints follow Composer semantics: `^0.3` means `>=0.3.0 <0.4.0`, `~1.2` mea
 
 ### Allowed sources and policy for every project
 
-`allow-sources` lists the only places skills may come from: repository names, `packagist`,
-`github`, or `https://` URL prefixes (`https://api.github.com/repos/acme/` allows one GitHub
-organisation). Other repositories get no request, and `install` refuses a lock entry from them,
-also with `--frozen`, so a committed lock cannot bring them back. Dependencies follow the same
-rule.
+`allow-sources` lists the only places skills may come from: repository names, `packagist`, `github`,
+or `https://` URL prefixes (`https://api.github.com/repos/acme/` allows one GitHub organisation).
+End a prefix with `/` (`https://gitlab.example.com/`): an entry without one also names a registry
+declared at exactly that URL, whose archives may then come from any host. Other repositories get no
+request, and `install` refuses a lock entry from them, also with `--frozen`, so a committed lock
+cannot bring them back. Dependencies follow the same rule.
 
 `deny-packages` refuses packages by name, `vendor/name` or a whole `vendor/*`, whatever source
 serves them (a GitHub `owner/repo` counts as `owner/repo`). A plain git entry is matched by its key

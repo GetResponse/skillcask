@@ -269,14 +269,23 @@ impl Manifest {
         // "packagist" keyword, or gives its exact URL without a trailing `/`, which is a prefix;
         // under a prefix it is the project's word.
         let registry = self.repositories.iter().find(|r| r.url.trim_end_matches('/') == repo);
-        let named = |r: &Repository| {
-            list.iter().any(|e| !matches!(e.as_str(), "github" | "packagist") && *e == r.name || !e.ends_with('/') && e == repo)
-        };
+        let name = |e: &str| !matches!(e, "github" | "packagist") && !e.starts_with("https://");
+        let named = |r: &Repository| list.iter().any(|e| name(e) && *e == r.name || !e.ends_with('/') && e == repo);
         if repo == PACKAGIST_URL || registry.is_some_and(named) {
             return Ok(());
         }
         if registry.is_some() {
-            return if self.allows(&p.dist.url) { Ok(()) } else { refused("in policy.allow-sources") };
+            if self.allows(&p.dist.url) {
+                return Ok(());
+            }
+            let e = refused("in policy.allow-sources").unwrap_err();
+            return Err(if list.iter().any(|e| e.ends_with('/') && e.trim_end_matches('/') == repo) {
+                e.hint(
+                    "an allow-sources entry ending in / is a prefix; drop the / to name this registry and accept its dists from any host",
+                )
+            } else {
+                e
+            });
         }
         refused(&format!("git {}", shown(repo)))
     }
@@ -933,8 +942,16 @@ mod tests {
                 "{key}"
             );
         }
+        // Regression: a `[repositories]` key spelled like a URL entry was "named" by it.
+        let key = parse(
+            "[repositories]\n\"https://git.example.com/acme/\" = { url = \"https://git.example.com/acme/fake\" }\n[policy]\nallow-sources = [\"https://git.example.com/acme/\"]\n",
+            false,
+        )
+        .unwrap();
+        assert!(key.check_locked(&entry("https://git.example.com/acme/fake", "zip", "https://evil.example/x.zip", &sha)).is_err());
         let at = parse("[repositories]\nr = { url = \"https://git.example.com/acme/\" }\n[policy]\nallow-sources = [\"https://git.example.com/acme/\"]\n", false).unwrap();
-        assert!(at.check_locked(&entry("https://git.example.com/acme/", "zip", "https://evil.example/x.zip", &sha)).is_err());
+        let e = at.check_locked(&entry("https://git.example.com/acme/", "zip", "https://evil.example/x.zip", &sha)).unwrap_err();
+        assert!(e.hint.as_deref().is_some_and(|h| h.contains("drop the /")), "{:?}", e.hint);
         // Regression: an enforced GHE prefix counted as GitHub only when the project's API was GHE.
         let ghe = "https://ghe.example/api/v3/repos/acme";
         let m = parse(

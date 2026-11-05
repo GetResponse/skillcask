@@ -115,7 +115,14 @@ Absent: every source is allowed. Each entry is one of:
   entry that does not parse as a URL is an error;
 - in `skills.toml` only: a repository name from `[repositories]`, matching its URL. In
   `config.toml` and the environment a name would mean whatever a project calls that name, so
-  only the forms above are accepted.
+  only the forms above are accepted. Only such an entry, neither a keyword nor an `https://` URL,
+  is compared with a repository's name: `[repositories]` keys are not validated, and a key spelled
+  like a URL entry must not be "named" by it.
+
+An `https://` entry without a trailing `/` also names a registry declared at exactly that URL, so
+its dists may come from any host (Enforcement); end a prefix with `/`. An environment that narrows
+an enforced prefix to such an exact URL thereby trusts that registry's dist hosts, which is within
+"the environment is the user's" (layer 1), though `tightens` compares sources only.
 
 A source is the URL a lock entry records in `repository`. Enforcement:
 
@@ -127,14 +134,14 @@ A source is the URL a lock entry records in `repository`. Enforcement:
   is exit 1, also under `install --frozen`.
 - With `allow-sources` set, a lock entry's archive is downloaded (by `install`, `info` or `diff`)
   only from what was checked. A repository under a GitHub API (`<api>/repos/`: the one in use, the
-  trusted one of D43, or one the list gives a `/repos/` prefix of) must be exactly
-  `<api>/repos/<owner>/<name>` and downloads only `<repository>/zipball/<40-hex commit>`.
-  Packagist, and a repository of `[repositories]` the list names (never through the `github` or
-  `packagist` keyword) or gives by its exact URL without a trailing `/`, download their dist from
-  wherever the lock says, since registries serve dists from other hosts; review lock changes for
-  those. Any other repository of `[repositories]` is admitted only by a prefix, which a project
-  can declare a registry under or at, so its dist must pass `allow-sources` too. Everything else
-  downloads only as a git checkout of itself.
+  trusted one of D43, or the text before `/repos/` in any `https://` entry, exact ones included)
+  must be exactly `<api>/repos/<owner>/<name>` and downloads only `<repository>/zipball/<sha>` of
+  a 40-hex commit. Packagist, and a repository of `[repositories]` the list names (by a name
+  entry, never a keyword or a URL) or gives by its exact URL without a trailing `/`, download
+  their dist from wherever the lock says, since registries serve dists from other hosts; review
+  lock changes for those. Any other repository of `[repositories]` is admitted only by a prefix,
+  which a project can declare a registry under or at, so its dist must pass `allow-sources` too.
+  Everything else downloads only as a git checkout of itself.
 - Dependencies (D16) follow the same rules.
 
 ## Default sources
