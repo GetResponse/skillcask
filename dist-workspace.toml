@@ -23,3 +23,7 @@ pr-run-mode = "plan"
 # release.yml is hand-edited after `dist generate` (npm trusted publishing, pinned actions and
 # installers); see AGENTS.md. Re-apply after regenerating.
 allow-dirty = ["ci"]
+
+[dist.github-custom-runners]
+# dist 0.32 defaults to macos-14, which GitHub no longer runs
+aarch64-apple-darwin = "macos-15"
