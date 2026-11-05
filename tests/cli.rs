@@ -877,7 +877,7 @@ fn global_init_names_the_config_path() {
 fn init_copies_the_global_repositories() {
     let s = Server::start();
     let p = Project::new(&s);
-    let global = p.home().join(".config/skillcask/skills.toml");
+    let global = p.home().join(".config").join("skillcask").join("skills.toml");
     std::fs::create_dir_all(global.parent().unwrap()).unwrap();
     std::fs::write(&global, "[skills]\n\"acme/x\" = \"^1\"\n").unwrap();
     p.ok(&["init"]);
