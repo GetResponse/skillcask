@@ -119,10 +119,12 @@ pub fn project_template(global: &str) -> Result<String> {
     // The global file is private to the machine; the project's is committed.
     let urls = m.repositories.iter().map(|r| (r.name.as_str(), r.url.as_str())).chain(m.github.as_deref().map(|u| ("github", u)));
     for (name, url) in urls {
-        if url::Url::parse(url).is_ok_and(|u| !u.username().is_empty() || u.password().is_some() || u.query().is_some()) {
+        if url::Url::parse(url).is_ok_and(|u| {
+            !u.username().is_empty() || u.password().is_some() || u.query_pairs().any(|(k, _)| k.to_lowercase().contains("token"))
+        }) {
             return Err(crate::error::Error::new(
                 MANIFEST,
-                format!("repository {name}: its URL carries credentials or a query, which init would commit"),
+                format!("repository {name}: its URL carries credentials, which init would commit"),
             )
             .hint("move them to auth.json next to it"));
         }

@@ -889,13 +889,13 @@ fn init_copies_the_global_repositories() {
     std::fs::remove_file(p.path().join("skills.toml")).unwrap();
     std::fs::write(
         &global,
-        "[repositories]\n# company mirror\nacme = { url = \"https://reg.example/packages.json\", min-release-age = \"7d\" }\npackagist = false\ngithub = false\n\n[repositories.extra]\nurl = \"https://extra.example/packages.json\"\n\n[policy]\nallow-sources = [\"acme\"]\n",
+        "[repositories]\n# company mirror\nacme = { url = \"https://reg.example/packages.json?ref=master\", min-release-age = \"7d\" }\npackagist = false\ngithub = false\n\n[repositories.extra]\nurl = \"https://extra.example/packages.json\"\n\n[policy]\nallow-sources = [\"acme\"]\n",
     )
     .unwrap();
     p.ok(&["init"]);
     let text = p.read("skills.toml");
     assert!(
-        text.contains("[repositories]\n# company mirror\nacme = { url = \"https://reg.example/packages.json\", min-release-age = \"7d\" }\npackagist = false\ngithub = false\n\nextra = { url = \"https://extra.example/packages.json\" }\n"),
+        text.contains("[repositories]\n# company mirror\nacme = { url = \"https://reg.example/packages.json?ref=master\", min-release-age = \"7d\" }\npackagist = false\ngithub = false\n\nextra = { url = \"https://extra.example/packages.json\" }\n"),
         "{text}"
     );
     assert!(!text.contains("allow-sources = [\"acme\"]") && text.contains("[skills]") && !text.contains("repo.packagist.org"), "{text}");
@@ -907,7 +907,7 @@ fn init_copies_the_global_repositories() {
     assert!(out.contains(&format!("{}: repository acme: only https://", global.display())), "{out}");
     assert!(!p.path().join("skills.toml").exists());
 
-    for url in ["https://bot:s3cret@reg.example/packages.json", "https://reg.example/packages.json?token=s3cret"] {
+    for url in ["https://bot:s3cret@reg.example/packages.json", "https://reg.example/packages.json?ref=master&private_token=s3cret"] {
         std::fs::write(&global, format!("[repositories]\nacme = {{ url = \"{url}\" }}\n")).unwrap();
         let out = p.expect(&["init"], 1);
         assert!(out.contains("repository acme: its URL carries credentials") && !out.contains("s3cret"), "{out}");
