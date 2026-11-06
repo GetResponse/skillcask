@@ -104,7 +104,15 @@ tag.
 
 `skillcask self-update` reruns the release's installer when `skillcask-installer.sh` installed
 this binary (Linux, macOS); for any other install it prints the one command to run and exits 1.
-`SKILLCASK_SELF_UPDATE=0` makes it print the installer command too. By hand:
+`SKILLCASK_SELF_UPDATE=0` makes it print the installer command too. Where an organisation updates
+skillcask for you, it says so in `config.toml`, and `self-update` prints that instead of a command:
+
+```toml
+[updates]
+managed = "Jamf installs skillcask updates; ask in #it-help"
+```
+
+By hand:
 
 ```sh
 brew update && brew upgrade skillcask skillcask-app    # Homebrew (skillcask alone without the app)

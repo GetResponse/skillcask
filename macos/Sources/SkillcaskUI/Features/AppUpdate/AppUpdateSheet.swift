@@ -13,6 +13,8 @@ struct AppUpdateSheetContent: Equatable {
         /// The temporary-copy callout and `Do this first`; the path row only when the original is known (its
         /// `Show in Finder` is the primary button, not a second one in the row).
         case translocated(original: URL?)
+        /// The organisation updates the app (`[updates] managed`, D61): its words, no steps.
+        case managed(String)
     }
 
     let body: Body
@@ -24,8 +26,15 @@ struct AppUpdateSheetContent: Equatable {
     /// The default button.
     let primary: AppUpdateStore.SheetAction
 
-    init(method: InstallMethod, version: Version) {
+    init(method: InstallMethod, version: Version, managed: String? = nil) {
         pill = AppUpdateCopy.pill(method)
+        if let managed {
+            body = .managed(managed)
+            offersSkip = true
+            secondary = [.remindTomorrow]
+            primary = .openReleasePage
+            return
+        }
         switch method {
         case .homebrew:
             body = .homebrew(command: UpdateLinks.homebrewCommand)
@@ -69,7 +78,7 @@ struct AppUpdateSheet: View {
     static let commandRadius = CLIOnboardingSheet.commandRadius
 
     private var content: AppUpdateSheetContent {
-        AppUpdateSheetContent(method: updates.installMethod, version: version)
+        AppUpdateSheetContent(method: updates.installMethod, version: version, managed: updates.state.managed)
     }
 
     var body: some View {
@@ -151,6 +160,13 @@ struct AppUpdateSheet: View {
                 if let original {
                     pathRow(original)
                 }
+            case .managed(let message):
+                sectionTitle(AppUpdateCopy.managedTitle)
+                Text(message)
+                    .font(Font.Token.body)
+                    .foregroundStyle(Color.textPrimary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.horizontal, Spacing.xxl)

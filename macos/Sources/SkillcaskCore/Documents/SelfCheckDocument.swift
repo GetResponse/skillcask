@@ -1,15 +1,17 @@
 /// `self-check --json` (D51): the running CLI's version, the latest the tap's cask names (`null` when the cask held
-/// no version the CLI could read) and whether that is newer by SemVer precedence. Keys as D32 adds them; unknown
-/// ones are ignored.
+/// no version the CLI could read), whether that is newer by SemVer precedence, and `managed`, who updates skillcask
+/// on this machine (D61; absent before 0.12.1). Keys as D32 adds them; unknown ones are ignored.
 public struct SelfCheckDocument: Decodable, Hashable, Sendable {
     public let version: String
     public let latest: String?
     public let newer: Bool
+    public let managed: String?
 
-    public init(version: String, latest: String?, newer: Bool) {
+    public init(version: String, latest: String?, newer: Bool, managed: String? = nil) {
         self.version = version
         self.latest = latest
         self.newer = newer
+        self.managed = managed
     }
 
     /// `latest` read again strictly (`Version.init?(strict:)`): nil when it is null or anything but a plain

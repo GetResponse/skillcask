@@ -16,10 +16,11 @@ public struct UpdateDefaults {
         public static let hiddenForVersion = "appUpdates.hiddenForVersion"
         public static let remindAfter = "appUpdates.remindAfter"
         public static let awaitingRelaunch = "appUpdates.awaitingRelaunch"
+        public static let managed = "appUpdates.managed"
 
         public static let all = [
             consent, lastCheckAt, latestSeen, skippedVersion, hiddenUntil, hiddenForVersion, remindAfter,
-            awaitingRelaunch,
+            awaitingRelaunch, managed,
         ]
     }
 
@@ -38,7 +39,8 @@ public struct UpdateDefaults {
             hiddenUntil: defaults.object(forKey: Key.hiddenUntil) as? Date,
             hiddenForVersion: version(Key.hiddenForVersion),
             remindAfter: defaults.object(forKey: Key.remindAfter) as? Date,
-            awaitingRelaunch: defaults.bool(forKey: Key.awaitingRelaunch))
+            awaitingRelaunch: defaults.bool(forKey: Key.awaitingRelaunch),
+            managed: defaults.string(forKey: Key.managed))
     }
 
     /// Writes every key; a nil value (and `undecided`, `false`) removes it. For seeding a suite (tests, previews);
@@ -60,6 +62,7 @@ public struct UpdateDefaults {
         if state.hiddenForVersion != old.hiddenForVersion { keys.append(Key.hiddenForVersion) }
         if state.remindAfter != old.remindAfter { keys.append(Key.remindAfter) }
         if state.awaitingRelaunch != old.awaitingRelaunch { keys.append(Key.awaitingRelaunch) }
+        if state.managed != old.managed { keys.append(Key.managed) }
         save(state, keys: keys)
     }
 
@@ -85,6 +88,7 @@ public struct UpdateDefaults {
             case Key.hiddenForVersion: set(state.hiddenForVersion?.description, key)
             case Key.remindAfter: set(state.remindAfter, key)
             case Key.awaitingRelaunch: set(state.awaitingRelaunch ? true : nil, key)
+            case Key.managed: set(state.managed, key)
             default: break
             }
         }

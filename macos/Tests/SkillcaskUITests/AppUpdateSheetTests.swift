@@ -74,6 +74,14 @@ import Testing
         #expect(AppUpdateCopy.title(for: .copyAndOpenTerminal) == "Copy and Open Terminal")
     }
 
+    @Test func aManagedUpdateShowsTheOrganisationsWordsForEveryMethod() {
+        for method in [InstallMethod.homebrew, .direct, .translocated(original: nil)] {
+            let content = AppUpdateSheetContent(method: method, version: Self.latest, managed: "Jamf installs it")
+            #expect(content.body == .managed("Jamf installs it"))
+            #expect(content.secondary == [.remindTomorrow] && content.primary == .openReleasePage)
+        }
+    }
+
     @Test func directNamesTheZipAndOpensTheReleasePage() {
         let content = AppUpdateSheetContent(method: .direct, version: Self.latest)
         #expect(content.body == .direct(zip: "Skillcask-0.10.3-macos-universal.zip"))

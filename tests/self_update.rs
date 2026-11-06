@@ -149,3 +149,21 @@ fn opted_out_or_without_sha256sum_prints_the_installer_command() {
     assert!(out.contains("needs sha256sum") && out.contains("skillcask-installer.sh | sh"), "{out}");
     assert!(!p.home().join("ran").exists() && s.requests().iter().all(|r| r.path == CASK));
 }
+
+#[cfg(unix)]
+#[test]
+fn managed_updates_run_no_installer_and_name_who_updates() {
+    let s = Server::start();
+    s.put(CASK, cask("999.0.0"));
+    let p = installed(&s);
+    p.config("[updates]\nmanaged = \"mine\"\n");
+    p.system_config("[updates]\nmanaged = \"Jamf installs updates; ask #it-help\"\n");
+    for args in [&["self-update"][..], &["self-update", "--dry-run"]] {
+        let out = p.expect(args, 1);
+        assert!(out.contains(&format!("skillcask {RUNNING} -> 999.0.0: updates are managed by your organisation")), "{out}");
+        assert!(out.contains("hint: Jamf installs updates; ask #it-help") && !out.contains("mine"), "{out}");
+    }
+    assert!(s.requests().iter().all(|r| r.path == CASK), "no installer download");
+    let check = p.ok(&["self-check", "--json"]);
+    assert!(check.contains(r#""managed":"Jamf installs updates; ask #it-help""#), "{check}");
+}
