@@ -525,8 +525,11 @@ pub fn parse_with(text: &str, global: bool, outer: &crate::policy::Outer) -> Res
             match r.min_release_age {
                 Some(a) if a < floor => {
                     return Err(bad(format!(
-                        "repository {}: min-release-age \"{a:#}\" is shorter than \"{floor:#}\" enforced by {}; remove it or ask to lift it",
-                        r.name, outer.config_path
+                        "repository {}: min-release-age \"{a}\" is shorter than \"{floor}\" enforced by {}; remove it or ask to lift it",
+                        r.name,
+                        outer.config_path,
+                        a = Age(a),
+                        floor = Age(floor)
                     )));
                 }
                 Some(_) => {}
@@ -729,6 +732,20 @@ fn age(i: &Item, what: &str) -> Result<SignedDuration> {
 /// `"3d"`, `"12h"`, `"30m"`, `"1w"`, `"90s"`, `"0"`.
 pub fn parse_age(s: &str) -> Result<SignedDuration> {
     duration(s).map_err(bad)
+}
+
+/// A duration as `parse_age` reads it, in the largest unit that divides it: `"3d"`, not jiff's `"72h"`.
+pub struct Age(pub SignedDuration);
+
+impl std::fmt::Display for Age {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = self.0.as_secs();
+        if s == 0 {
+            return f.write_str("0");
+        }
+        let (n, u) = [(86400, "d"), (3600, "h"), (60, "m")].into_iter().find(|(n, _)| s % n == 0).unwrap_or((1, "s"));
+        write!(f, "{}{u}", s / n)
+    }
 }
 
 /// `parse_age` without naming a file, for `config.toml` and the environment.
@@ -1137,6 +1154,11 @@ min-release-age = "12h"
         assert!(r(r#"{ version = "^1.0", rename = ["x"] }"#).is_err());
         assert!(r(r#"{ version = "^1.0", rename = { a = "a" } }"#).unwrap().skills[0].rename.is_empty(), "identity renames are dropped");
         assert_eq!(parse_age("0").unwrap(), SignedDuration::ZERO);
+        for s in ["0", "3d", "12h", "90m", "45s", "7d"] {
+            assert_eq!(Age(parse_age(s).unwrap()).to_string(), s);
+        }
+        assert_eq!(Age(parse_age("1w").unwrap()).to_string(), "7d");
+        assert_eq!(Age(parse_age("72h").unwrap()).to_string(), "3d");
         assert!(parse_age("3y").is_err());
     }
 
@@ -1233,7 +1255,7 @@ min-release-age = "12h"
 
         // Regression: a project's min-release-age = "0" used to bypass an enforced cooldown.
         let e = m(r#""https://other.example/packages.json", min-release-age = "0""#).unwrap_err();
-        assert!(e.msg.contains("repository r: min-release-age \"0s\" is shorter than \"72h\" enforced by config.toml"), "{}", e.msg);
+        assert!(e.msg.contains("repository r: min-release-age \"0\" is shorter than \"3d\" enforced by config.toml"), "{}", e.msg);
         assert_eq!(age(m(r#""https://other.example/packages.json""#).unwrap()), SignedDuration::from_hours(72));
         assert_eq!(age(m(r#""https://other.example/packages.json", min-release-age = "7d""#).unwrap()), SignedDuration::from_hours(168));
         assert_eq!(age(m(r#""https://git.example.com/packages.json", min-release-age = "0""#).unwrap()), SignedDuration::ZERO);
@@ -1248,10 +1270,10 @@ min-release-age = "12h"
         let o = |v: &str| crate::policy::Outer { env: env(v), ..o.clone() };
         {
             let e = parse_with(&repo(""), false, &o("1h")).unwrap_err().msg;
-            assert!(e.contains("SKILLCASK_MIN_RELEASE_AGE = \"1h\" loosens policy.min-release-age = \"72h\""), "{e}");
+            assert!(e.contains("SKILLCASK_MIN_RELEASE_AGE = \"1h\" loosens policy.min-release-age = \"3d\""), "{e}");
         }
         assert_eq!(age(parse_with(&repo(""), false, &o("7d")).unwrap()), SignedDuration::from_hours(168));
-        assert!(parse_with(&repo(", min-release-age = \"0\""), false, &o("7d")).unwrap_err().msg.contains("shorter than \"168h\""));
+        assert!(parse_with(&repo(", min-release-age = \"0\""), false, &o("7d")).unwrap_err().msg.contains("shorter than \"7d\""));
     }
 
     #[test]

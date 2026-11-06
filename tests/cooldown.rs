@@ -70,14 +70,14 @@ fn a_cooldown_the_project_cannot_change_also_holds_the_lock() {
 
     p.env.push(("SKILLCASK_MIN_RELEASE_AGE".into(), "3d".into()));
     let e = p.expect(&["install", "--frozen"], 1);
-    assert!(e.contains("acme/one 1.1.0 was released") && e.contains("newer than policy.min-release-age (72h, environment)"), "{e}");
+    assert!(e.contains("acme/one 1.1.0 was released") && e.contains("newer than policy.min-release-age (3d, environment)"), "{e}");
     assert!(e.contains("hint: it becomes eligible at"), "{e}");
     p.env.retain(|(k, _)| k != "SKILLCASK_MIN_RELEASE_AGE");
 
     p.write("skills.toml", &p.read("skills.toml").replace("min-release-age = \"3d\"\n", ""));
     p.config("[policy]\nmin-release-age = \"3d\"\nenforce = [\"min-release-age\"]\n");
     let e = p.expect(&["install", "--frozen"], 1);
-    assert!(e.contains("newer than policy.min-release-age (72h, config.toml, enforced)"), "{e}");
+    assert!(e.contains("newer than policy.min-release-age (3d, config.toml, enforced)"), "{e}");
     // An exception for the repository lets it through, as at resolution (D28).
     p.config(&format!(
         "[policy]\nmin-release-age = \"3d\"\nenforce = [\"min-release-age\"]\n\n[policy.repository-min-release-age]\n\"{}\" = \"0\"\n",
@@ -99,16 +99,16 @@ fn the_environment_cannot_shorten_an_enforced_cooldown_or_its_repository_floor()
         ),
     );
     p.config("[policy]\nmin-release-age = \"3d\"\nenforce = [\"min-release-age\"]\n");
-    assert!(p.expect(&["add", "acme/one"], 1).contains("is shorter than \"72h\""));
+    assert!(p.expect(&["add", "acme/one"], 1).contains("is shorter than \"3d\""));
     p.env.push(("SKILLCASK_MIN_RELEASE_AGE".into(), "3d".into()));
-    assert!(p.expect(&["add", "acme/one"], 1).contains("is shorter than \"72h\""), "the same value lifts nothing");
+    assert!(p.expect(&["add", "acme/one"], 1).contains("is shorter than \"3d\""), "the same value lifts nothing");
     // A shorter value cannot lift it (D18); a longer one raises the floor with it.
     p.env.retain(|(k, _)| k != "SKILLCASK_MIN_RELEASE_AGE");
     p.env.push(("SKILLCASK_MIN_RELEASE_AGE".into(), "1h".into()));
     assert!(p.expect(&["add", "acme/one"], 1).contains("SKILLCASK_MIN_RELEASE_AGE = \"1h\" loosens policy.min-release-age"));
     p.env.retain(|(k, _)| k != "SKILLCASK_MIN_RELEASE_AGE");
     p.env.push(("SKILLCASK_MIN_RELEASE_AGE".into(), "7d".into()));
-    assert!(p.expect(&["add", "acme/one"], 1).contains("is shorter than \"168h\""));
+    assert!(p.expect(&["add", "acme/one"], 1).contains("is shorter than \"7d\""));
 }
 
 #[test]

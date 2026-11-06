@@ -237,7 +237,8 @@ pub fn resolve(http: &Http, req: &SkillReq, min_age: SignedDuration, now: Timest
                     let newest = list[0].2.checked_add(min_age).unwrap_or(Timestamp::MAX).round(jiff::Unit::Second).unwrap_or(list[0].2);
                     bail!(
                         MANIFEST,
-                        "{name}: every push to {r:?} is newer than policy.min-release-age ({min_age:#}); the newest becomes eligible at {newest}"
+                        "{name}: every push to {r:?} is newer than policy.min-release-age ({min_age}); the newest becomes eligible at {newest}",
+                        min_age = crate::manifest::Age(min_age)
                     );
                 };
                 if at != sha {
@@ -253,7 +254,8 @@ pub fn resolve(http: &Http, req: &SkillReq, min_age: SignedDuration, now: Timest
                 if is_sha(r) {
                     bail!(
                         MANIFEST,
-                        "{name}: commit {r} is newer than policy.min-release-age ({min_age:#}); it becomes eligible at {eligible}"
+                        "{name}: commit {r} is newer than policy.min-release-age ({min_age}); it becomes eligible at {eligible}",
+                        min_age = crate::manifest::Age(min_age)
                     );
                 }
                 let until = cutoff.round(TimestampRound::new().smallest(Unit::Second).mode(RoundMode::Trunc)).unwrap_or(cutoff);
@@ -262,7 +264,8 @@ pub fn resolve(http: &Http, req: &SkillReq, min_age: SignedDuration, now: Timest
                     Error::new(
                         MANIFEST,
                         format!(
-                            "{name}: every commit on {r:?} is newer than policy.min-release-age ({min_age:#}); the newest becomes eligible at {eligible}"
+                            "{name}: every commit on {r:?} is newer than policy.min-release-age ({min_age}); the newest becomes eligible at {eligible}",
+                            min_age = crate::manifest::Age(min_age)
                         ),
                     )
                 };

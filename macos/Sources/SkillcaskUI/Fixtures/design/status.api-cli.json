@@ -123,7 +123,7 @@
   ],
   "policy": {
     "min-release-age": {
-      "value": "72h",
+      "value": "3d",
       "from": "config.toml, enforced"
     },
     "allow-sources": {

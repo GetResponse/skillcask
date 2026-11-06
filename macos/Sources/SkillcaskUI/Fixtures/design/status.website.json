@@ -30,7 +30,7 @@
     }
   ],
   "policy": {
-    "min-release-age": { "value": "0h", "from": "default" },
+    "min-release-age": { "value": "0", "from": "default" },
     "allow-sources": { "value": null, "from": "default" },
     "allow-ranges": { "value": true, "from": "default" }
   },

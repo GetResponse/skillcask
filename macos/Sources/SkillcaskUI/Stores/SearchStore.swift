@@ -387,15 +387,9 @@ import SkillcaskDomain
     var knownMinimumAge: String? {
         guard let kind = selectedSpec?.kind, kind != .registry,
             let value = store.snapshot?.policy.first(where: { $0.key == "min-release-age" })?.value,
-            !Self.isZeroAge(value)
+            !ScopeSnapshot.PolicyRow.isZeroAge(value)
         else { return nil }
         return value
-    }
-
-    /// `0`, `0h`, `0s`, an empty value: no minimum release age.
-    static func isZeroAge(_ value: String) -> Bool {
-        let digits = value.filter(\.isNumber)
-        return digits.isEmpty || digits.allSatisfy { $0 == "0" }
     }
 
     /// The package already has a skills.toml entry or lock entry in this scope.

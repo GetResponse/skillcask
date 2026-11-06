@@ -127,13 +127,15 @@ import Testing
                 .sorted(by: ScopeSnapshot.PolicyRow.Kind.precedes)
                 == ["min-release-age", "allow-sources", "allow-ranges", "alpha", "zeta"])
         let age = api.first { $0.kind == .minReleaseAge }
-        #expect(age.map(OverviewCopy.policyValue) == "72 h")
+        #expect(age.map(OverviewCopy.policyValue) == "3 d")
         #expect(age.map { OverviewCopy.enforcedOrigin($0.origin) } == "config.toml · enforced")
         #expect(api.first { $0.kind == .allowRanges }.map(OverviewCopy.policyValue) == "Yes")
         let any = DesignFixtures.website.policy.first { $0.kind == .allowSources }
         #expect(any.map(OverviewCopy.policyValue) == "any")
-        #expect(OverviewCopy.minimumAge(api) == "72 h")
+        #expect(OverviewCopy.minimumAge(api) == "3 d")
         #expect(OverviewCopy.minimumAge(DesignFixtures.website.policy) == nil)
+        // A CLI before 0.12.1 prints hours: `72h`, and `0h` for none.
+        #expect(OverviewCopy.policyValue("72h") == "72 h")
     }
 
     @Test func addressesWrapOnlyAfterASlashOrADot() {
@@ -221,7 +223,7 @@ import Testing
         let line = OverviewCopy.cooldown(
             ["jira-syntax", "jira-communication"], update: cooldown, minimumAge: OverviewCopy.minimumAge(api.policy))
         #expect(line.hasPrefix("jira-syntax, jira-communication: 4.3.0 becomes available on "))
-        #expect(line.hasSuffix(" (minimum release age 72 h)."))
+        #expect(line.hasSuffix(" (minimum release age 3 d)."))
     }
 
     // MARK: - Toolbar

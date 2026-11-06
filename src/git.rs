@@ -619,13 +619,15 @@ pub fn resolve(http: &Http, req: &SkillReq, url: &str, min_age: SignedDuration, 
                 if is_sha(git_ref) {
                     bail!(
                         MANIFEST,
-                        "{name}: commit {git_ref} is newer than policy.min-release-age ({min_age:#}); it becomes eligible at {eligible}"
+                        "{name}: commit {git_ref} is newer than policy.min-release-age ({min_age}); it becomes eligible at {eligible}",
+                        min_age = crate::manifest::Age(min_age)
                     );
                 }
                 let Some((older, t)) = older_commit(http, &r, url, &sha, cutoff)? else {
                     bail!(
                         MANIFEST,
-                        "{name}: the newest commit on {git_ref:?} is newer than policy.min-release-age ({min_age:#}) and no older one was found; it becomes eligible at {eligible}"
+                        "{name}: the newest commit on {git_ref:?} is newer than policy.min-release-age ({min_age}) and no older one was found; it becomes eligible at {eligible}",
+                        min_age = crate::manifest::Age(min_age)
                     );
                 };
                 crate::ui::note(format!("{name}: newer commits on {git_ref:?} are within policy.min-release-age; using {}", &older[..12]));

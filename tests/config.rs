@@ -26,7 +26,7 @@ fn sets_reads_and_unsets_project_keys_keeping_the_file() {
         p.read("skills.toml"),
         "# mine\n[policy]\nmin-release-age = \"5d\"   # cooldown\nallow-sources = [\"packagist\", \"github\"]\n\n[agents]\ntargets = [\"claude\", \"kiro\"]\n"
     );
-    assert_eq!(p.ok(&["config", "policy.min-release-age"]), "\"120h\"\n");
+    assert_eq!(p.ok(&["config", "policy.min-release-age"]), "\"5d\"\n");
     assert_eq!(p.ok(&["config", "agents.targets"]), "[\"claude\", \"kiro\"]\n");
 
     p.ok(&["config", "--unset", "policy.allow-sources"]);
@@ -34,7 +34,7 @@ fn sets_reads_and_unsets_project_keys_keeping_the_file() {
     let e = p.expect(&["config", "policy.allow-sources"], 1);
     assert!(e.contains("policy.allow-sources is not set"), "{e}");
     let out = p.ok(&["config"]);
-    assert!(out.contains("policy.min-release-age = \"120h\" (skills.toml)\n"), "{out}");
+    assert!(out.contains("policy.min-release-age = \"5d\" (skills.toml)\n"), "{out}");
     assert!(out.contains("policy.packagist = true (default)\n"), "{out}");
     assert!(out.contains("policy.allow-sources not set\n"), "{out}");
     assert!(out.contains("agents.targets = [\"claude\", \"kiro\"] (skills.toml)\n"), "{out}");
@@ -122,7 +122,7 @@ fn json_names_where_each_setting_comes_from() {
     assert_eq!(
         d["settings"],
         json!({
-            "policy.min-release-age": { "value": "24h", "from": "config.toml" },
+            "policy.min-release-age": { "value": "1d", "from": "config.toml" },
             "policy.allow-ranges": { "value": false, "from": "skills.toml" },
             "policy.packagist": { "value": true, "from": "default" },
             "policy.github-requires": { "value": false, "from": "default" },
