@@ -517,7 +517,8 @@ pub fn parse_with(text: &str, global: bool, outer: &crate::policy::Outer) -> Res
     // A public package must never shadow a private one with the same name.
     repositories.sort_by_key(is_packagist);
     // The environment can only lengthen an enforced cooldown (D18), and the floor follows it.
-    if let Some((V::Age(enforced), crate::policy::ENFORCED | crate::policy::ENVIRONMENT)) = policy.effective.get("min-release-age")
+    if let Some((V::Age(enforced), crate::policy::ENFORCED | crate::policy::SYSTEM_ENFORCED | crate::policy::ENVIRONMENT)) =
+        policy.effective.get("min-release-age")
         && outer.config.enforce.contains(&"min-release-age")
     {
         for r in &mut repositories {
@@ -527,7 +528,7 @@ pub fn parse_with(text: &str, global: bool, outer: &crate::policy::Outer) -> Res
                     return Err(bad(format!(
                         "repository {}: min-release-age \"{a}\" is shorter than \"{floor}\" enforced by {}; remove it or ask to lift it",
                         r.name,
-                        outer.config_path,
+                        outer.path_of("min-release-age"),
                         a = Age(a),
                         floor = Age(floor)
                     )));
@@ -619,12 +620,12 @@ pub fn parse_with(text: &str, global: bool, outer: &crate::policy::Outer) -> Res
     let (target_entries, targets_from) = match agents.and_then(|a| a.get("targets")) {
         Some(i) => (string_array(i).ok_or_else(|| bad("agents.targets must be a list of agent names or paths"))?, FILE),
         None => match &outer.targets {
-            Some(t) => (t.clone(), crate::policy::CONFIG),
+            Some(t) => (t.clone(), outer.label("targets", false)),
             None => (DEFAULT_TARGETS.map(String::from).to_vec(), "default"),
         },
     };
     let target_agents = resolve_targets(&target_entries, global).map_err(|e| {
-        let file = if targets_from == crate::policy::CONFIG { outer.config_path.as_str() } else { FILE };
+        let file = if matches!(targets_from, crate::policy::CONFIG | crate::policy::SYSTEM) { outer.path_of("targets") } else { FILE };
         crate::error::Error::new(MANIFEST, format!("{file}: agents.targets: {e}"))
     })?;
     let mut targets: Vec<String> = Vec::new();

@@ -45,13 +45,14 @@ public struct ScopeSnapshot: Hashable, Sendable {
             return digits.isEmpty || digits.allSatisfy { $0 == "0" }
         }
 
-        /// What the CLI prints as `from` for a key the user's config enforces (`src/policy.rs` `ENFORCED`).
-        public static let enforcedOrigin = "config.toml, enforced"
+        /// How the CLI ends `from` for an enforced key: `config.toml, enforced`, `system config.toml, enforced`
+        /// (`src/policy.rs` `ENFORCED`, `SYSTEM_ENFORCED`).
+        public static let enforcedSuffix = ", enforced"
 
         public let key: String
         public let value: String
         /// Where the value came from, as the CLI prints it: `skills.toml`, `config.toml`, `config.toml, enforced`,
-        /// `env`, `default`.
+        /// `system config.toml`, `system config.toml, enforced`, `environment`, `default`.
         public let from: String
 
         public var id: String {
@@ -69,10 +70,10 @@ public struct ScopeSnapshot: Hashable, Sendable {
 
         /// Set by the organisation's `config.toml` and not overridable by the project (`ENFORCED` in policy.rs).
         public var isEnforced: Bool {
-            from == Self.enforcedOrigin
+            from.hasSuffix(Self.enforcedSuffix)
         }
 
-        /// The file or layer the value was set in, without the enforcement note: `config.toml`.
+        /// The file or layer the value was set in, without the enforcement note: `config.toml`, `system config.toml`.
         public var origin: String {
             isEnforced ? String(from.prefix { $0 != "," }) : from
         }

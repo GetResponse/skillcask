@@ -58,6 +58,11 @@ import Testing
         #expect(snapshot.policy.map(\.kind) == [.allowSources, .other("x-new")])
         #expect(snapshot.policy[0].isAllowedSources && snapshot.policy[0].isEnforced)
         #expect(snapshot.policy[0].origin == "config.toml" && snapshot.policy[1].origin == "env")
-        #expect(ScopeSnapshot.PolicyRow.enforcedOrigin == "config.toml, enforced")
+        let system = try Sample.decode(
+            StatusDocument.self,
+            #"{"ok":true,"entries":[],"policy":{"min-release-age":{"from":"system config.toml, enforced","value":"3d"}}}"#
+        )
+        let row = ScopeSnapshot(status: system, audit: nil, doctor: nil, outdated: nil).policy[0]
+        #expect(row.isEnforced && row.origin == "system config.toml")
     }
 }

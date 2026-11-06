@@ -2,7 +2,7 @@
 //! `[policy]`, the rest of `config.toml`, built-in defaults.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use jiff::SignedDuration;
 use toml_edit::{DocumentMut, Item, TableLike};
@@ -46,12 +46,19 @@ pub struct Layer {
     pub repository_ages: BTreeMap<String, SignedDuration>,
 }
 
-/// The layers around a manifest: the user config and the environment.
+/// The layers around a manifest: the system and user config, merged, and the environment.
 #[derive(Clone, Debug, Default)]
 pub struct Outer {
     pub config: Layer,
     /// Shown in messages; empty when there is no config file.
     pub config_path: String,
+    /// The system `config.toml` (D60), when it exists.
+    pub system_path: String,
+    /// Policy keys, `targets` and `skills-sh` whose value came from the system file.
+    pub from_system: BTreeSet<&'static str>,
+    /// Keys the system file enforces and the user's file tightens: like the environment, they leave
+    /// the project's value unused (D60).
+    pub tightened: BTreeSet<&'static str>,
     pub env: Layer,
     /// `[agents] targets` of `config.toml` (D29).
     pub targets: Option<Vec<String>>,
@@ -210,13 +217,109 @@ pub fn env_layer(var: impl Fn(&str) -> Option<String>) -> Result<Layer> {
     Ok(out)
 }
 
-/// The user config next to the global manifest, and the environment.
+/// The system config, the user config next to the global manifest, and the environment.
 pub fn outer() -> Result<Outer> {
     let env = env_layer(|k| std::env::var(k).ok())?;
-    let Some(path) = crate::scope::config_dir().map(|d| d.join(CONFIG)) else {
-        return Ok(Outer { env, ..Default::default() });
+    let user = match crate::scope::config_dir() {
+        Some(d) => read_config(&d.join(CONFIG))?,
+        None => Outer::default(),
     };
-    Ok(Outer { env, ..read_config(&path)? })
+    Ok(Outer { env, ..over(system()?, user)? })
+}
+
+/// The root-owned `config.toml` that no user setting moves (D60). Debug builds read only
+/// `SKILLCASK_SYSTEM_CONFIG`, so tests reach it and a file on the developer's machine stays out.
+pub fn system_config_path() -> Option<PathBuf> {
+    if cfg!(debug_assertions) {
+        return std::env::var_os("SKILLCASK_SYSTEM_CONFIG").filter(|p| !p.is_empty()).map(PathBuf::from);
+    }
+    // ponytail: fixed C:\ProgramData, not the known-folder API; %ProgramData% is the user's to change.
+    Some(PathBuf::from(if cfg!(target_os = "macos") {
+        "/Library/Application Support/skillcask/config.toml"
+    } else if cfg!(windows) {
+        r"C:\ProgramData\skillcask\config.toml"
+    } else {
+        "/etc/skillcask/config.toml"
+    }))
+}
+
+fn system() -> Result<Outer> {
+    system_config_path().map_or_else(|| Ok(Outer::default()), |p| read_config(&p))
+}
+
+/// The user's `config.toml` over the system one (D60): a key the system file enforces may only be
+/// tightened, as by the environment (D18); what the user's file leaves unset comes from the system.
+pub fn over(system: Outer, mut user: Outer) -> Result<Outer> {
+    if system.config_path.is_empty() {
+        return Ok(user);
+    }
+    let shown = |p: &str| if p.is_empty() { CONFIG.to_string() } else { p.to_string() };
+    let (s, u) = (&system.config, &mut user.config);
+    for (k, sv) in &s.values {
+        match u.values.get(k) {
+            Some(uv) if s.enforce.contains(k) && !tightens(k, uv, sv) => {
+                return Err(Error::new(
+                    MANIFEST,
+                    format!("{}: policy.{k} = {uv} loosens policy.{k} = {sv} enforced by {}", shown(&user.config_path), system.config_path),
+                )
+                .hint(format!("remove it or make it stricter, or ask whoever manages {} to lift it", system.config_path)));
+            }
+            Some(uv) if s.enforce.contains(k) && uv != sv => {
+                user.tightened.insert(k);
+            }
+            Some(_) => {}
+            None => {
+                u.values.insert(k, sv.clone());
+                user.from_system.insert(k);
+            }
+        }
+    }
+    if let (true, Some(Value::Age(floor))) = (s.enforce.contains("min-release-age"), s.values.get("min-release-age")) {
+        for (prefix, age) in &u.repository_ages {
+            let least = repository_floor(&system, prefix, *floor);
+            if *age < least {
+                bail!(
+                    MANIFEST,
+                    "{}: policy.{REPOSITORY_AGES} {prefix:?} = \"{}\" is shorter than \"{}\" enforced by {}",
+                    shown(&user.config_path),
+                    crate::manifest::Age(*age),
+                    crate::manifest::Age(least),
+                    system.config_path
+                );
+            }
+        }
+    }
+    for (prefix, age) in &s.repository_ages {
+        u.repository_ages.entry(prefix.clone()).or_insert(*age);
+    }
+    u.enforce.extend(&s.enforce);
+    if user.targets.is_none() && system.targets.is_some() {
+        user.targets = system.targets;
+        user.from_system.insert("targets");
+    }
+    if user.skills_sh.is_none() && system.skills_sh.is_some() {
+        user.skills_sh = system.skills_sh;
+        user.from_system.insert(SKILLS_SH);
+    }
+    user.system_path = system.config_path;
+    Ok(user)
+}
+
+impl Outer {
+    /// The file `k` (a policy key, `targets` or `skills-sh`) was read from, for messages.
+    pub fn path_of(&self, k: &str) -> &str {
+        if self.from_system.contains(k) { &self.system_path } else { &self.config_path }
+    }
+
+    /// The layer name `config` and `--json` print for a value of `k` from a config file.
+    pub fn label(&self, k: &str, enforced: bool) -> &'static str {
+        match (self.from_system.contains(k), enforced) {
+            (true, true) => SYSTEM_ENFORCED,
+            (true, false) => SYSTEM,
+            (false, true) => ENFORCED,
+            (false, false) => CONFIG,
+        }
+    }
 }
 
 fn read_config(path: &Path) -> Result<Outer> {
@@ -256,7 +359,7 @@ pub fn parse_config(text: &str, shown: &str) -> Result<Outer> {
         }
     }
     let config = layer(doc.get("policy").and_then(Item::as_table_like), shown, true)?;
-    Ok(Outer { config, config_path: shown.to_string(), env: Layer::default(), targets, skills_sh })
+    Ok(Outer { config, config_path: shown.to_string(), targets, skills_sh, ..Default::default() })
 }
 
 /// `config.toml` in the user's config dir, which need not exist yet.
@@ -281,7 +384,7 @@ pub fn edit_config(f: impl FnOnce(&mut DocumentMut) -> Result<()>) -> Result<std
     f(&mut doc)?;
     let text = doc.to_string();
     // Targets are only checked against the presets when a manifest uses them.
-    crate::manifest::parse_with("", false, &parse_config(&text, &shown)?)?;
+    crate::manifest::parse_with("", false, &over(system()?, parse_config(&text, &shown)?)?)?;
     crate::project::write_atomic(&path, &text)?;
     Ok(path)
 }
@@ -299,6 +402,8 @@ pub fn remember_skills_sh(on: bool) -> Result<std::path::PathBuf> {
 /// Layer names `resolve` records and `fixed` matches.
 pub const ENVIRONMENT: &str = "environment";
 pub const ENFORCED: &str = "config.toml, enforced";
+pub const SYSTEM: &str = "system config.toml";
+pub const SYSTEM_ENFORCED: &str = "system config.toml, enforced";
 
 /// An entry of an enforced `allow-sources` as the URL prefix it stands for; `github` is public
 /// GitHub, which `SKILLCASK_GITHUB_API` and `GITHUB_API_URL` cannot move (D43).
@@ -335,18 +440,19 @@ pub fn resolve(project: &Layer, o: &Outer) -> Result<Effective> {
             && !tightens(k, v, e)
         {
             let var = format!("SKILLCASK_{}", k.to_uppercase().replace('-', "_"));
-            return Err(Error::new(MANIFEST, format!("{var} = {v} loosens policy.{k} = {e} enforced by {}", o.config_path))
-                .hint(format!("unset {var} or make it stricter, or ask whoever manages {} to lift it", o.config_path)));
+            return Err(Error::new(MANIFEST, format!("{var} = {v} loosens policy.{k} = {e} enforced by {}", o.path_of(k)))
+                .hint(format!("unset {var} or make it stricter, or ask whoever manages {} to lift it", o.path_of(k))));
         }
-        // With the key in the environment the project's value is unused, so it cannot clash.
-        // A project may add to an enforced deny list (D57), not change any other enforced key.
-        if let (Some(e), Some(p), None) = (enforced, project.values.get(k), o.env.values.get(k))
+        // With the key in the environment, or tightened over the system file, the project's value is
+        // unused, so it cannot clash. A project may add to an enforced deny list (D57), not change
+        // any other enforced key.
+        if let (Some(e), Some(p), None, false) = (enforced, project.values.get(k), o.env.values.get(k), o.tightened.contains(k))
             && if k == "deny-packages" { !tightens(k, p, e) } else { e != p }
         {
-            return Err(Error::new(MANIFEST, format!("policy.{k} is enforced as {e} by {}", o.config_path)).hint(format!(
+            return Err(Error::new(MANIFEST, format!("policy.{k} is enforced as {e} by {}", o.path_of(k))).hint(format!(
                 "remove policy.{k} from {}, or ask whoever manages {} to lift it",
                 crate::manifest::FILE,
-                o.config_path
+                o.path_of(k)
             )));
         }
         // The environment repeating the enforced value changes nothing: it stays enforced.
@@ -354,11 +460,11 @@ pub fn resolve(project: &Layer, o: &Outer) -> Result<Effective> {
             Some((v, ENVIRONMENT))
         } else if let Some(v) = enforced {
             let added = project.values.get(k).filter(|p| k == "deny-packages" && tightens(k, p, v));
-            Some((added.unwrap_or(v), ENFORCED))
+            Some((added.unwrap_or(v), o.label(k, true)))
         } else if let Some(v) = project.values.get(k) {
             Some((v, "skills.toml"))
         } else {
-            o.config.values.get(k).map(|v| (v, "config.toml"))
+            o.config.values.get(k).map(|v| (v, o.label(k, false)))
         };
         if let Some((v, from)) = pick {
             out.insert(k, (v.clone(), from));
@@ -369,7 +475,7 @@ pub fn resolve(project: &Layer, o: &Outer) -> Result<Effective> {
 
 /// Whether `k` comes from a layer the project cannot loosen: the environment or an enforced key.
 pub fn fixed(e: &Effective, k: &str) -> bool {
-    matches!(e.get(k), Some((_, ENVIRONMENT | ENFORCED)))
+    matches!(e.get(k), Some((_, ENVIRONMENT | ENFORCED | SYSTEM_ENFORCED)))
 }
 
 /// With `min-release-age` enforced, the shortest cooldown a project may give the repository at
@@ -400,6 +506,31 @@ pub fn under(url: &str, prefix: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_user_config_over_the_system_one() {
+        let sys = parse_config(
+            "[policy]\nmin-release-age = \"3d\"\nenforce = [\"min-release-age\"]\n[policy.repository-min-release-age]\n\"https://r.example/\" = \"1d\"\n",
+            "/sys/config.toml",
+        )
+        .unwrap();
+        let user = |t: &str| over(sys.clone(), parse_config(t, "/u/config.toml").unwrap());
+        let same = user("[policy]\nmin-release-age = \"3d\"\n").unwrap();
+        assert!(same.tightened.is_empty() && same.config.enforce.contains("min-release-age"));
+        assert_eq!(same.path_of("min-release-age"), "/u/config.toml");
+        // An exception may not go under the system's floor for its prefix, only above it.
+        let ages = |a: &str| {
+            user(&format!(
+                "[policy]\nmin-release-age = \"3d\"\nenforce = [\"min-release-age\"]\n[policy.repository-min-release-age]\n\"https://r.example/x/\" = \"{a}\"\n"
+            ))
+        };
+        assert!(ages("0").unwrap_err().msg.contains("shorter than \"1d\" enforced by /sys/config.toml"));
+        let o = ages("2d").unwrap();
+        assert_eq!(repository_floor(&o, "https://r.example/x/p.json", SignedDuration::from_hours(72)), SignedDuration::from_hours(48));
+        assert_eq!(repository_floor(&o, "https://r.example/p.json", SignedDuration::from_hours(72)), SignedDuration::from_hours(24));
+        let none = over(Outer::default(), parse_config("", "/u/config.toml").unwrap()).unwrap();
+        assert!(none.system_path.is_empty() && none.config.values.is_empty());
+    }
 
     // Regression: `"https://h/acme/ "` parsed as the prefix `https://h/acme/`, while the lock dist
     // rule read it as an exact registry URL and accepted that registry's dists from any host.

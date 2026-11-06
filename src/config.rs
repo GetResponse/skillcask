@@ -82,7 +82,7 @@ fn settings(s: &Scope) -> Result<Vec<Setting>> {
         out.push(("policy.enforce".into(), (!enforce.is_empty()).then_some(Value::List(enforce)), CONFIG));
     }
     out.push(("agents.targets".into(), Some(Value::List(m.target_entries.clone())), m.targets_from));
-    out.push((format!("search.{SKILLS_SH}"), outer.skills_sh.map(Value::Bool), CONFIG));
+    out.push((format!("search.{SKILLS_SH}"), outer.skills_sh.map(Value::Bool), outer.label(SKILLS_SH, false)));
     Ok(out)
 }
 
