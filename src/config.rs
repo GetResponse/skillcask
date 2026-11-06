@@ -171,6 +171,9 @@ fn set(s: &Scope, k: &str, values: Option<&[String]>) -> Result<()> {
 /// D59: `repository add`. With `--global` a missing `skills.toml` is created from the template, so
 /// device management can run it on any machine.
 pub fn add_repository(s: &Scope, name: &str, url: &str, min_release_age: Option<&str>) -> Result<()> {
+    if manifest::carries_credentials(url) {
+        return Err(Error::new(MANIFEST, format!("repository {name}: its URL carries credentials")).hint("move them to auth.json"));
+    }
     let mut t = toml_edit::InlineTable::new();
     if name == "github" {
         t.insert("type", "github".into());
