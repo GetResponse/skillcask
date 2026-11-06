@@ -2,15 +2,25 @@ import SkillcaskCore
 import SkillcaskDomain
 import SwiftUI
 
-/// The Add Skill sheet's left column (AddSkill board, 440 pt): the skills.sh consent card once, then the results
-/// of the header's source filter in a system `List` whose selection is the preview's, or what stands in for them: the
-/// idle hint, the spinner, the network failure with Retry, "No results", "No results from <source>" with Show All, or
-/// the note that a typed source skips search (AddSkill-States).
+/// The Add Skill sheet's left column (AddSkill board, 440 pt; up to 520 in a wider sheet): the skills.sh consent
+/// card once, then the results of the header's source filter in a system `List` whose selection is the preview's, or
+/// what stands in for them: the idle hint, the spinner, the network failure with Retry, "No results", "No results
+/// from <source>" with Show All, or the note that a typed source skips search (AddSkill-States).
 struct ResultsColumn: View {
     @Bindable var search: SearchStore
 
-    /// The board's results column width.
-    static let width: CGFloat = 440
+    /// The board's results column width, and the column's width up to a sheet `width / widthShare` (1100 pt) wide.
+    nonisolated static let width: CGFloat = 440
+    /// The widest the column gets, from a 1300 pt sheet on.
+    nonisolated static let maxWidth: CGFloat = 520
+    /// The column's share of a sheet wider than 1100 pt.
+    nonisolated static let widthShare: CGFloat = 0.4
+
+    /// The column's width in a sheet `sheetWidth` wide: 440 up to 1100, then 40 % of the sheet up to 520, in whole
+    /// points.
+    nonisolated static func width(in sheetWidth: CGFloat) -> CGFloat {
+        min(maxWidth, max(width, (sheetWidth * widthShare).rounded(.down)))
+    }
     /// A result from a repository the policy blocks, and the header's blocked pill (`opacity: 0.55`).
     static let blockedOpacity = 0.55
 
@@ -26,8 +36,8 @@ struct ResultsColumn: View {
             }
             content
         }
-        .frame(width: Self.width)
-        .frame(maxHeight: .infinity, alignment: .top)
+        // `AddSkillColumns` proposes the width; the column takes exactly that.
+        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     @ViewBuilder private var content: some View {
@@ -143,5 +153,32 @@ private struct ConsentCard: View {
         .overlay(
             RoundedRectangle(cornerRadius: Radius.l, style: .continuous)
                 .strokeBorder(Color.separator, lineWidth: Size.hairline))
+    }
+}
+
+/// The sheet's body: the results column at `ResultsColumn.width(in:)` of the width offered, the hairline, and the
+/// preview in the rest, all at the full height. One layout at every size, so a resize moves the columns without
+/// rebuilding them, and nothing it measures leaves the sheet. It takes the size proposed as is (the board size
+/// when none is), so the sheet's outer min/max frame in `AddSkillSheet` is what bounds it.
+struct AddSkillColumns: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        proposal.replacingUnspecifiedDimensions(by: Size.addSkillSheet)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let column = ResultsColumn.width(in: bounds.width)
+        var x = bounds.minX
+        for (index, subview) in subviews.enumerated() {
+            let width =
+                switch index {
+                case 0: column
+                case 1: Size.hairline
+                default: max(0, bounds.maxX - x)
+                }
+            subview.place(
+                at: CGPoint(x: x, y: bounds.minY), anchor: .topLeading,
+                proposal: ProposedViewSize(width: width, height: bounds.height))
+            x += width
+        }
     }
 }

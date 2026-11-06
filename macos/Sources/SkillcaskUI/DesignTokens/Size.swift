@@ -75,8 +75,11 @@ public enum Size {
     /// The Review Update sheet, Update All too (ReviewUpdate board: `width: 960px; height: 700px`). The 592×352
     /// `.sheet` frames on ReviewUpdate-States and AddSkill-States are presentation-only state cards, not sizes.
     public static let reviewSheet = CGSize(width: 960, height: 700)
-    /// The Add Skill sheet (AddSkill board: `width: 900px; height: 660px`).
+    /// The Add Skill sheet's minimum, and its size when nothing is remembered and no window is known (AddSkill
+    /// board: `width: 900px; height: 660px`). The sheet is resizable (`SheetSizing`, gap G16).
     public static let addSkillSheet = CGSize(width: 900, height: 660)
+    /// The largest the Add Skill sheet grows to; the screen's visible frame caps it further.
+    public static let addSkillSheetMax = CGSize(width: 1600, height: 1100)
     /// The Adopt sheet, single and batch (Adopt-States board: `.sheet { width: 592px; height: 340px }`).
     public static let adoptSheet = CGSize(width: 592, height: 340)
     /// The Settings window's width (Settings boards: `.swin{width:600px}`); its height follows the tab.

@@ -97,7 +97,7 @@ The diff grid draws `monoSmall` on an 18 pt line, the Activity transcript on a 1
 | Badge (small) · button (small) · tab · search · mini progress | 18 (16) · 24 (22) · 22 · 26 · 3 |
 | Icons: toolbar · sidebar · inline | 13 · 16 · 12 |
 | Window min width · sidebar ideal / min · list ideal / min · detail min | 960 · 220 / 180 · 360 / 300 · 400 |
-| Sheets: Review Update · Add Skill · Adopt · App Update | 960×700 · 900×660 · 592×340 · 680 wide |
+| Sheets: Review Update · Add Skill (min · max) · Adopt · App Update | 960×700 · 900×660 · 1600×1100 · 592×340 · 680 wide |
 | Settings width · label column · env remove column · env row | 600 · 200 · 40 · 28 |
 
 ### Decisions and deviations
@@ -149,6 +149,18 @@ Code comments cite these by number.
   older answer Health keeps (a skill added since would read `linked` unchecked), while the Agents
   card still counts that answer's broken links, as Health lists them: a known problem claims nothing
   healthy. A refresh that fails entirely keeps the snapshot and its link check.
+- **G16** The Add Skill sheet is resizable; the AddSkill board draws it fixed at 900×660, its minimum
+  and its size when nothing is known. It grows to 1600×1100 (`Size.addSkillSheetMax`), never past
+  the screen's visible frame. With no remembered size it opens 80 pt per axis inside the content of
+  the window presenting it (`MainWindow` passes its own), read once when it opens; its height opens
+  no taller than the room from that content's top down to the visible frame's bottom, so Add and
+  Cancel never open behind the Dock (the 900×660 minimum wins, and may overhang). Only a resize the
+  user drags is remembered (`SettingsStore.addSkillSheetSize`, written when the drag ends), so a
+  sheet nobody resized keeps following the window; dragging it back to the minimum (within 1 pt)
+  forgets the size. A remembered size is clamped to the minimum, the screen and that room on the
+  next open (`SheetSizing`). The results column keeps the board's 440 pt up to an 1100 pt sheet,
+  then takes 40 % of the width up to 520 pt; the preview takes the rest. One layout at every size
+  (`AddSkillColumns`), so the board-size renders are unchanged.
 - The toast's shadow (`0 8pt 24pt`, black at 0.16 light / 0.5 dark) lives in `Toast.Shadow`; no
   shadow token exists yet. Cards never have a shadow.
 
