@@ -404,22 +404,23 @@ public enum OverviewCopy {
         return policyValue(row.value)
     }
 
-    /// `72 h` for `72h`, `Yes`/`No` for a boolean, else the value as printed.
+    /// `3 d` for `3d` (`72 h` for an older CLI's `72h`), `Yes`/`No` for a boolean, else the value as printed.
     public static func policyValue(_ value: String) -> String {
         switch value {
         case "true": return "Yes"
         case "false": return "No"
         default:
-            if value.hasSuffix("h"), Int(value.dropLast()) != nil {
-                return "\(value.dropLast()) h"
+            if let unit = value.last, "smhdw".contains(unit), Int(value.dropLast()) != nil {
+                return "\(value.dropLast()) \(unit)"
             }
             return value
         }
     }
 
-    /// The Updates card's age clause: `72 h`, nil when the policy sets none (or `0 h`).
+    /// The Updates card's age clause: `3 d`, nil when the policy sets none (or `0`).
     public static func minimumAge(_ policy: [ScopeSnapshot.PolicyRow]) -> String? {
-        guard let row = policy.first(where: { $0.kind == .minReleaseAge }), !row.value.isEmpty, row.value != "0h"
+        guard let row = policy.first(where: { $0.kind == .minReleaseAge }),
+            !ScopeSnapshot.PolicyRow.isZeroAge(row.value)
         else { return nil }
         return policyValue(row.value)
     }

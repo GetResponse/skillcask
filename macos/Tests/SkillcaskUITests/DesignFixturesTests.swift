@@ -102,7 +102,7 @@ import Testing
         #expect(api.repositories.map(\.name) == ["packagist", "github", "acme"])
         #expect(api.repositories.map(\.allowed) == [true, false, true])
         #expect(api.policy.map(\.key) == ["min-release-age", "allow-sources", "allow-ranges"])
-        #expect(api.policy.map(\.value) == ["72h", "packagist, acme", "true"])
+        #expect(api.policy.map(\.value) == ["3d", "packagist, acme", "true"])
         #expect(api.policy.map(\.from) == ["config.toml, enforced", "config.toml, enforced", "skills.toml"])
         #expect(api.targets?.entries == ["claude", "cursor"] && api.targets?.from == "skills.toml")
         #expect(Filter.needsAttention.apply(api.entries).count == 8)

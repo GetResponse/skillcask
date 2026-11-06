@@ -2,7 +2,7 @@
   "ok": true,
   "entries": [],
   "policy": {
-    "min-release-age": { "value": "72h", "from": "config.toml, enforced" },
+    "min-release-age": { "value": "3d", "from": "config.toml, enforced" },
     "allow-sources": { "value": ["packagist", "acme"], "from": "config.toml, enforced" },
     "allow-ranges": { "value": true, "from": "default" }
   },

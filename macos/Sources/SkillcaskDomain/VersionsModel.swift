@@ -121,7 +121,7 @@ public struct VersionsModel: Hashable, Sendable {
         latest = update?.latest
         latestReleased = update?.released
         installedReleased = installed != nil && installed == update?.latest ? update?.released : nil
-        minimumAge = policy.first { $0.kind == .minReleaseAge && !$0.value.isEmpty && $0.value != "0h" }
+        minimumAge = policy.first { $0.kind == .minReleaseAge && !ScopeSnapshot.PolicyRow.isZeroAge($0.value) }
         tagMove = update?.note.flatMap(TagMove.init(note:))
         cooldown = update.flatMap(Self.cooldown)
         status = Self.status(update: update, tagMove: tagMove, cooldown: cooldown)

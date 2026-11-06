@@ -100,7 +100,7 @@ extension PreviewRegistry {
         var settings = list.settings
         settings["policy.enforce"] = ConfigValueDocument(
             value: .array([.string("min-release-age")]), from: "config.toml")
-        settings["policy.min-release-age"] = ConfigValueDocument(value: .string("72h"), from: "config.toml, enforced")
+        settings["policy.min-release-age"] = ConfigValueDocument(value: .string("3d"), from: "config.toml, enforced")
         settings["policy.allow-ranges"] = ConfigValueDocument(value: .bool(false), from: "environment")
         settings["policy.allow-sources"] = ConfigValueDocument(
             value: .array([.string("packagist"), .string("https://skills.acme.example/composer/")]), from: "config.toml"

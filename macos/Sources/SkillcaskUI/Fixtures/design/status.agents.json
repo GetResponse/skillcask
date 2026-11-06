@@ -72,7 +72,7 @@
     },
     "min-release-age": {
       "from": "skills.toml",
-      "value": "72h"
+      "value": "3d"
     }
   },
   "repositories": [

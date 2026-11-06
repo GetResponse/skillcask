@@ -520,10 +520,11 @@ pub fn select(cands: &[Candidate], name: &str, constraint: &str, min_age: Signed
             let eligible = t.checked_add(min_age).unwrap_or(Timestamp::MAX);
             bail!(
                 MANIFEST,
-                "{name}: every version matching {constraint:?} is newer than policy.min-release-age ({min_age:#}); newest {} was released {} and becomes eligible at {}",
+                "{name}: every version matching {constraint:?} is newer than policy.min-release-age ({min_age}); newest {} was released {} and becomes eligible at {}",
                 newest.version,
                 t.round(jiff::Unit::Second).unwrap_or(t),
-                eligible.round(jiff::Unit::Second).unwrap_or(eligible)
+                eligible.round(jiff::Unit::Second).unwrap_or(eligible),
+                min_age = crate::manifest::Age(min_age)
             )
         }
     }

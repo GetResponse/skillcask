@@ -39,6 +39,12 @@ public struct ScopeSnapshot: Hashable, Sendable {
             }
         }
 
+        /// `0`, `0h`, `0s`, an empty value: no minimum release age. The CLI prints `0` since 0.12.1 and `0h` before.
+        public static func isZeroAge(_ value: String) -> Bool {
+            let digits = value.filter(\.isNumber)
+            return digits.isEmpty || digits.allSatisfy { $0 == "0" }
+        }
+
         /// What the CLI prints as `from` for a key the user's config enforces (`src/policy.rs` `ENFORCED`).
         public static let enforcedOrigin = "config.toml, enforced"
 

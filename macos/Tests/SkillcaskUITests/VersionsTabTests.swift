@@ -35,14 +35,14 @@ import Testing
         #expect(callout.title == "4.3.0 becomes available on 30 Oct 2026.")
         #expect(
             callout.text
-                == "Your minimum release age is 72 h, set in config.toml and enforced by your organisation. It was "
+                == "Your minimum release age is 3 d, set in config.toml and enforced by your organisation. It was "
                 + "released 28 Oct 2026 at 09:14. Skillcask offers it once it is old enough. An older version in your "
                 + "range may be eligible now; Review changes… on the Overview shows what Update would lock.")
         #expect(content.rows.map(\.label) == ["Installed", "Allowed range", "Available in range", "Newest overall"])
         let waiting = try #require(Self.row(content, "Available in range"))
         #expect(waiting.version == "4.3.0")
         #expect(waiting.tone == .warning)
-        #expect(waiting.detail == "Released 28 Oct 2026 · eligible 30 Oct 2026 (72 h)")
+        #expect(waiting.detail == "Released 28 Oct 2026 · eligible 30 Oct 2026 (3 d)")
         #expect(waiting.trailing == .quiet("Waiting"))
         #expect(Self.row(content, "Installed")?.detail == "Release date unknown · in skills.lock")
         #expect(Self.row(content, "Installed")?.trailing == .quiet("Linked into Claude Code, Cursor"))

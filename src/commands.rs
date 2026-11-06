@@ -408,10 +408,11 @@ impl Ctx {
                 return Err(Error::new(
                     MANIFEST,
                     format!(
-                        "{} {} was released {} and is newer than policy.min-release-age ({age:#}, {from})",
+                        "{} {} was released {} and is newer than policy.min-release-age ({age}, {from})",
                         p.name,
                         p.version,
-                        t.round(jiff::Unit::Second).unwrap_or(t)
+                        t.round(jiff::Unit::Second).unwrap_or(t),
+                        age = crate::manifest::Age(age)
                     ),
                 )
                 .hint(format!(
@@ -2928,7 +2929,7 @@ fn print_json(v: &Value) {
 
 pub fn policy_value(v: &crate::policy::Value) -> Value {
     match v {
-        crate::policy::Value::Age(a) => Value::from(format!("{a:#}")),
+        crate::policy::Value::Age(a) => Value::from(crate::manifest::Age(*a).to_string()),
         crate::policy::Value::Bool(b) => Value::Bool(*b),
         crate::policy::Value::List(l) => Value::from(l.iter().map(|s| crate::http::shown_url(s)).collect::<Vec<_>>()),
     }

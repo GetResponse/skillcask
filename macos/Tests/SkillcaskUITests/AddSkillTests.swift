@@ -351,9 +351,9 @@ import Testing
         search.preload(query: Self.jira, selection: Self.jira, info: AddSkillSamples.jiraInfo)
         #expect(search.knownMinimumAge == nil, "a registry repository may override the policy's 72h")
         search.preload(query: "github:acme/x", selection: "github:acme/x", info: AddSkillSamples.jiraInfo)
-        #expect(search.knownMinimumAge == "72h", "GitHub resolves with the policy's age")
-        #expect(SearchStore.isZeroAge("0h") && SearchStore.isZeroAge("0") && SearchStore.isZeroAge(""))
-        #expect(!SearchStore.isZeroAge("72h"))
+        #expect(search.knownMinimumAge == "3d", "GitHub resolves with the policy's age")
+        #expect(ScopeSnapshot.PolicyRow.isZeroAge("0h") && ScopeSnapshot.PolicyRow.isZeroAge("0"))
+        #expect(ScopeSnapshot.PolicyRow.isZeroAge("") && !ScopeSnapshot.PolicyRow.isZeroAge("3d"))
     }
 
     @Test func exactPadsShortVersions() throws {
