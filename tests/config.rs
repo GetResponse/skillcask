@@ -244,6 +244,12 @@ fn repository_checks_before_writing() {
     p.ok(&["init"]);
     let before = p.read("skills.toml");
     assert!(p.expect(&["repository", "add", "x", "ftp://x.example"], 1).contains("skills.toml: repository x: only https://"));
+    for url in ["https://bot:s3cret@x.example/p.json", "https://x.example/p.json?ref=master&private_token=s3cret"] {
+        let e = p.expect(&["repository", "add", "x", url], 1);
+        assert!(e.contains("repository x: its URL carries credentials") && e.contains("auth.json") && !e.contains("s3cret"), "{e}");
+    }
+    // Refused globally too: init would refuse to copy it into every new project.
+    assert!(p.global(&["repository", "add", "x", "https://bot:s3cret@x.example/p.json"], 1).contains("carries credentials"));
     std::fs::create_dir_all(p.home().join(".config/skillcask")).unwrap();
     std::fs::write(p.home().join(".config/skillcask/config.toml"), "[policy]\nmin-release-age = \"3d\"\nenforce = [\"min-release-age\"]\n")
         .unwrap();

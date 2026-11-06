@@ -154,4 +154,5 @@ skillcask -g install --frozen    # e.g. from a dotfiles repository
   the whole truth afterwards.
 - `skillcask -g repository add <name> <url>` puts a registry into that table without touching your
   skills, and creates the file when it is missing; `skillcask -g repository remove packagist` turns
-  Packagist off. Device management can run both on every check-in.
+  Packagist off. Device management can run both on every check-in. A URL with a login or a
+  token is refused: put those in `auth.json`.
