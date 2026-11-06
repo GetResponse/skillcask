@@ -68,6 +68,8 @@ public struct CardContainer<Accessory: View, Content: View>: View {
                 content
             }
         }
+        // Debug builds only: records the widths each card is measured at (`OverviewLayoutCostTests`).
+        .measureProbe()
         .padding(.vertical, Size.cardPaddingV)
         .padding(.horizontal, Size.cardPaddingH)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
