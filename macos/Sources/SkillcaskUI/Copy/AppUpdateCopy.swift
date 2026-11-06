@@ -63,6 +63,8 @@ public enum AppUpdateCopy {
     }
 
     public static let howToUpdateTitle = "How to update"
+    /// Above the organisation's own words when it updates the app (D61).
+    public static let managedTitle = "Updates are managed by your organisation"
 
     /// The direct-download steps, naming the release's zip; nil (a version that is not strict, so no zip name) says
     /// the macOS zip.

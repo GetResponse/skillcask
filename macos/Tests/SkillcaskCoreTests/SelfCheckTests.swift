@@ -94,6 +94,9 @@ import Testing
         #expect(document.latestVersion == Version(0, 10, 2))
         #expect(client.invocations.map(\.argv) == [["self-check", "--json"]])
         #expect(client.invocations.first?.scope == .personal)
+        let managed = Scripted(stdout: #"{"latest":"0.10.2","managed":"IT","newer":true,"version":"0.10.1"}"# + "\n")
+        let answer = try await managed.selfCheck(binary: bundled, capabilities: capabilities)
+        #expect(answer == .checked(SelfCheckDocument(version: "0.10.1", latest: "0.10.2", newer: true, managed: "IT")))
     }
 
     /// The cask held nothing readable: the CLI warns on stderr and still exits 0 with `latest: null`.

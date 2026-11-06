@@ -34,11 +34,13 @@ public struct UpdateState: Hashable, Sendable {
     public var remindAfter: Date?
     /// The Homebrew command was copied: "Waiting for the update" until the next launch.
     public var awaitingRelaunch: Bool
+    /// The last check's `managed` (D61): the organisation updates the app, so the sheet shows this, not steps.
+    public var managed: String?
 
     public init(
         consent: UpdateConsent = .undecided, lastCheckAt: Date? = nil, latestSeen: Version? = nil,
         skippedVersion: Version? = nil, hiddenUntil: Date? = nil, hiddenForVersion: Version? = nil,
-        remindAfter: Date? = nil, awaitingRelaunch: Bool = false
+        remindAfter: Date? = nil, awaitingRelaunch: Bool = false, managed: String? = nil
     ) {
         self.consent = consent
         self.lastCheckAt = lastCheckAt
@@ -48,6 +50,7 @@ public struct UpdateState: Hashable, Sendable {
         self.hiddenForVersion = hiddenForVersion
         self.remindAfter = remindAfter
         self.awaitingRelaunch = awaitingRelaunch
+        self.managed = managed
     }
 
     /// A check's outcome, automatic or manual. A document sets `lastCheckAt` and, when its `latest` is a strict
@@ -56,6 +59,7 @@ public struct UpdateState: Hashable, Sendable {
     public mutating func record(_ result: Result<SelfCheckOutcome, CLIError>, at now: Date) {
         guard case .success(.checked(let document)) = result else { return }
         lastCheckAt = now
+        managed = document.managed
         if let latest = document.latestVersion {
             latestSeen = latest
         }

@@ -64,6 +64,8 @@ pub struct Outer {
     pub targets: Option<Vec<String>>,
     /// `[search] skills-sh` of `config.toml` (D42); `None`: never decided.
     pub skills_sh: Option<bool>,
+    /// `[updates] managed` (D61): who updates skillcask here, shown instead of an update command.
+    pub updates_managed: Option<String>,
 }
 
 /// Each key that is set, its value and the layer it came from.
@@ -301,6 +303,8 @@ pub fn over(system: Outer, mut user: Outer) -> Result<Outer> {
         user.skills_sh = system.skills_sh;
         user.from_system.insert(SKILLS_SH);
     }
+    // The organisation's word on updates wins over the user's.
+    user.updates_managed = system.updates_managed.or(user.updates_managed);
     user.system_path = system.config_path;
     Ok(user)
 }
@@ -333,8 +337,20 @@ fn read_config(path: &Path) -> Result<Outer> {
 
 pub fn parse_config(text: &str, shown: &str) -> Result<Outer> {
     let doc: DocumentMut = text.parse().map_err(|e| Error::new(MANIFEST, format!("{shown}: {e}")))?;
-    if let Some((k, _)) = doc.iter().find(|(k, _)| !matches!(*k, "policy" | "agents" | "search")) {
-        bail!(MANIFEST, "{shown}: only [policy], [agents] and [search] are read here, found {k}");
+    if let Some((k, _)) = doc.iter().find(|(k, _)| !matches!(*k, "policy" | "agents" | "search" | "updates")) {
+        bail!(MANIFEST, "{shown}: only [policy], [agents], [search] and [updates] are read here, found {k}");
+    }
+    let mut updates_managed = None;
+    if let Some(u) = doc.get("updates") {
+        let u = u.as_table_like().ok_or_else(|| Error::new(MANIFEST, format!("{shown}: updates must be a table")))?;
+        for (k, item) in u.iter() {
+            if k != "managed" {
+                bail!(MANIFEST, "{shown}: updates.{k} is not read here, only updates.managed");
+            }
+            let m = item.as_str().map(str::trim).filter(|m| !m.is_empty());
+            updates_managed =
+                Some(m.ok_or_else(|| Error::new(MANIFEST, format!("{shown}: updates.managed must be a non-empty string")))?.to_string());
+        }
     }
     let mut skills_sh = None;
     if let Some(s) = doc.get("search") {
@@ -359,7 +375,7 @@ pub fn parse_config(text: &str, shown: &str) -> Result<Outer> {
         }
     }
     let config = layer(doc.get("policy").and_then(Item::as_table_like), shown, true)?;
-    Ok(Outer { config, config_path: shown.to_string(), targets, skills_sh, ..Default::default() })
+    Ok(Outer { config, config_path: shown.to_string(), targets, skills_sh, updates_managed, ..Default::default() })
 }
 
 /// `config.toml` in the user's config dir, which need not exist yet.
@@ -633,7 +649,7 @@ mod tests {
         assert!(env_layer(|_| Some(" ".into())).unwrap().values.is_empty());
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join(CONFIG), "[repositories]\nx = 1\n").unwrap();
-        assert!(read_config(&dir.path().join(CONFIG)).unwrap_err().msg.contains("only [policy], [agents] and [search]"));
+        assert!(read_config(&dir.path().join(CONFIG)).unwrap_err().msg.contains("only [policy], [agents], [search] and [updates]"));
         assert_eq!(read_config(&dir.path().join("missing.toml")).unwrap().config, Layer::default());
         std::fs::write(dir.path().join(CONFIG), "[agents]\ntargets = [\"claude\", \"./x\"]\n").unwrap();
         assert_eq!(read_config(&dir.path().join(CONFIG)).unwrap().targets, Some(vec!["claude".into(), "./x".into()]));
@@ -643,6 +659,12 @@ mod tests {
         assert!(read_config(&dir.path().join(CONFIG)).unwrap_err().msg.contains("search.skills-sh must be true or false"));
         std::fs::write(dir.path().join(CONFIG), "[search]\nskills-sh = false\n").unwrap();
         assert_eq!(read_config(&dir.path().join(CONFIG)).unwrap().skills_sh, Some(false));
+        for (text, e) in [
+            ("[updates]\nmanaged = \" \"\n", "updates.managed must be a non-empty string"),
+            ("[updates]\nauto = true\n", "only updates.managed"),
+        ] {
+            assert!(parse_config(text, "c").unwrap_err().msg.contains(e), "{text}");
+        }
     }
 
     #[test]

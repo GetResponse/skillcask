@@ -24,13 +24,14 @@ import Testing
             consent: .granted, lastCheckAt: Date(timeIntervalSince1970: 1_800_000_000),
             latestSeen: Version(1, 3, 0, prerelease: "rc.2"), skippedVersion: Version(1, 2, 9),
             hiddenUntil: Date(timeIntervalSince1970: 1_800_600_000), hiddenForVersion: Version(1, 3, 0),
-            remindAfter: Date(timeIntervalSince1970: 1_800_086_400), awaitingRelaunch: true)
+            remindAfter: Date(timeIntervalSince1970: 1_800_086_400), awaitingRelaunch: true,
+            managed: "Jamf installs updates")
         UpdateDefaults(defaults).save(state)
         #expect(UpdateDefaults(defaults).load() == state)
         #expect(defaults.string(forKey: "appUpdates.consent") == "granted")
         #expect(defaults.string(forKey: "appUpdates.latestSeen") == "1.3.0-rc.2")
         #expect(UpdateDefaults.Key.all.allSatisfy { $0.hasPrefix("appUpdates.") && defaults.object(forKey: $0) != nil })
-        #expect(Set(UpdateDefaults.Key.all).count == 8)
+        #expect(Set(UpdateDefaults.Key.all).count == 9)
 
         var declined = state
         declined.consent = .declined

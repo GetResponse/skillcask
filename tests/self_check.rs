@@ -36,7 +36,10 @@ fn reports_a_newer_release() {
     assert_eq!(o.status.code(), Some(0));
     let stdout = String::from_utf8(o.stdout).unwrap();
     assert_eq!(stdout.lines().count(), 1, "one compact line: {stdout}");
-    assert_eq!(serde_json::from_str::<Value>(&stdout).unwrap(), json!({ "version": RUNNING, "latest": "999.0.0", "newer": true }));
+    assert_eq!(
+        serde_json::from_str::<Value>(&stdout).unwrap(),
+        json!({ "version": RUNNING, "latest": "999.0.0", "newer": true, "managed": null })
+    );
 }
 
 #[test]
@@ -46,7 +49,10 @@ fn same_or_older_is_up_to_date() {
     let p = project(&s);
     let out = p.ok(&["self-check"]);
     assert!(out.contains(&format!("skillcask {RUNNING}, latest {RUNNING}: up to date")), "{out}");
-    assert_eq!(json_of(&p.ok(&["self-check", "--json"])), json!({ "version": RUNNING, "latest": RUNNING, "newer": false }));
+    assert_eq!(
+        json_of(&p.ok(&["self-check", "--json"])),
+        json!({ "version": RUNNING, "latest": RUNNING, "newer": false, "managed": null })
+    );
 
     s.put(CASK, cask("0.0.1"));
     assert!(p.ok(&["self-check"]).contains("latest 0.0.1: up to date"));
@@ -67,7 +73,7 @@ fn an_unreadable_version_is_unknown_not_an_error() {
         let o = p.run(&["self-check", "--json"]);
         assert_eq!(o.status.code(), Some(0));
         let doc: Value = serde_json::from_slice(&o.stdout).unwrap();
-        assert_eq!(doc, json!({ "version": RUNNING, "latest": null, "newer": false }));
+        assert_eq!(doc, json!({ "version": RUNNING, "latest": null, "newer": false, "managed": null }));
     }
 }
 

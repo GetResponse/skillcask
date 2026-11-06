@@ -165,6 +165,11 @@ import Testing
         state.record(.success(.checked(SelfCheckDocument(version: "1.2.1", latest: nil, newer: false))), at: then)
         #expect(state.lastCheckAt == then, "the CLI answered")
         #expect(state.latestSeen == Version(1, 3, 1), "an unreadable cask keeps the last known version")
+        state.record(
+            .success(.checked(SelfCheckDocument(version: "1.2.1", latest: nil, newer: false, managed: "IT"))), at: now)
+        #expect(state.managed == "IT")
+        state.record(.success(.checked(SelfCheckDocument(version: "1.2.1", latest: nil, newer: false))), at: now)
+        #expect(state.managed == nil, "each answer says it again")
     }
 }
 

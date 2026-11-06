@@ -29,6 +29,11 @@ pub fn run(verbose: bool, dry_run: bool) -> Result<()> {
         println!("skillcask {RUNNING} is the latest");
         return Ok(());
     }
+    if let Some(managed) = crate::policy::outer()?.updates_managed {
+        return Err(
+            Error::new(MANIFEST, format!("skillcask {RUNNING} -> {latest}: updates are managed by your organisation")).hint(managed)
+        );
+    }
     let exe = std::fs::canonicalize(std::env::current_exe()?)?;
     let method = detect(&exe, cargo_home().as_deref(), receipt_dir().as_deref());
     let off = std::env::var_os("SKILLCASK_SELF_UPDATE").is_some_and(|v| v == "0");
