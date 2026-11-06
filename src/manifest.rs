@@ -129,11 +129,15 @@ pub fn project_template(global: &str) -> Result<String> {
     Ok(text)
 }
 
-/// Userinfo or a token-named query parameter; `?ref=master` is fine.
+/// Userinfo or a query parameter named like a secret; `?ref=master` is fine.
 pub fn carries_credentials(url: &str) -> bool {
-    url::Url::parse(url).is_ok_and(|u| {
-        !u.username().is_empty() || u.password().is_some() || u.query_pairs().any(|(k, _)| k.to_lowercase().contains("token"))
-    })
+    // `key`, `sig` and `auth` only whole: as substrings they hit `monkey` or `design`.
+    let secret = |k: &str| {
+        let k = k.to_lowercase();
+        ["token", "secret", "passw", "apikey", "api_key", "access_key", "signature", "credential"].iter().any(|s| k.contains(s))
+            || ["key", "sig", "auth"].contains(&k.as_str())
+    };
+    url::Url::parse(url).is_ok_and(|u| !u.username().is_empty() || u.password().is_some() || u.query_pairs().any(|(k, _)| secret(&k)))
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -905,6 +909,24 @@ pub fn remove_skills(root: &Path, global: bool, names: &[String]) -> Result<()> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn credentials_in_a_url_are_found_by_userinfo_or_query_key() {
+        for url in [
+            "https://bot:s3cret@r.example/p.json",
+            "https://r.example/p.json?private_token=x",
+            "https://r.example/p.json?key=x",
+            "https://r.example/p.json?API_KEY=x",
+            "https://r.example/p.json?password=x",
+            "https://r.example/p.json?sv=1&sig=x",
+            "https://r.example/p.json?X-Amz-Signature=x",
+        ] {
+            assert!(carries_credentials(url), "{url}");
+        }
+        for url in ["https://r.example/p.json?ref=master", "https://r.example/p.json?keyword=x&design=y", "https://r.example/raw"] {
+            assert!(!carries_credentials(url), "{url}");
+        }
+    }
 
     #[test]
     fn a_locked_github_or_git_dist_stays_in_its_repository() {
