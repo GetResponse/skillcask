@@ -322,6 +322,17 @@ impl Project {
         self.expect(&a, code)
     }
 
+    /// Writes the system `config.toml` (D60), which debug builds read from `SKILLCASK_SYSTEM_CONFIG`.
+    pub fn system_config(&self, text: &str) {
+        let path = self.system_config_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+
+    pub fn system_config_path(&self) -> PathBuf {
+        self.home().join("system").join("config.toml")
+    }
+
     /// Writes the user `config.toml` (D18).
     pub fn config(&self, text: &str) {
         let dir = self.home().join(".config/skillcask");
@@ -404,6 +415,7 @@ impl Project {
             .env_remove("CLICOLOR_FORCE")
             .env_remove("SKILLCASK_HOME")
             .env_remove("XDG_CONFIG_HOME")
+            .env("SKILLCASK_SYSTEM_CONFIG", self.system_config_path())
             // Set by GitHub Actions and by developers; they decide which host gets a token.
             .env_remove("GITHUB_API_URL")
             .env_remove("GITHUB_TOKEN")

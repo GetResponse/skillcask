@@ -34,6 +34,15 @@ allow-sources = ["https://gitlab.example.com/", "github"]
 enforce = ["allow-sources"]
 ```
 
+A machine-wide `config.toml`, owned by root, sits under the user's: `/Library/Application
+Support/skillcask/config.toml` on macOS, `/etc/skillcask/config.toml` on Linux,
+`C:\ProgramData\skillcask\config.toml` on Windows. `SKILLCASK_HOME`, `XDG_CONFIG_HOME` and `HOME`
+do not move it. A key it enforces binds the user's `config.toml` as it binds the environment: the
+user's file may repeat it or make it stricter (then the project's value of that key is unused),
+and a looser value fails every command. Its other keys and its `[agents] targets` and
+`[search] skills-sh` apply where the user's file sets none. `skillcask config` names them
+`system config.toml`.
+
 `"github"` in an enforced `allow-sources` is public GitHub (`https://api.github.com/repos/`):
 `SKILLCASK_GITHUB_API` and `GITHUB_API_URL` do not move it. For GitHub Enterprise, enforce its
 prefix, e.g. `"https://ghe.example.com/api/v3/repos/"`.
@@ -60,8 +69,9 @@ again for `deny-patterns`, and its release time is what the lock says. Under `al
 GitHub or git entry downloads only from its repository, and a registry the list admits only by a
 prefix only from inside the list; the archive URL of Packagist or a registry the list names (or
 gives by its exact URL, without a trailing `/`) is what the lock says, so review lock changes.
-`enforce` does not stop the person running skillcask: `SKILLCASK_HOME`, `XDG_CONFIG_HOME` or `HOME`
-can point at a config without it. For a rule nobody may skip, run `skillcask install --frozen` as a
+`enforce` in the user's `config.toml` does not stop the person running skillcask:
+`SKILLCASK_HOME`, `XDG_CONFIG_HOME` or `HOME` can point at a config without it; the system file
+they cannot move, but an administrator of the machine can still edit it or run another binary. For a rule nobody may skip, run `skillcask install --frozen` as a
 required check on pull requests, with the policy in the job's environment and `.github/workflows/`
 protected (CODEOWNERS or a required workflow), since a pull request runs its own copy of the
 workflow.

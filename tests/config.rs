@@ -257,3 +257,38 @@ fn repository_checks_before_writing() {
     assert!(e.contains("shorter than"), "{e}");
     assert_eq!(p.read("skills.toml"), before);
 }
+
+#[test]
+fn the_system_config_binds_the_user_config_project_and_environment() {
+    let s = Server::start();
+    let mut p = Project::new(&s);
+    p.ok(&["init"]);
+    p.system_config(
+        "[policy]\nmin-release-age = \"3d\"\ndeny-patterns = true\nenforce = [\"min-release-age\"]\n\n[agents]\ntargets = [\"codex\"]\n",
+    );
+    let sys = p.system_config_path().display().to_string();
+    let out = p.ok(&["config"]);
+    assert!(out.contains("policy.min-release-age = \"3d\" (system config.toml, enforced)\n"), "{out}");
+    assert!(out.contains("policy.deny-patterns = true (system config.toml)\n"), "{out}");
+    assert!(out.contains("(system config.toml)") && out.contains("codex"), "{out}");
+
+    let e = p.expect(&["config", "policy.min-release-age", "1d"], 1);
+    assert!(e.contains(&format!("policy.min-release-age is enforced as \"3d\" by {sys}")), "{e}");
+
+    // The user's file may tighten an enforced key, never loosen it, and a refused edit writes nothing.
+    p.config("[policy]\nmin-release-age = \"7d\"\ndeny-patterns = false\n");
+    let out = p.ok(&["config"]);
+    assert!(out.contains("policy.min-release-age = \"7d\" (config.toml, enforced)\n"), "{out}");
+    assert!(out.contains("policy.deny-patterns = false (config.toml)\n"), "{out}");
+    let e = p.global(&["config", "policy.min-release-age", "1d"], 1);
+    assert!(e.contains(&format!("policy.min-release-age = \"1d\" loosens policy.min-release-age = \"3d\" enforced by {sys}")), "{e}");
+    assert!(p.global(&["config", "policy.min-release-age"], 0).contains("\"7d\""));
+    p.config("[policy]\nmin-release-age = \"1d\"\n");
+    assert!(p.expect(&["status"], 1).contains(&format!("enforced by {sys}")));
+
+    // SKILLCASK_HOME moves the user's config away, not the system's; the environment may only tighten.
+    p.env.push(("SKILLCASK_HOME".into(), p.path().join("elsewhere").display().to_string()));
+    p.env.push(("SKILLCASK_MIN_RELEASE_AGE".into(), "1h".into()));
+    let e = p.expect(&["status"], 1);
+    assert!(e.contains(&format!("SKILLCASK_MIN_RELEASE_AGE = \"1h\" loosens policy.min-release-age = \"3d\" enforced by {sys}")), "{e}");
+}
