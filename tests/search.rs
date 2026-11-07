@@ -42,7 +42,7 @@ fn search_lists_gitlab_skill_packages_and_survives_a_broken_repository() {
         "skills.toml",
         &format!("[repositories]\nbroken = {{ type = \"composer\", url = \"{}\" }}\n[policy]\npackagist = false\n", s.url("/nope")),
     );
-    p.expect(&["search", "beta"], 3);
+    p.expect(&["search", "beta"], 1);
 }
 
 /// A project whose only registry has `acme/beta`, with skills.sh served by `s`.
@@ -136,6 +136,19 @@ fn remember_writes_config_toml_and_keeps_the_rest() {
     std::fs::remove_dir_all(&dir).unwrap();
     p.ok(&["search", "beta", "--no-skills-sh", "--remember"]);
     assert!(std::fs::read_to_string(dir.join("config.toml")).unwrap().contains("[search]\nskills-sh = false"));
+}
+
+#[test]
+fn search_leaves_out_denied_packages_without_asking_for_them() {
+    let s = Server::start();
+    let p = beta_project(&s);
+    p.write(
+        "skills.toml",
+        &p.read("skills.toml").replace("packagist = false", "packagist = false\ndeny-packages = [\"acme/beta\", \"owner/*\"]"),
+    );
+    let d = json_of(&p, &["search", "beta", "--json", "--skills-sh"]);
+    assert_eq!(d["results"], json!([]), "{d}");
+    assert!(!s.log().iter().any(|l| l.contains("acme/beta")), "{:?}", s.log());
 }
 
 #[test]

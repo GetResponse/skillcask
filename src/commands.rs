@@ -1842,6 +1842,7 @@ pub fn outdated(ctx: &Ctx, strict: bool, json: bool) -> Result<()> {
                 match ctx.candidate(&m, eff, Some(p)) {
                     Ok((_, c)) if newer(eff, p, &c) => behind.push(format!("{} {} -> {}", req.name, p.version, c.version)),
                     Ok(_) => {}
+                    Err(e) if e.code != MANIFEST => return Err(e),
                     Err(e) => ui::warn(e.msg),
                 }
             }
@@ -1887,7 +1888,6 @@ pub fn outdated(ctx: &Ctx, strict: bool, json: bool) -> Result<()> {
     Ok(())
 }
 
-/// Whether `c` is newer than the locked `p`; a branch or commit entry compares commits.
 /// Why the locked tag no longer names the locked commit: it was moved (deleted and pushed again,
 /// or force-pushed), so `update` would lock other content under the same version.
 fn moved_tag(tags: &[Candidate], p: &Package) -> Option<String> {
@@ -1896,6 +1896,7 @@ fn moved_tag(tags: &[Candidate], p: &Package) -> Option<String> {
     Some(format!("tag {} moved from {} to {}", p.version, &locked[..12.min(locked.len())], &now[..12.min(now.len())]))
 }
 
+/// Whether `c` is newer than the locked `p`; a branch or commit entry compares commits.
 fn newer(req: &SkillReq, p: &Package, c: &Candidate) -> bool {
     if req.github == Some(GitHub::Ref) {
         return c.dist.reference != p.dist.reference;
@@ -2381,7 +2382,7 @@ fn advisory_findings(ctx: &Ctx, m: &Manifest, lock: &Lock) -> Result<AdvisoryChe
     };
     let mut composer: Vec<(&Repository, Vec<&Package>)> = Vec::new();
     for p in &lock.packages {
-        if m.refuses(&p.repository).is_some() || p.dist.kind == git::KIND {
+        if m.refuses(&p.repository).is_some() || p.dist.kind == git::KIND || m.check_name(&p.name).is_err() {
             out.unchecked.push(p.name.clone());
         } else if p.repository.starts_with(&github_repos) {
             if !m.github_allowed() {
@@ -2496,7 +2497,7 @@ pub fn search(ctx: &Ctx, query: Option<&str>, json: bool, skills_sh: Option<bool
             setting = Some(on);
         }
     }
-    let results = Registry::new(ctx.http()?).search(&m.allowed_repositories(), query)?;
+    let results = Registry::new(ctx.http()?).search(&m.allowed_repositories(), query, &m.policy.deny_packages)?;
     let mut found = Vec::new();
     if skills_sh.or(setting).unwrap_or(false) {
         if !m.github_allowed() {
@@ -2509,7 +2510,10 @@ pub fn search(ctx: &Ctx, query: Option<&str>, json: bool, skills_sh: Option<bool
                 Err(e) => ui::warn(format!("skills.sh: {}", e.msg)),
             }
             // A GitHub URL prefix in allow-sources admits only some owners.
-            found.retain(|(n, _)| m.check_github(n["github:".len()..].rsplit_once('/').map_or("", |(r, _)| r)).is_ok());
+            found.retain(|(n, _)| {
+                let repo = n["github:".len()..].rsplit_once('/').map_or("", |(r, _)| r);
+                m.check_github(repo).is_ok() && m.check_name(repo).is_ok()
+            });
         }
     }
     if json {

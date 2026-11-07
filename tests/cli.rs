@@ -498,6 +498,24 @@ fn unknown_commands_run_plugins_from_path() {
     assert!(out.contains("unknown command") && !out.contains("hello"), "a path in the name ran a file from the cwd: {out}");
 }
 
+#[cfg(unix)]
+#[test]
+fn an_empty_command_runs_no_plugin_and_a_killed_plugin_exits_128_plus_its_signal() {
+    use std::os::unix::fs::PermissionsExt;
+    let s = Server::start();
+    let mut p = Project::new(&s);
+    let bin = tempfile::tempdir().unwrap();
+    for (name, body) in [("skillcask-", "echo ran\n"), ("skillcask-die", "kill -9 $$\n")] {
+        let f = bin.path().join(name);
+        std::fs::write(&f, format!("#!/bin/sh\n{body}")).unwrap();
+        std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    p.env.push(("PATH".into(), format!("{}:{}", bin.path().display(), std::env::var("PATH").unwrap())));
+    let out = p.expect(&[""], 1);
+    assert!(out.contains("unknown command") && !out.contains("ran"), "{out}");
+    p.expect(&["die"], 137);
+}
+
 #[test]
 fn version_prints_commit() {
     let s = Server::start();
