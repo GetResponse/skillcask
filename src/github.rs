@@ -42,6 +42,11 @@ pub fn on_trusted_host(url: &url::Url) -> bool {
     url::Url::parse(&trusted_api()).is_ok_and(|a| a.origin() == url.origin())
 }
 
+/// `url` is on the trusted API's host or the one in use.
+pub fn is_api_host(url: &url::Url) -> bool {
+    on_trusted_host(url) || url::Url::parse(&api()).is_ok_and(|a| a.origin() == url.origin())
+}
+
 /// How to authenticate to the API in use: `GITHUB_TOKEN` reaches the trusted host only.
 pub fn token_hint() -> String {
     let Ok(u) = url::Url::parse(&api()) else { return "GITHUB_TOKEN".into() };

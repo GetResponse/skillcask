@@ -114,18 +114,7 @@ pub fn project_template(global: &str) -> Result<String> {
     }
     let text = doc.to_string();
     // The caller names the global file; `skills.toml: ` would read as the project's.
-    let m = parse_with(&text, false, &crate::policy::Outer::default()).map_err(|e| e.map_msg(unprefixed))?;
-    // The global file is private to the machine; the project's is committed.
-    let urls = m.repositories.iter().map(|r| (r.name.as_str(), r.url.as_str())).chain(m.github.as_deref().map(|u| ("github", u)));
-    for (name, url) in urls {
-        if carries_credentials(url) {
-            return Err(crate::error::Error::new(
-                MANIFEST,
-                format!("repository {name}: its URL carries credentials, which init would commit"),
-            )
-            .hint("move them to auth.json next to it"));
-        }
-    }
+    parse_with(&text, false, &crate::policy::Outer::default()).map_err(|e| e.map_msg(unprefixed))?;
     Ok(text)
 }
 
@@ -250,7 +239,7 @@ impl Manifest {
             return None;
         }
         let from = self.policy.effective.get("allow-sources").map_or("", |(_, f)| f);
-        let shown = url::Url::parse(url).map_or_else(|_| url.to_string(), |u| crate::http::redact(&u));
+        let shown = crate::http::shown_url(url);
         let github = self.policy.allow_sources.as_ref().is_some_and(|l| l.iter().any(|e| e == "github"))
             && crate::policy::under(url, &format!("{}/repos/", crate::github::api()));
         let why = if github {
@@ -281,16 +270,20 @@ impl Manifest {
     /// entry only its repository, a registry the list admits only by a prefix only a dist the list
     /// admits too (D18). The rule follows `repository`, never the lock's dist type.
     pub fn check_locked(&self, p: &crate::lock::Package) -> Result<()> {
-        self.check_name(&p.name)?;
-        if let Some(why) = self.refuses(&p.repository) {
-            bail!(MANIFEST, "{}: {why}", p.name);
+        self.check_dist(&p.name, &p.repository, &p.dist, crate::lock::FILE)
+    }
+
+    /// `check_locked` before a dist is fetched; `from` names where it came from in messages.
+    pub fn check_dist(&self, name: &str, repository: &str, dist: &crate::lock::Dist, from: &str) -> Result<()> {
+        self.check_name(name)?;
+        if let Some(why) = self.refuses(repository) {
+            bail!(MANIFEST, "{name}: {why}");
         }
         let Some(list) = &self.policy.allow_sources else { return Ok(()) };
-        let repo = p.repository.trim_end_matches('/');
-        let shown = |u: &str| url::Url::parse(u).map_or_else(|_| u.to_string(), |u| crate::http::redact(&u));
-        let refused = |want: &str| -> Result<()> {
-            bail!(MANIFEST, "{}: {} dist {} {} is not {want}", p.name, crate::lock::FILE, p.dist.kind, shown(&p.dist.url))
-        };
+        let repo = repository.trim_end_matches('/');
+        let shown = crate::http::shown_url;
+        let refused =
+            |want: &str| -> Result<()> { bail!(MANIFEST, "{name}: {from} dist {} {} is not {want}", dist.kind, shown(&dist.url)) };
         // The APIs in use or trusted, and any the list names a `/repos/` prefix of, say what is GitHub,
         // not the path shape alone: a registry may have /repos/ in its path, and a project must not
         // turn an enforced GHE prefix into "not GitHub" by leaving `github` at its default.
@@ -299,24 +292,17 @@ impl Manifest {
         let apis: Vec<String> = [crate::github::api(), self.github_api(), crate::github::trusted_api()].into_iter().chain(listed).collect();
         let github = apis.iter().find_map(|api| github_repository(repo, api));
         if github == Some(false) {
-            bail!(
-                MANIFEST,
-                "{}: {} repository {} is not a GitHub repository <api>/repos/<owner>/<name>",
-                p.name,
-                crate::lock::FILE,
-                shown(repo)
-            );
+            bail!(MANIFEST, "{name}: {from} repository {} is not a GitHub repository <api>/repos/<owner>/<name>", shown(repo));
         }
         if github == Some(true) {
-            let sha = p.dist.reference.as_deref().filter(|r| r.len() == 40 && r.bytes().all(|b| b.is_ascii_hexdigit()));
+            let sha = dist.reference.as_deref().filter(|r| r.len() == 40 && r.bytes().all(|b| b.is_ascii_hexdigit()));
             let Some(sha) = sha else { return refused(&format!("zip {}/zipball/<40-hex commit>", shown(repo))) };
             let want = format!("{repo}/zipball/{sha}");
             // Parsed, so a `..` that `url` would resolve before the request cannot leave the path.
-            let ok =
-                p.dist.kind == "zip" && url::Url::parse(&p.dist.url).ok().is_some_and(|u| url::Url::parse(&want).is_ok_and(|w| u == w));
+            let ok = dist.kind == "zip" && url::Url::parse(&dist.url).ok().is_some_and(|u| url::Url::parse(&want).is_ok_and(|w| u == w));
             return if ok { Ok(()) } else { refused(&format!("zip {}", shown(&want))) };
         }
-        if p.dist.kind == crate::git::KIND && p.dist.url.trim_end_matches('/') == repo {
+        if dist.kind == crate::git::KIND && dist.url.trim_end_matches('/') == repo {
             return Ok(());
         }
         // A Composer registry may serve dists from any host (Packagist: GitHub zipballs). A project's
@@ -324,13 +310,13 @@ impl Manifest {
         // "packagist" keyword, or gives its exact URL without a trailing `/`, which is a prefix;
         // under a prefix it is the project's word.
         let registry = self.repositories.iter().find(|r| r.url.trim_end_matches('/') == repo);
-        let name = |e: &str| !matches!(e, "github" | "packagist") && !e.starts_with("https://");
-        let named = |r: &Repository| list.iter().any(|e| name(e) && *e == r.name || !e.ends_with('/') && e == repo);
+        let a_name = |e: &str| !matches!(e, "github" | "packagist") && !e.starts_with("https://");
+        let named = |r: &Repository| list.iter().any(|e| a_name(e) && *e == r.name || !e.ends_with('/') && e == repo);
         if repo == PACKAGIST_URL || registry.is_some_and(named) {
             return Ok(());
         }
         if registry.is_some() {
-            if self.allows(&p.dist.url) {
+            if self.allows(&dist.url) {
                 return Ok(());
             }
             let e = refused("in policy.allow-sources").unwrap_err();
@@ -453,6 +439,10 @@ pub fn parse_with(text: &str, global: bool, outer: &crate::policy::Outer) -> Res
             let r = item.as_table_like().ok_or_else(|| bad(format!("repository {name} must be a table")))?;
             let kind = r.get("type").and_then(Item::as_str).unwrap_or("composer");
             let url = r.get("url").and_then(Item::as_str).ok_or_else(|| bad(format!("repository {name}: missing url")))?;
+            // D62: the lock copies the URL, and a project's file is committed.
+            if carries_credentials(url) {
+                return Err(bad(format!("repository {name}: its URL carries credentials")).hint("move them to auth.json"));
+            }
             if !url.starts_with("https://") {
                 return Err(bad(format!("repository {name}: only https:// URLs are allowed")));
             }

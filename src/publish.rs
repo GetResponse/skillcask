@@ -400,10 +400,7 @@ fn write_if_changed(path: &Path, bytes: &[u8]) -> Result<()> {
     if std::fs::read(path).is_ok_and(|b| b == bytes) {
         return Ok(());
     }
-    if let Some(p) = path.parent() {
-        std::fs::create_dir_all(p).ctx(p.display())?;
-    }
-    std::fs::write(path, bytes).ctx(path.display())
+    crate::project::write_atomic_io(path, bytes).ctx(path.display())
 }
 
 #[cfg(test)]

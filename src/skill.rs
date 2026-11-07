@@ -180,10 +180,11 @@ fn closing_quote(s: &str, q: char) -> Option<usize> {
     None
 }
 
-/// `[a-z0-9][a-z0-9-]*`: also the directory name under `.agents/skills/`.
+/// `[a-z0-9][a-z0-9-]*` and no Windows device name: also the directory name under `.agents/skills/`.
 pub fn valid_name(n: &str) -> bool {
     n.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())
         && n.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        && crate::archive::portable(n)
 }
 
 /// Problems with a SKILL.md under the Agent Skills specification (agentskills.io) for a skill in
@@ -633,6 +634,7 @@ mod tests {
         assert!(!f.contains_key("a"));
         assert!(frontmatter("# no frontmatter").is_empty());
         assert!(valid_name("agents-md") && valid_name("a1") && !valid_name("-a") && !valid_name("A") && !valid_name(""));
+        assert!(!valid_name("con") && !valid_name("nul") && !valid_name("com0") && !valid_name("lpt0") && valid_name("console"));
     }
 
     #[test]

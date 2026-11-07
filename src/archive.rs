@@ -205,11 +205,11 @@ fn write_new(dest: &Path, rel: &str, content: &[u8], exec: bool) -> Result<()> {
 
 /// Not a name Windows refuses or rewrites: reserved device names, a trailing dot or space,
 /// `<>:"|?*\` and control characters.
-fn portable(name: &str) -> bool {
+pub fn portable(name: &str) -> bool {
     let stem = name.split('.').next().unwrap_or(name).trim_end_matches(' ').to_ascii_uppercase();
     let port = stem.strip_prefix("COM").or_else(|| stem.strip_prefix("LPT"));
     let reserved = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || port.is_some_and(|n| matches!(n, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "\u{b9}" | "\u{b2}" | "\u{b3}"));
+        || port.is_some_and(|n| matches!(n, "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "\u{b9}" | "\u{b2}" | "\u{b3}"));
     !(reserved || name.ends_with(['.', ' ']) || name.contains(|c: char| c.is_control() || "<>:\"|?*\\".contains(c)))
 }
 

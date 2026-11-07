@@ -183,14 +183,15 @@ fn redact_raw(s: &str) -> String {
 
 /// `redact` for a string that may or may not parse as a URL.
 pub fn shown_url(s: &str) -> String {
-    Url::parse(s).map_or_else(|_| s.to_string(), |u| redact(&u))
+    Url::parse(s).map_or_else(|_| redact_raw(s), |u| redact(&u))
 }
 
-/// URL safe to print: no userinfo, no query (tokens sometimes travel there).
+/// URL safe to print: no userinfo, no query or fragment (tokens sometimes travel there).
 pub fn redact(url: &Url) -> String {
     let mut u = url.clone();
     let _ = u.set_username("");
     let _ = u.set_password(None);
+    u.set_fragment(None);
     if u.query().is_some() {
         u.set_query(Some("…"));
     }
@@ -290,11 +291,10 @@ impl Http {
                 bail!(NETWORK, "refusing non-HTTPS URL {}", redact(&cur));
             }
             let shown = redact(&cur);
-            let inline = (!self.anonymous && !cur.username().is_empty())
-                .then(|| Cred::Basic(cur.username().to_string(), cur.password().unwrap_or("").to_string()));
+            // Credentials come from auth.json only (D62); userinfo from a redirect or a lock is dropped.
             let _ = cur.set_username("");
             let _ = cur.set_password(None);
-            let cred = if self.anonymous { None } else { inline.or_else(|| self.auth.lookup(&cur)) };
+            let cred = if self.anonymous { None } else { self.auth.lookup(&cur) };
             let mut retry = 0;
             let mut resp = loop {
                 if self.verbose {
@@ -354,7 +354,7 @@ impl Http {
                 }
                 404 | 410 => return Ok(None),
                 401 | 403 | 429 if self.anonymous => bail!(NETWORK, "{shown}: HTTP {status}"),
-                403 | 429 if rate_limited(&resp) => {
+                403 | 429 if rate_limited(&resp) && crate::github::is_api_host(&cur) => {
                     bail!(AUTH, "{shown}: HTTP {status}: GitHub API rate limit reached; set {}", crate::github::token_hint())
                 }
                 401 | 403 => {
@@ -378,9 +378,9 @@ impl Http {
     pub fn get_json(&self, url: &str) -> Result<Option<Value>> {
         match self.get(url, JSON_LIMIT)? {
             None => Ok(None),
-            Some(b) => serde_json::from_slice(&b).map(Some).map_err(|e| {
-                Error::new(NETWORK, format!("{}: invalid JSON: {e}", Url::parse(url).map(|u| redact(&u)).unwrap_or_default()))
-            }),
+            Some(b) => {
+                serde_json::from_slice(&b).map(Some).map_err(|e| Error::new(NETWORK, format!("{}: invalid JSON: {e}", shown_url(url))))
+            }
         }
     }
 }
@@ -488,6 +488,8 @@ mod tests {
         let r = redact(&u);
         assert!(!r.contains("secret") && !r.contains("user") && !r.contains("abc"), "{r}");
         assert!(r.starts_with("https://h.example.com/p.json"));
+        assert_eq!(redact(&Url::parse("https://h.example.com/p#token=abc").unwrap()), "https://h.example.com/p");
+        assert_eq!(shown_url("https://user:secret@[bad/p"), "https://…@[bad/p");
     }
 
     #[test]

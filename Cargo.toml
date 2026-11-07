@@ -30,6 +30,9 @@ ureq = { version = "3.4.2", features = ["platform-verifier"] }
 url = "2.5.8"
 zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization"] }
+
 [dev-dependencies]
 rcgen = "0.14.10"
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
