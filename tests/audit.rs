@@ -219,6 +219,20 @@ fn a_refused_source_is_unchecked_and_gets_no_request() {
 }
 
 #[test]
+fn a_denied_package_is_unchecked_and_gets_no_request() {
+    let s = Server::start();
+    s.simple("acme/clean", "1.0.0", "bar");
+    with_advisories_api(&s);
+    let mut p = Project::new(&s);
+    manifest(&p, &s, "");
+    p.ok(&["add", "acme/clean"]);
+    p.env.push(("SKILLCASK_DENY_PACKAGES".into(), "acme/clean".into()));
+    let v = json_of(&p, &["audit", "--advisories", "--json"]);
+    assert_eq!(v["advisories"]["unchecked"], json!(["acme/clean"]), "{v}");
+    assert!(!s.log().iter().any(|l| l.starts_with("/api/security-advisories")), "{:?}", s.log());
+}
+
+#[test]
 fn a_plain_git_entry_is_unchecked() {
     let s = Server::start();
     let r = tempfile::tempdir().unwrap();

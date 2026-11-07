@@ -2382,7 +2382,7 @@ fn advisory_findings(ctx: &Ctx, m: &Manifest, lock: &Lock) -> Result<AdvisoryChe
     };
     let mut composer: Vec<(&Repository, Vec<&Package>)> = Vec::new();
     for p in &lock.packages {
-        if m.refuses(&p.repository).is_some() || p.dist.kind == git::KIND {
+        if m.refuses(&p.repository).is_some() || p.dist.kind == git::KIND || m.check_name(&p.name).is_err() {
             out.unchecked.push(p.name.clone());
         } else if p.repository.starts_with(&github_repos) {
             if !m.github_allowed() {
@@ -2497,7 +2497,7 @@ pub fn search(ctx: &Ctx, query: Option<&str>, json: bool, skills_sh: Option<bool
             setting = Some(on);
         }
     }
-    let results = Registry::new(ctx.http()?).search(&m.allowed_repositories(), query)?;
+    let results = Registry::new(ctx.http()?).search(&m.allowed_repositories(), query, &m.policy.deny_packages)?;
     let mut found = Vec::new();
     if skills_sh.or(setting).unwrap_or(false) {
         if !m.github_allowed() {
@@ -2510,7 +2510,10 @@ pub fn search(ctx: &Ctx, query: Option<&str>, json: bool, skills_sh: Option<bool
                 Err(e) => ui::warn(format!("skills.sh: {}", e.msg)),
             }
             // A GitHub URL prefix in allow-sources admits only some owners.
-            found.retain(|(n, _)| m.check_github(n["github:".len()..].rsplit_once('/').map_or("", |(r, _)| r)).is_ok());
+            found.retain(|(n, _)| {
+                let repo = n["github:".len()..].rsplit_once('/').map_or("", |(r, _)| r);
+                m.check_github(repo).is_ok() && m.check_name(repo).is_ok()
+            });
         }
     }
     if json {

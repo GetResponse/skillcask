@@ -346,11 +346,12 @@ impl<'a> Registry<'a> {
 
     /// (name, description, repository name) of skill packages whose name contains `query`, or that
     /// Packagist's search finds. A repository that fails is skipped with a warning; all failing is an error.
-    pub fn search(&self, repos: &[Repository], query: &str) -> Result<Vec<Hit>> {
+    /// Names `deny` refuses are left out before any request for them (D57).
+    pub fn search(&self, repos: &[Repository], query: &str, deny: &[String]) -> Result<Vec<Hit>> {
         let mut out = Vec::new();
         let (mut failed, mut errors) = (None, 0);
         for repo in repos {
-            let found = if is_packagist(repo) { self.search_packagist(query) } else { self.search_names(repo, query) };
+            let found = if is_packagist(repo) { self.search_packagist(query) } else { self.search_names(repo, query, deny) };
             match found {
                 Ok(f) => out.extend(f.into_iter().map(|h| Hit { source: repo.name.clone(), ..h })),
                 Err(e) => {
@@ -364,7 +365,7 @@ impl<'a> Registry<'a> {
             return Err(e);
         }
         let mut seen = std::collections::HashSet::new();
-        out.retain(|h| seen.insert(h.name.clone()));
+        out.retain(|h| !crate::policy::denied(deny, &h.name) && seen.insert(h.name.clone()));
         Ok(out)
     }
 
@@ -396,7 +397,7 @@ impl<'a> Registry<'a> {
 
     /// Names come from `available-packages`, inline `packages` or, on GitLab, `provider-includes`;
     /// each match's metadata is read to keep skill packages only.
-    fn search_names(&self, repo: &Repository, query: &str) -> Result<Vec<Hit>> {
+    fn search_names(&self, repo: &Repository, query: &str, deny: &[String]) -> Result<Vec<Hit>> {
         let root = self.root(repo)?;
         let q = query.to_lowercase();
         let mut names: Vec<String> = root
@@ -420,7 +421,7 @@ impl<'a> Registry<'a> {
         }
         names.sort();
         names.dedup();
-        names.retain(|n| n.contains(&q));
+        names.retain(|n| n.contains(&q) && !crate::policy::denied(deny, n));
         // A match after the vendor first: a query that is the vendor matches every package.
         names.sort_by_key(|n| !n.split_once('/').map_or(n.as_str(), |(_, short)| short).contains(&q));
         // ponytail: one metadata request per match not inline, capped; a server-side search would lift the cap.

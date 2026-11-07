@@ -139,6 +139,19 @@ fn remember_writes_config_toml_and_keeps_the_rest() {
 }
 
 #[test]
+fn search_leaves_out_denied_packages_without_asking_for_them() {
+    let s = Server::start();
+    let p = beta_project(&s);
+    p.write(
+        "skills.toml",
+        &p.read("skills.toml").replace("packagist = false", "packagist = false\ndeny-packages = [\"acme/beta\", \"owner/*\"]"),
+    );
+    let d = json_of(&p, &["search", "beta", "--json", "--skills-sh"]);
+    assert_eq!(d["results"], json!([]), "{d}");
+    assert!(!s.log().iter().any(|l| l.contains("acme/beta")), "{:?}", s.log());
+}
+
+#[test]
 fn skills_sh_is_skipped_without_github_and_its_failure_only_warns() {
     let s = Server::start();
     let p = beta_project(&s);
