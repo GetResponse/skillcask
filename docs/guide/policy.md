@@ -41,7 +41,8 @@ do not move it. A key it enforces binds the user's `config.toml` as it binds the
 user's file may repeat it or make it stricter (then the project's value of that key is unused),
 and a looser value fails every command. Its other keys and its `[agents] targets` and
 `[search] skills-sh` apply where the user's file sets none. `skillcask config` names them
-`system config.toml`.
+`system config.toml`. skillcask ignores it with a warning unless root owns it and neither group
+nor others may write it; on Windows its owner must be Administrators or SYSTEM.
 
 `"github"` in an enforced `allow-sources` is public GitHub (`https://api.github.com/repos/`):
 `SKILLCASK_GITHUB_API` and `GITHUB_API_URL` do not move it. For GitHub Enterprise, enforce its

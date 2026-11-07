@@ -261,7 +261,59 @@ pub fn updates_managed() -> Result<Option<String>> {
 }
 
 fn system() -> Result<Outer> {
-    system_config_path().map_or_else(|| Ok(Outer::default()), |p| read_config(&p))
+    let Some(p) = system_config_path() else { return Ok(Outer::default()) };
+    // Tests point SKILLCASK_SYSTEM_CONFIG at files they own.
+    if let Some(why) = untrusted(&p).filter(|_| !cfg!(debug_assertions)) {
+        crate::ui::warn(format!("{}: ignored, {why}", p.display()));
+        return Ok(Outer::default());
+    }
+    read_config(&p)
+}
+
+/// Why the system config is not the administrator's word (D63); `None` when absent or trusted.
+#[cfg(unix)]
+fn untrusted(path: &Path) -> Option<String> {
+    use std::os::unix::fs::MetadataExt;
+    let m = std::fs::metadata(path).ok()?;
+    if m.uid() != 0 {
+        return Some("it is not owned by root".into());
+    }
+    (m.mode() & 0o022 != 0).then(|| "group or others may write it".into())
+}
+
+/// Any user may create a folder under `C:\ProgramData` and owns what they create there.
+#[cfg(windows)]
+#[allow(unsafe_code)] // The only unsafe in the crate: std cannot read a file's owner on Windows.
+fn untrusted(path: &Path) -> Option<String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::{ERROR_SUCCESS, LocalFree};
+    use windows_sys::Win32::Security::Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT};
+    use windows_sys::Win32::Security::{
+        IsWellKnownSid, OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, WinBuiltinAdministratorsSid, WinLocalSystemSid,
+    };
+    std::fs::metadata(path).ok()?;
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+    let mut owner: PSID = std::ptr::null_mut();
+    let mut sd: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+    // SAFETY: `wide` is NUL-terminated; `owner` points into `sd`, which is read before LocalFree.
+    unsafe {
+        let rc = GetNamedSecurityInfoW(
+            wide.as_ptr(),
+            SE_FILE_OBJECT,
+            OWNER_SECURITY_INFORMATION,
+            &mut owner,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &mut sd,
+        );
+        if rc != ERROR_SUCCESS {
+            return Some(format!("its owner cannot be read (error {rc})"));
+        }
+        let trusted = IsWellKnownSid(owner, WinBuiltinAdministratorsSid) != 0 || IsWellKnownSid(owner, WinLocalSystemSid) != 0;
+        LocalFree(sd);
+        (!trusted).then(|| "it is not owned by Administrators or SYSTEM".into())
+    }
 }
 
 /// The user's `config.toml` over the system one (D60): a key the system file enforces may only be
@@ -555,6 +607,32 @@ pub fn under(url: &str, prefix: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_system_config_others_may_write_is_untrusted() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join(CONFIG);
+        assert_eq!(untrusted(&p), None);
+        std::fs::write(&p, "").unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let root = std::fs::metadata(&p).unwrap().uid() == 0;
+        assert_eq!(untrusted(&p).is_none(), root);
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o664)).unwrap();
+        assert!(untrusted(&p).is_some());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_system_config_a_user_created_is_untrusted() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join(CONFIG);
+        assert_eq!(untrusted(&p), None);
+        std::fs::write(&p, "").unwrap();
+        // The owner depends on whether the runner is elevated; reading it must work either way.
+        assert!(untrusted(&p).is_none_or(|w| w == "it is not owned by Administrators or SYSTEM"), "{:?}", untrusted(&p));
+    }
 
     #[test]
     fn the_user_config_over_the_system_one() {
