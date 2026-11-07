@@ -96,6 +96,10 @@ fn strict_on_a_branch_entry_compares_commits() {
     p.manifest(&s, "");
     p.ok(&["add", "github:acme/tools"]);
     p.ok(&["outdated", "--strict"]);
+    // A failure past the first request used to be a warning, so CI passed on a network error.
+    s.respond("/repos/acme/tools/activity", 400, &[], "");
+    p.expect(&["outdated", "--strict"], 3);
+    s.respond("/repos/acme/tools/activity", 404, &[], "");
 
     s.put("/repos/acme/tools/commits/HEAD", commit(&new));
     s.put(&format!("/repos/acme/tools/commits/{new}"), commit(&new));

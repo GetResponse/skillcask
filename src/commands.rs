@@ -1842,6 +1842,7 @@ pub fn outdated(ctx: &Ctx, strict: bool, json: bool) -> Result<()> {
                 match ctx.candidate(&m, eff, Some(p)) {
                     Ok((_, c)) if newer(eff, p, &c) => behind.push(format!("{} {} -> {}", req.name, p.version, c.version)),
                     Ok(_) => {}
+                    Err(e) if e.code != MANIFEST => return Err(e),
                     Err(e) => ui::warn(e.msg),
                 }
             }
