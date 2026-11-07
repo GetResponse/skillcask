@@ -76,20 +76,16 @@ fn gitlab_token_string_and_object_forms() {
 }
 
 #[test]
-fn userinfo_in_a_repository_url_is_sent_as_basic_auth() {
+fn userinfo_in_a_repository_url_is_refused() {
     let s = Server::start();
     s.simple("acme/one", "1.0.0", "one");
     let p = Project::new(&s);
     p.manifest(&s, "\"acme/one\" = \"^1.0\"\n");
-    let toml = p.read("skills.toml").replace("https://", "https://u:p@");
+    let toml = p.read("skills.toml").replace("https://", "https://u:s3cret@");
     p.write("skills.toml", &toml);
-    p.ok(&["install"]);
-    let reqs = s.requests();
-    let basic = |r: &Request| r.headers.get("authorization").map(String::as_str) == Some("Basic dTpw");
-    assert!(reqs.iter().any(|r| r.path == "/packages.json" && basic(r)), "{reqs:?}");
-    // The dist URL loses the userinfo (registry.rs), so the zip goes without it.
-    let zips: Vec<_> = reqs.iter().filter(|r| r.path.ends_with(".zip")).collect();
-    assert!(!zips.is_empty() && zips.iter().all(|r| !r.headers.contains_key("authorization")), "{reqs:?}");
+    let e = p.expect(&["install"], 1);
+    assert!(e.contains("repository fix: its URL carries credentials") && e.contains("auth.json") && !e.contains("s3cret"), "{e}");
+    assert!(s.requests().is_empty());
 }
 
 #[test]

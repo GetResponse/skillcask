@@ -291,11 +291,10 @@ impl Http {
                 bail!(NETWORK, "refusing non-HTTPS URL {}", redact(&cur));
             }
             let shown = redact(&cur);
-            let inline = (!self.anonymous && !cur.username().is_empty())
-                .then(|| Cred::Basic(cur.username().to_string(), cur.password().unwrap_or("").to_string()));
+            // Credentials come from auth.json only (D62); userinfo from a redirect or a lock is dropped.
             let _ = cur.set_username("");
             let _ = cur.set_password(None);
-            let cred = if self.anonymous { None } else { inline.or_else(|| self.auth.lookup(&cur)) };
+            let cred = if self.anonymous { None } else { self.auth.lookup(&cur) };
             let mut retry = 0;
             let mut resp = loop {
                 if self.verbose {

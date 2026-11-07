@@ -114,18 +114,7 @@ pub fn project_template(global: &str) -> Result<String> {
     }
     let text = doc.to_string();
     // The caller names the global file; `skills.toml: ` would read as the project's.
-    let m = parse_with(&text, false, &crate::policy::Outer::default()).map_err(|e| e.map_msg(unprefixed))?;
-    // The global file is private to the machine; the project's is committed.
-    let urls = m.repositories.iter().map(|r| (r.name.as_str(), r.url.as_str())).chain(m.github.as_deref().map(|u| ("github", u)));
-    for (name, url) in urls {
-        if carries_credentials(url) {
-            return Err(crate::error::Error::new(
-                MANIFEST,
-                format!("repository {name}: its URL carries credentials, which init would commit"),
-            )
-            .hint("move them to auth.json next to it"));
-        }
-    }
+    parse_with(&text, false, &crate::policy::Outer::default()).map_err(|e| e.map_msg(unprefixed))?;
     Ok(text)
 }
 
@@ -450,6 +439,10 @@ pub fn parse_with(text: &str, global: bool, outer: &crate::policy::Outer) -> Res
             let r = item.as_table_like().ok_or_else(|| bad(format!("repository {name} must be a table")))?;
             let kind = r.get("type").and_then(Item::as_str).unwrap_or("composer");
             let url = r.get("url").and_then(Item::as_str).ok_or_else(|| bad(format!("repository {name}: missing url")))?;
+            // D62: the lock copies the URL, and a project's file is committed.
+            if carries_credentials(url) {
+                return Err(bad(format!("repository {name}: its URL carries credentials")).hint("move them to auth.json"));
+            }
             if !url.starts_with("https://") {
                 return Err(bad(format!("repository {name}: only https:// URLs are allowed")));
             }
