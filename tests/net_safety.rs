@@ -260,6 +260,16 @@ fn github_rate_limit_is_named() {
 }
 
 #[test]
+fn a_registry_rate_limit_is_not_called_github() {
+    let s = Server::start();
+    s.respond("/packages.json", 403, &[("x-ratelimit-remaining", "0")], "");
+    let p = Project::new(&s);
+    p.manifest(&s, "");
+    let out = p.expect(&["add", "acme/x"], 2);
+    assert!(!out.contains("GitHub") && out.contains("check auth.json"), "{out}");
+}
+
+#[test]
 fn ref_fallback_rejects_a_commit_newer_than_the_cutoff() {
     let s = Server::start();
     let (a, b) = ("a".repeat(40), "b".repeat(40));

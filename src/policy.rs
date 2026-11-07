@@ -30,8 +30,7 @@ impl std::fmt::Display for Value {
             Value::Bool(b) => write!(f, "{b}"),
             Value::List(l) => {
                 // Shown in `status` and warnings; a URL prefix may carry a token.
-                let shown = |s: &String| url::Url::parse(s).map_or_else(|_| s.clone(), |u| crate::http::redact(&u));
-                write!(f, "[{}]", l.iter().map(|s| format!("{:?}", shown(s))).collect::<Vec<_>>().join(", "))
+                write!(f, "[{}]", l.iter().map(|s| format!("{:?}", crate::http::shown_url(s))).collect::<Vec<_>>().join(", "))
             }
         }
     }

@@ -250,7 +250,7 @@ impl Manifest {
             return None;
         }
         let from = self.policy.effective.get("allow-sources").map_or("", |(_, f)| f);
-        let shown = url::Url::parse(url).map_or_else(|_| url.to_string(), |u| crate::http::redact(&u));
+        let shown = crate::http::shown_url(url);
         let github = self.policy.allow_sources.as_ref().is_some_and(|l| l.iter().any(|e| e == "github"))
             && crate::policy::under(url, &format!("{}/repos/", crate::github::api()));
         let why = if github {
@@ -292,7 +292,7 @@ impl Manifest {
         }
         let Some(list) = &self.policy.allow_sources else { return Ok(()) };
         let repo = repository.trim_end_matches('/');
-        let shown = |u: &str| url::Url::parse(u).map_or_else(|_| u.to_string(), |u| crate::http::redact(&u));
+        let shown = crate::http::shown_url;
         let refused =
             |want: &str| -> Result<()> { bail!(MANIFEST, "{name}: {from} dist {} {} is not {want}", dist.kind, shown(&dist.url)) };
         // The APIs in use or trusted, and any the list names a `/repos/` prefix of, say what is GitHub,

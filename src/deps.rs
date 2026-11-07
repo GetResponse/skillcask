@@ -36,11 +36,12 @@ impl Target {
 
 /// `vendor/name`, `github:owner/repo[/skill]` or `git:https://host/owner/repo.git[#skill]`.
 pub fn target(key: &str) -> std::result::Result<Target, String> {
-    let bad = || format!("{key:?} is not a package (vendor/name), github:owner/repo[/skill] or git:https://…[#skill]");
+    let shown = key.strip_prefix("git:").map_or_else(|| key.to_string(), |u| format!("git:{}", crate::http::shown_url(u)));
+    let bad = || format!("{shown:?} is not a package (vendor/name), github:owner/repo[/skill] or git:https://…[#skill]");
     if let Some(rest) = key.strip_prefix("git:") {
         let (url, skill) = rest.split_once('#').map_or((rest, None), |(u, s)| (u, Some(s.to_string())));
         let url = url.trim_end_matches('/');
-        crate::git::check_url(url).map_err(|e| format!("{key:?}: {e}"))?;
+        crate::git::check_url(url).map_err(|e| format!("{shown:?}: {e}"))?;
         let repo = crate::git::name_of(url).ok_or_else(bad)?;
         if skill.as_deref().is_some_and(|s| !valid_name(s)) {
             return Err(bad());
@@ -266,6 +267,10 @@ mod tests {
             "git:https://h/a/b#Bad",
         ] {
             assert!(target(bad).is_err(), "{bad}");
+        }
+        for leaky in ["git:https://u:secret@h/a/b", "git:https://u:secret@h/a/Bad_Name!"] {
+            let e = target(leaky).unwrap_err();
+            assert!(!e.contains("secret"), "{e}");
         }
     }
 

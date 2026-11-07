@@ -1380,7 +1380,7 @@ fn find(reg: &Registry, m: &Manifest, req: &SkillReq, locked: Option<&Package>) 
         }
         Some(_) => bail!(MANIFEST, "{} in repository {} has no installable ai-agent-skill versions", req.name, repo.name),
         None => {
-            let url = url::Url::parse(&repo.url).map_or_else(|_| repo.name.clone(), |u| crate::http::redact(&u));
+            let url = crate::http::shown_url(&repo.url);
             bail!(
                 MANIFEST,
                 "{}: not found in its locked repository {url}; if it moved on purpose, set repository = \"…\" in {}",

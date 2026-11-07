@@ -18,7 +18,7 @@ use crate::archive::Limits;
 use crate::bail;
 use crate::error::{Context, Error, IO, MANIFEST, NETWORK, Result};
 use crate::github::is_sha;
-use crate::http::{Http, redact};
+use crate::http::Http;
 use crate::lock::Dist;
 use crate::manifest::{DEFAULT_REF, GitHub, Repository, SkillReq};
 use crate::registry::{self, Candidate};
@@ -35,15 +35,16 @@ type Id = [u8; 20];
 /// Errors unless `url` is an `https://` repository URL without credentials, query or fragment;
 /// tokens belong in auth.json or the credential helper, not in skills.toml.
 pub fn check_url(url: &str) -> std::result::Result<(), String> {
-    let u = url::Url::parse(url).map_err(|e| format!("invalid git URL {url:?}: {e}"))?;
-    if u.scheme() != "https" || u.host_str().is_none() {
-        return Err(format!("git URL {url:?} must start with https://"));
-    }
+    let shown = crate::http::shown_url(url);
+    let u = url::Url::parse(url).map_err(|e| format!("invalid git URL {shown:?}: {e}"))?;
     if !u.username().is_empty() || u.password().is_some() || u.query().is_some() || u.fragment().is_some() {
-        return Err(format!("git URL {}: no credentials, query or fragment; put tokens in auth.json", redact(&u)));
+        return Err(format!("git URL {shown}: no credentials, query or fragment; put tokens in auth.json"));
+    }
+    if u.scheme() != "https" || u.host_str().is_none() {
+        return Err(format!("git URL {shown:?} must start with https://"));
     }
     if u.path_segments().is_none_or(|s| s.filter(|p| !p.is_empty()).count() < 2) {
-        return Err(format!("git URL {url:?} needs at least owner/repo in its path"));
+        return Err(format!("git URL {shown:?} needs at least owner/repo in its path"));
     }
     Ok(())
 }
@@ -668,6 +669,10 @@ mod tests {
             "https://git.example.com/b",
         ] {
             assert!(check_url(bad).is_err(), "{bad}");
+        }
+        for leaky in ["http://u:secret@git.example.com/a/b", "https://u:secret@[bad/a/b", "ssh://u:secret@git.example.com/a/b"] {
+            let e = check_url(leaky).unwrap_err();
+            assert!(!e.contains("secret"), "{e}");
         }
     }
 
