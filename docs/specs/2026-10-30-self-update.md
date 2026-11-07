@@ -1,6 +1,6 @@
 # Spec: `skillcask self-update`
 
-Date: 2026-10-30. Status: accepted as D52 (2026-10-30), which amends D51.
+Date: 2026-10-30. Status: accepted as D52 (2026-10-30), which amends D51; amended by D61.
 
 ## Problem
 
@@ -43,6 +43,9 @@ method and the command or installer URL it would use, and runs nothing.
 
 The same anonymous request as `self-check` (D51). No newer version: prints
 `skillcask X is the latest` and exits 0. Unparsable `latest`: exits 1 and names the release page.
+Since D61, a newer version with `[updates] managed` set in the system or user `config.toml` prints
+`skillcask X -> Y: updates are managed by your organisation` with that text as the hint and exits
+1, before the install method is detected; nothing runs.
 
 ### 3. Install method
 
@@ -84,8 +87,8 @@ hint for success.
 
 `exec` replaces the skillcask process with `sh`, so nothing of skillcask runs while the installer
 replaces the binary, and the installer's exit code is the command's. A failed download exits 3
-before `exec`. `SKILLCASK_SELF_UPDATE=0` turns step 1-4 into printing the command, for machines whose
-admin owns updates.
+before `exec`. `SKILLCASK_SELF_UPDATE=0` turns step 1-4 into printing the command; a machine whose
+admin owns updates sets `[updates] managed` instead (§2).
 
 ### 5. Documentation
 

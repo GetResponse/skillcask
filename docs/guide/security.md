@@ -63,8 +63,9 @@
   `--advisories`; [OSV-Scanner](https://github.com/google/osv-scanner) checks those:
 
   ```yaml
-  - uses: GetResponse/skillcask@v0.10.5
+  - uses: GetResponse/skillcask@<commit sha of a release tag>   # vX.Y.Z
     with:
+      version: X.Y.Z
       args: install --frozen
   - run: skillcask audit --advisories --sarif > skills.sarif
     env:
@@ -83,7 +84,9 @@
   pushes for, falls back to commit dates, which the committer sets; reviewing what `add`/`update`
   change in `skills.lock` is the real check there.
 - Credentials come from Composer's `auth.json` / `COMPOSER_AUTH` (`http-basic`, `bearer`,
-  `gitlab-token`, `gitlab-oauth`), then from git's credential helper, and are never printed.
+  `gitlab-token`, `gitlab-oauth`, `github-oauth`), then from git's credential helper, and are
+  never printed. A repository URL in `skills.toml` that carries credentials (`user:token@`, a
+  `token=` query) fails every command that reads the file; credentials in a URL are never sent.
   `skillcask auth set git.example.com` keeps a token in the macOS Keychain, the Windows Credential
   Manager or libsecret instead of a plain-text file (the default username `PRIVATE-TOKEN` sends
   GitLab's header; `--username oauth2` a Bearer token). `SKILLCASK_GIT_CREDENTIALS=0` turns the
