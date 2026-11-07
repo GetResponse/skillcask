@@ -431,3 +431,19 @@ fn a_finished_run_leaves_no_run_lock() {
     p.ok(&["install"]);
     assert_eq!(runs(), 0);
 }
+
+/// A committed block line with `..` once let install and doctor --fix delete a marked dir outside.
+#[test]
+fn block_dirs_outside_the_project_are_left_alone() {
+    let s = Server::start();
+    let p = one(&s);
+    let home = p.home().file_name().unwrap().to_string_lossy().into_owned();
+    p.write(".gitignore", &format!("{BEGIN}\n/../{home}/.claude/skills/x\n{END}\n"));
+    let victim = p.home().join(".claude/skills/x");
+    std::fs::create_dir_all(&victim).unwrap();
+    std::fs::write(victim.join(".skillcask-copy"), "").unwrap();
+    std::fs::write(victim.join("SKILL.md"), skill_md("x")).unwrap();
+    p.ok(&["install"]);
+    p.run(&["doctor", "--fix"]);
+    assert!(victim.join("SKILL.md").is_file());
+}

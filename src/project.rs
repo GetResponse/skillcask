@@ -74,8 +74,13 @@ pub fn store_names(s: &Scope) -> Result<Vec<String>> {
 
 /// Refuses when `sub` or any of its parents below `root` is a symlink. A repository can commit
 /// `.agents/skills -> ~/.config`, and skillcask would then write and delete outside the project.
-/// Skipped in the global scope: home belongs to the user, and dotfile managers symlink `~/.claude`.
+/// The symlink check is skipped in the global scope: home belongs to the user, and dotfile
+/// managers symlink `~/.claude`. In both scopes `sub` must be plain names: a committed `.gitignore`
+/// block can name `/../elsewhere/x`.
 pub fn no_symlink(s: &Scope, sub: &str) -> Result<()> {
+    if Path::new(sub).components().any(|c| !matches!(c, Component::Normal(_))) {
+        bail!(MANIFEST, "{sub:?} is not a relative path inside the project");
+    }
     if s.global {
         return Ok(());
     }
@@ -96,17 +101,17 @@ pub fn no_symlink(s: &Scope, sub: &str) -> Result<()> {
 /// Writes through a temp file and a rename in the same dir, so an interrupted write leaves the old
 /// file or the new one. A symlinked file (dotfiles) is written at its target, keeping the link.
 pub fn write_atomic(path: &Path, text: &str) -> Result<()> {
-    write_atomic_io(path, text).ctx(path.display())
+    write_atomic_io(path, text.as_bytes()).ctx(path.display())
 }
 
-fn write_atomic_io(path: &Path, text: &str) -> std::io::Result<()> {
+pub fn write_atomic_io(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     let dir = path.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(Path::new("."));
     std::fs::create_dir_all(dir)?;
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let mut tmp = tempfile::Builder::new().prefix(&format!(".{name}{TMP}")).tempfile_in(dir)?;
-    tmp.write_all(text.as_bytes())?;
+    tmp.write_all(bytes)?;
     match std::fs::metadata(&path) {
         Ok(m) => tmp.as_file().set_permissions(m.permissions())?,
         #[cfg(unix)]
@@ -444,6 +449,7 @@ pub fn write_modes(s: &Scope, modes: &BTreeSet<String>) -> Result<()> {
     if cfg!(unix) {
         return Ok(());
     }
+    no_symlink(s, &format!("{STORE}/{MODES}"))?;
     let path = s.root.join(STORE).join(MODES);
     let shown = s.show(&format!("{STORE}/{MODES}"));
     if modes.is_empty() {
@@ -454,7 +460,7 @@ pub fn write_modes(s: &Scope, modes: &BTreeSet<String>) -> Result<()> {
     }
     let text: String = modes.iter().map(|l| format!("{l}\n")).collect();
     if std::fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {
-        std::fs::write(path, text).ctx(shown)?;
+        write_atomic_io(&path, text.as_bytes()).ctx(shown)?;
     }
     Ok(())
 }
@@ -576,7 +582,7 @@ pub fn write_installed_here(s: &Scope, names: &BTreeSet<String>) -> Result<()> {
     if s.global {
         return Ok(());
     }
-    no_symlink(s, STORE)?;
+    no_symlink(s, &format!("{STORE}/{INSTALLED}"))?;
     let (path, shown) = record_file(s);
     let lines: Vec<String> = names.iter().map(|n| format!("/{STORE}/{n}/")).collect();
     write_block_file(&path, &shown, &lines)?;
@@ -614,10 +620,7 @@ fn write_block_file(path: &Path, shown: &str, lines: &[String]) -> Result<bool> 
     if new == text || (new.is_empty() && !path.exists()) {
         return Ok(false);
     }
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).ctx(shown)?;
-    }
-    std::fs::write(path, new).ctx(shown)?;
+    write_atomic_io(path, new.as_bytes()).ctx(shown)?;
     Ok(true)
 }
 
@@ -765,6 +768,21 @@ mod tests {
         std::os::unix::fs::symlink(&victim, dir.path().join(STORE).join(format!("{RUN}{}", std::process::id()))).unwrap();
         temp_dir(&s).unwrap();
         assert_eq!(std::fs::read_to_string(&victim).unwrap(), "precious");
+    }
+
+    /// A clone could commit the record as a symlink to `~/.gitconfig`; `install` appended to it.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_record_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Scope::project(dir.path().to_path_buf());
+        let victim = dir.path().join("victim");
+        std::fs::write(&victim, "precious\n").unwrap();
+        std::fs::create_dir_all(dir.path().join(STORE)).unwrap();
+        std::os::unix::fs::symlink(&victim, dir.path().join(STORE).join(INSTALLED)).unwrap();
+        let e = write_installed_here(&s, &["a".to_string()].into()).unwrap_err().to_string();
+        assert!(e.contains(".skillcask-installed is a symlink"), "{e}");
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "precious\n");
     }
 
     fn global_scope(home: &Path) -> Scope {
