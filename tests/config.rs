@@ -106,6 +106,9 @@ fn global_writes_config_toml_and_creates_its_dir() {
     p.global(&["config", "--unset", "policy.enforce"], 0);
     p.global(&["config", "--unset", "policy.allow-sources"], 0);
     assert_eq!(config_toml(&p), "[search]\nskills-sh = true\n\n[policy]\n");
+    // Regression: unsetting a key the file does not have said "removed".
+    let out = p.global(&["config", "--unset", "policy.enforce"], 0);
+    assert!(out.contains("policy.enforce is not set in") && !out.contains("removed"), "{out}");
 }
 
 #[test]
@@ -153,6 +156,9 @@ fn status_shows_the_skills_sh_setting() {
     p.global(&["config", "search.skills-sh", "false"], 0);
     assert!(p.ok(&["status"]).contains("search.skills-sh = false (config.toml)\n"));
     assert_eq!(json_of(&p, &["status", "--json"])["skills-sh"], json!(false));
+    std::fs::remove_file(p.home().join(".config/skillcask/config.toml")).unwrap();
+    p.system_config("[search]\nskills-sh = true\n");
+    assert!(p.ok(&["status"]).contains("search.skills-sh = true (system config.toml)\n"));
 }
 
 #[test]
@@ -267,6 +273,17 @@ fn the_system_config_binds_the_user_config_project_and_environment() {
         "[policy]\nmin-release-age = \"3d\"\ndeny-patterns = true\nenforce = [\"min-release-age\"]\n\n[agents]\ntargets = [\"codex\"]\n",
     );
     let sys = p.system_config_path().display().to_string();
+    let out = p.global(&["config"], 0);
+    assert!(out.contains("policy.enforce = [\"min-release-age\"] (system config.toml)\n"), "{out}");
+    // Regression: the system file's entries were listed as the user's own.
+    p.config("[policy]\ndeny-patterns = true\nenforce = [\"deny-patterns\"]\n");
+    let out = p.global(&["config"], 0);
+    assert!(out.contains("policy.enforce = [\"deny-patterns\"] (config.toml)\n"), "{out}");
+    assert!(out.contains("policy.min-release-age = \"3d\" (system config.toml, enforced)\n"), "{out}");
+    let out = p.global(&["config", "--unset", "policy.enforce"], 0);
+    assert!(out.contains("removed policy.enforce"), "{out}");
+    assert!(p.global(&["config", "--unset", "policy.enforce"], 0).contains("policy.enforce is not set in"));
+    p.config("");
     let out = p.ok(&["config"]);
     assert!(out.contains("policy.min-release-age = \"3d\" (system config.toml, enforced)\n"), "{out}");
     assert!(out.contains("policy.deny-patterns = true (system config.toml)\n"), "{out}");
@@ -278,8 +295,12 @@ fn the_system_config_binds_the_user_config_project_and_environment() {
     // The user's file may tighten an enforced key, never loosen it, and a refused edit writes nothing.
     p.config("[policy]\nmin-release-age = \"7d\"\ndeny-patterns = false\n");
     let out = p.ok(&["config"]);
-    assert!(out.contains("policy.min-release-age = \"7d\" (config.toml, enforced)\n"), "{out}");
+    assert!(out.contains("policy.min-release-age = \"7d\" (system config.toml, enforced)\n"), "{out}");
     assert!(out.contains("policy.deny-patterns = false (config.toml)\n"), "{out}");
+    // Regression: a project value the tightening user file leaves unused was written without a word.
+    let out = p.ok(&["config", "policy.min-release-age", "4d"]);
+    assert!(out.contains("warning: the value from system config.toml, enforced applies here: policy.min-release-age = \"7d\""), "{out}");
+    p.ok(&["config", "--unset", "policy.min-release-age"]);
     let e = p.global(&["config", "policy.min-release-age", "1d"], 1);
     assert!(e.contains(&format!("policy.min-release-age = \"1d\" loosens policy.min-release-age = \"3d\" enforced by {sys}")), "{e}");
     assert!(p.global(&["config", "policy.min-release-age"], 0).contains("\"7d\""));

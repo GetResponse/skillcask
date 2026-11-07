@@ -78,8 +78,12 @@ fn settings(s: &Scope) -> Result<Vec<Setting>> {
         })
         .collect();
     if s.global {
-        let enforce: Vec<String> = outer.config.enforce.iter().map(|k| k.to_string()).collect();
-        out.push(("policy.enforce".into(), (!enforce.is_empty()).then_some(Value::List(enforce)), CONFIG));
+        // The user's own list; the system file's only when the user's file has none, as for other keys
+        // (each key the system file enforces shows it in its layer).
+        let (enforce, from) =
+            if outer.own_enforce.is_empty() { (&outer.system_enforce, policy::SYSTEM) } else { (&outer.own_enforce, CONFIG) };
+        let enforce: Vec<String> = enforce.iter().map(|k| k.to_string()).collect();
+        out.push(("policy.enforce".into(), (!enforce.is_empty()).then_some(Value::List(enforce)), from));
     }
     out.push(("agents.targets".into(), Some(Value::List(m.target_entries.clone())), m.targets_from));
     out.push((format!("search.{SKILLS_SH}"), outer.skills_sh.map(Value::Bool), outer.label(SKILLS_SH, false)));
@@ -139,12 +143,14 @@ fn set(s: &Scope, k: &str, values: Option<&[String]>) -> Result<()> {
     need_manifest(s)?;
     let (table, name) = k.split_once('.').expect("known keys have a table");
     let value = values.map(|v| toml_value(k, v)).transpose()?;
+    let existed = std::cell::Cell::new(false);
     let apply = |doc: &mut DocumentMut| -> Result<()> {
         if value.is_none() && doc.get(table).is_none() {
             return Ok(());
         }
         let t = doc.entry(table).or_insert_with(toml_edit::table);
         let Some(t) = t.as_table_like_mut() else { bail!(MANIFEST, "{table} must be a table") };
+        existed.set(t.contains_key(name));
         manifest::set(t, name, value.clone());
         Ok(())
     };
@@ -160,10 +166,16 @@ fn set(s: &Scope, k: &str, values: Option<&[String]>) -> Result<()> {
     let shown = shown(s)?;
     match values {
         Some(_) => ui::done("set", format!("{k} in {shown}")),
-        None => ui::done("removed", format!("{k} from {shown}")),
+        None if existed.get() => ui::done("removed", format!("{k} from {shown}")),
+        None => ui::note(format!("{k} is not set in {shown}")),
     }
-    if let Some((_, Some(v), policy::ENVIRONMENT)) = settings(s)?.into_iter().find(|(x, ..)| x == k) {
-        ui::warn(format!("the environment overrides it here: {k} = {v}"));
+    match settings(s)?.into_iter().find(|(x, ..)| x == k) {
+        Some((_, Some(v), policy::ENVIRONMENT)) => ui::warn(format!("the environment overrides it here: {k} = {v}")),
+        // An enforced deny list adds the project's entries (D57); any other enforced key ignores them.
+        Some((_, Some(v), from @ (policy::ENFORCED | policy::SYSTEM_ENFORCED))) if !s.global && k != "policy.deny-packages" => {
+            ui::warn(format!("the value from {from} applies here: {k} = {v}"))
+        }
+        _ => {}
     }
     Ok(())
 }

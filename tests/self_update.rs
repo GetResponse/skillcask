@@ -167,3 +167,21 @@ fn managed_updates_run_no_installer_and_name_who_updates() {
     let check = p.ok(&["self-check", "--json"]);
     assert!(check.contains(r#""managed":"Jamf installs updates; ask #it-help""#), "{check}");
 }
+
+// Regression: a user file loosening the system one, or a bad environment variable, made
+// self-update exit before it read updates.managed; a broken file that may hold it still stops it.
+#[cfg(unix)]
+#[test]
+fn managed_is_read_despite_unrelated_policy_errors() {
+    let s = Server::start();
+    s.put(CASK, cask("999.0.0"));
+    let mut p = installed(&s);
+    p.system_config("[policy]\nmin-release-age = \"3d\"\nenforce = [\"min-release-age\"]\n[updates]\nmanaged = \"ask #it-help\"\n");
+    p.config("[policy]\nmin-release-age = \"0\"\n");
+    p.env.push(("SKILLCASK_ALLOW_RANGES".into(), "yes".into()));
+    let out = p.expect(&["self-update"], 1);
+    assert!(out.contains("updates are managed by your organisation") && out.contains("hint: ask #it-help"), "{out}");
+    p.system_config("[updates]\nmanaged = 1\n");
+    assert!(p.expect(&["self-update"], 1).contains("updates.managed must be a non-empty string"));
+    assert!(s.requests().iter().all(|r| r.path == CASK), "no installer download");
+}

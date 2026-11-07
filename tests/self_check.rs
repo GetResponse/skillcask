@@ -49,6 +49,7 @@ fn same_or_older_is_up_to_date() {
     let p = project(&s);
     let out = p.ok(&["self-check"]);
     assert!(out.contains(&format!("skillcask {RUNNING}, latest {RUNNING}: up to date")), "{out}");
+    assert!(!out.contains("managed"), "{out}");
     assert_eq!(
         json_of(&p.ok(&["self-check", "--json"])),
         json!({ "version": RUNNING, "latest": RUNNING, "newer": false, "managed": null })
@@ -163,4 +164,24 @@ fn live_cask_has_a_version() {
     let doc: Value = serde_json::from_slice(&o.stdout).unwrap();
     assert_eq!(doc["version"], json!(RUNNING));
     assert!(doc["latest"].is_string(), "{doc}");
+}
+
+// Regression: the managed text showed only with a newer release, and any unrelated policy error
+// (here a bad environment variable) made self-check exit 1 before the request.
+#[test]
+fn names_who_updates_on_every_branch_despite_a_policy_error() {
+    let s = Server::start();
+    s.put(CASK, cask(RUNNING));
+    let mut p = project(&s);
+    p.system_config("[updates]\nmanaged = \"ask #it-help\"\n");
+    p.env.push(("SKILLCASK_ALLOW_RANGES".into(), "yes".into()));
+    let out = p.ok(&["self-check"]);
+    assert!(out.contains("up to date") && out.contains("updates are managed by your organisation: ask #it-help"), "{out}");
+    s.put(CASK, String::new());
+    let out = p.ok(&["self-check"]);
+    assert!(out.contains("latest unknown") && out.contains("managed by your organisation: ask #it-help"), "{out}");
+    // An unreadable file that may hold it is a warning, not a failure.
+    p.system_config("[updates]\nmanaged = 1\n");
+    let out = p.ok(&["self-check"]);
+    assert!(out.contains("warning: updates.managed unknown") && out.contains("latest unknown"), "{out}");
 }

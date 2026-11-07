@@ -187,6 +187,8 @@ struct App {
     repositories: Vec<Value>,
     /// `skills-sh` of `status --json`: `true`, `false` or `null` (not set).
     skills_sh: Value,
+    /// The layer `skills-sh` comes from (`config.toml` or `system config.toml`).
+    skills_sh_from: &'static str,
     details: HashMap<String, Vec<String>>,
     view: View,
     output: Vec<String>,
@@ -210,6 +212,7 @@ impl App {
             audit: Vec::new(),
             repositories: Vec::new(),
             skills_sh: Value::Null,
+            skills_sh_from: crate::policy::CONFIG,
             details: HashMap::new(),
             view: View::Info,
             output: Vec::new(),
@@ -392,7 +395,7 @@ impl App {
                 self.mode = Mode::Input { prompt: "search Packagist and [repositories]", text: String::new(), then: Then::Search }
             }
             KeyCode::Char('R') => {
-                self.output = repository_lines(&self.repositories, &self.skills_sh);
+                self.output = repository_lines(&self.repositories, &self.skills_sh, self.skills_sh_from);
                 self.view = View::Output;
                 self.scroll = 0;
             }
@@ -442,6 +445,7 @@ impl App {
             Ok(st) => {
                 self.repositories = st["repositories"].as_array().cloned().unwrap_or_default();
                 self.skills_sh = st["skills-sh"].clone();
+                self.skills_sh_from = crate::policy::outer().map_or(crate::policy::CONFIG, |o| o.label(crate::policy::SKILLS_SH, false));
                 let od = json(outdated).unwrap_or_else(|e| {
                     self.message = format!("outdated: {e}");
                     Value::Null
@@ -572,7 +576,7 @@ fn perform(app: &mut App, job: Job) {
                 app.skills_sh = Value::Bool(on);
             }
             perform(app, Job::Refresh);
-            app.output = repository_lines(&app.repositories, &app.skills_sh);
+            app.output = repository_lines(&app.repositories, &app.skills_sh, app.skills_sh_from);
             app.output.extend(clean(&out.stdout));
             app.output.extend(clean(&out.stderr));
             app.view = View::Output;
@@ -655,14 +659,14 @@ fn rows(status: &Value, outdated: &Value) -> Vec<Row> {
         .collect()
 }
 
-fn repository_lines(repos: &[Value], skills_sh: &Value) -> Vec<String> {
+fn repository_lines(repos: &[Value], skills_sh: &Value, from: &str) -> Vec<String> {
     let mut out = vec!["repositories (status --json):".to_string()];
     for r in repos {
         let s = |k: &str| r[k].as_str().unwrap_or("").to_string();
         let blocked = if r["allowed"] == false { "  not in policy.allow-sources" } else { "" };
         out.push(format!("  {}  {}  {}{blocked}", s("name"), s("type"), s("url")));
     }
-    let sh = if skills_sh.is_boolean() { format!("{skills_sh} (config.toml)") } else { "not set (off)".into() };
+    let sh = if skills_sh.is_boolean() { format!("{skills_sh} ({from})") } else { "not set (off)".into() };
     out.push(format!("search.skills-sh = {sh}; S turns it on or off"));
     out.iter().flat_map(|l| clean(l)).collect()
 }
@@ -1033,6 +1037,9 @@ mod tests {
         assert_eq!(press(&mut a, KeyCode::Char('S')), Some(Job::SkillsSh(false)));
         press(&mut a, KeyCode::Char('R'));
         assert_eq!(a.output[3], "search.skills-sh = true (config.toml); S turns it on or off");
+        a.skills_sh_from = crate::policy::SYSTEM;
+        press(&mut a, KeyCode::Char('R'));
+        assert_eq!(a.output[3], "search.skills-sh = true (system config.toml); S turns it on or off");
     }
 
     #[test]
