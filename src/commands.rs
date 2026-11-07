@@ -135,7 +135,7 @@ impl Ctx {
     /// `locked`: the entry's lock entry before this command, if any.
     fn resolve(&self, m: &Manifest, req: &SkillReq, locked: Option<&Package>, prepared: &mut HashMap<String, Fetched>) -> Result<Package> {
         let (repo, c) = self.candidate(m, req, locked)?;
-        let p = self.lock_candidate(req, &repo, &c, None, prepared)?;
+        let p = self.lock_candidate(m, req, &repo, &c, None, prepared)?;
         // The same dist as the lock's was scanned when it was locked.
         if locked.is_none_or(|l| l.dist_sha256 != p.dist_sha256) {
             scan_new(&prepared[&p.name], &p, m.policy.deny_patterns)?;
@@ -258,17 +258,19 @@ impl Ctx {
             }
         };
         let repo = Repository { name: String::new(), url: p.repository.clone(), ..Default::default() };
-        self.lock_candidate(req, &repo, &c, Some(&p.dist_sha256), prepared).map(Some)
+        self.lock_candidate(m, req, &repo, &c, Some(&p.dist_sha256), prepared).map(Some)
     }
 
     fn lock_candidate(
         &self,
+        m: &Manifest,
         req: &SkillReq,
         repo: &Repository,
         c: &Candidate,
         expected: Option<&str>,
         prepared: &mut HashMap<String, Fetched>,
     ) -> Result<Package> {
+        m.check_dist(&c.name, &repo.url, &c.dist, &c.version)?;
         let (sha, f) = self.fetch(&c.name, &c.dist, expected, c.dist_shasum.as_deref())?;
         // GitHub repositories declare no skill paths; any SKILL.md counts.
         let discovered = c.skill_paths.is_empty();
@@ -1583,7 +1585,7 @@ fn add_vcs(ctx: &Ctx, name: String, git: Option<String>, skills: Vec<String>, at
 /// `must_have`: skills named on the command line, checked also when the entry selects all.
 fn finish_add(ctx: &Ctx, m: &Manifest, req: &SkillReq, repo: &Repository, c: &Candidate, must_have: &[String]) -> Result<()> {
     let mut prepared = HashMap::new();
-    let pkg = ctx.lock_candidate(req, repo, c, None, &mut prepared)?;
+    let pkg = ctx.lock_candidate(m, req, repo, c, None, &mut prepared)?;
     scan_new(&prepared[&pkg.name], &pkg, m.policy.deny_patterns)?;
     let have: Vec<&str> = pkg.skills.iter().map(|k| k.from.as_deref().unwrap_or(&k.name)).collect();
     if let Some(s) = must_have.iter().find(|s| !have.contains(&s.as_str())) {
@@ -2618,7 +2620,7 @@ pub fn diff(ctx: &Ctx, package: Option<&str>, to: Option<&str>) -> Result<()> {
             continue;
         }
         let mut prepared = HashMap::new();
-        let new = ctx.lock_candidate(&req, &repo, &c, None, &mut prepared)?;
+        let new = ctx.lock_candidate(&m, &req, &repo, &c, None, &mut prepared)?;
         ctx.show_diff(&m, old, &new, &prepared[&new.name], true)?;
         shown += 1;
         after.upsert(new);
@@ -2758,7 +2760,7 @@ pub fn info(ctx: &Ctx, target: &str, json: bool) -> Result<()> {
         Some(p) => (p.clone(), ctx.fetch_locked(&m, p)?),
         None => {
             let mut prepared = HashMap::new();
-            let pkg = ctx.lock_candidate(&req, &repo, &c, None, &mut prepared)?;
+            let pkg = ctx.lock_candidate(&m, &req, &repo, &c, None, &mut prepared)?;
             let f = prepared.remove(&name).expect("lock_candidate prepares it");
             // `info` writes nothing, so it only warns.
             scan_new(&f, &pkg, false)?;

@@ -152,6 +152,30 @@ fn dot_segments_do_not_escape_an_enforced_prefix() {
     assert!(!s.log().iter().any(|l| l.starts_with("/pub/packages.json")), "{:?}", s.log());
 }
 
+/// The dist rule once ran only on lock entries: add, update and info fetched a fresh candidate's
+/// dist from anywhere first.
+#[test]
+fn a_registry_under_a_prefix_cannot_send_a_dist_elsewhere() {
+    let s = Server::start();
+    s.put(
+        "/fix/packages.json",
+        json!({ "packages": { "acme/public": { "1.0.0": {
+            "name": "acme/public", "version": "1.0.0", "version_normalized": "1.0.0.0", "type": "ai-agent-skill",
+            "time": ago(240), "dist": { "type": "zip", "url": s.url("/evil/x.zip") },
+        } } } })
+        .to_string(),
+    );
+    s.put("/evil/x.zip", zipball(&[("SKILL.md", &skill_md("public"))]));
+    let p = Project::new(&s);
+    p.config(&format!("[policy]\nallow-sources = [\"{}\"]\nenforce = [\"allow-sources\"]\n", s.url("/fix/")));
+    p.write("skills.toml", &format!("[repositories]\nx = {{ url = \"{}\" }}\n[policy]\npackagist = false\n", s.url("/fix/packages.json")));
+    for args in [&["add", "acme/public"][..], &["info", "acme/public"]] {
+        let e = p.expect(args, 1);
+        assert!(e.contains("acme/public: 1.0.0 dist zip") && e.contains("is not in policy.allow-sources"), "{e}");
+    }
+    assert!(!s.log().iter().any(|l| l.starts_with("/evil/")), "{:?}", s.log());
+}
+
 #[test]
 fn github_can_be_turned_off_or_limited_to_an_organisation() {
     let s = Server::start();
