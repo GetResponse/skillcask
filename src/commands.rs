@@ -1906,7 +1906,8 @@ fn newer(req: &SkillReq, p: &Package, c: &Candidate) -> bool {
 
 pub fn status(ctx: &Ctx, json: bool) -> Result<()> {
     let m = Manifest::load(&ctx.s.config, ctx.s.global)?;
-    let skills_sh = crate::policy::outer()?.skills_sh;
+    let outer = crate::policy::outer()?;
+    let skills_sh = outer.skills_sh;
     let lock = Lock::load(&ctx.s.config)?;
     let mut rows = vec![["package", "version", "skill", "state"].map(String::from)];
     let mut bad = 0;
@@ -2047,7 +2048,7 @@ pub fn status(ctx: &Ctx, json: bool) -> Result<()> {
     if !ui::agent() {
         let dirs = if m.targets.is_empty() { format!("{STORE} only") } else { m.targets.join(", ") };
         println!("{}", ui::out(ui::Color::Dim, format!("agents.targets = {:?} ({}): {dirs}", m.target_entries, m.targets_from)));
-        let sh = skills_sh.map_or("not set".to_string(), |on| format!("= {on} ({})", crate::policy::CONFIG));
+        let sh = skills_sh.map_or("not set".to_string(), |on| format!("= {on} ({})", outer.label(crate::policy::SKILLS_SH, false)));
         println!("{}", ui::out(ui::Color::Dim, format!("search.skills-sh {sh}")));
     }
     if bad > 0 {

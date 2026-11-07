@@ -1,5 +1,5 @@
-//! Policy layers (D18): environment, enforced keys of the user `config.toml`, the manifest's
-//! `[policy]`, the rest of `config.toml`, built-in defaults.
+//! Policy layers (D18): environment, enforced keys of the system (D60) and user `config.toml`, the
+//! manifest's `[policy]`, the rest of the user and then the system `config.toml`, built-in defaults.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -59,6 +59,10 @@ pub struct Outer {
     /// Keys the system file enforces and the user's file tightens: like the environment, they leave
     /// the project's value unused (D60).
     pub tightened: BTreeSet<&'static str>,
+    /// `enforce` of the user's file alone; `config.enforce` also holds the system file's.
+    pub own_enforce: BTreeSet<&'static str>,
+    /// `enforce` of the system file: it, not the user's file, enforces these keys.
+    pub system_enforce: BTreeSet<&'static str>,
     pub env: Layer,
     /// `[agents] targets` of `config.toml` (D29).
     pub targets: Option<Vec<String>>,
@@ -245,6 +249,18 @@ pub fn system_config_path() -> Option<PathBuf> {
     }))
 }
 
+/// `[updates] managed` (D61) without the rest of the policy, so an unrelated policy error does not
+/// stop `self-check` or `self-update`; a file that may hold it and cannot be read is still an error.
+pub fn updates_managed() -> Result<Option<String>> {
+    if let Some(m) = system()?.updates_managed {
+        return Ok(Some(m));
+    }
+    Ok(match crate::scope::config_dir() {
+        Some(d) => read_config(&d.join(CONFIG))?.updates_managed,
+        None => None,
+    })
+}
+
 fn system() -> Result<Outer> {
     system_config_path().map_or_else(|| Ok(Outer::default()), |p| read_config(&p))
 }
@@ -266,7 +282,7 @@ pub fn over(system: Outer, mut user: Outer) -> Result<Outer> {
                 )
                 .hint(format!("remove it or make it stricter, or ask whoever manages {} to lift it", system.config_path)));
             }
-            Some(uv) if s.enforce.contains(k) && uv != sv => {
+            Some(uv) if s.enforce.contains(k) && !same(uv, sv) => {
                 user.tightened.insert(k);
             }
             Some(_) => {}
@@ -295,6 +311,7 @@ pub fn over(system: Outer, mut user: Outer) -> Result<Outer> {
         u.repository_ages.entry(prefix.clone()).or_insert(*age);
     }
     u.enforce.extend(&s.enforce);
+    user.system_enforce = s.enforce.clone();
     if user.targets.is_none() && system.targets.is_some() {
         user.targets = system.targets;
         user.from_system.insert("targets");
@@ -312,12 +329,12 @@ pub fn over(system: Outer, mut user: Outer) -> Result<Outer> {
 impl Outer {
     /// The file `k` (a policy key, `targets` or `skills-sh`) was read from, for messages.
     pub fn path_of(&self, k: &str) -> &str {
-        if self.from_system.contains(k) { &self.system_path } else { &self.config_path }
+        if self.from_system.contains(k) || self.system_enforce.contains(k) { &self.system_path } else { &self.config_path }
     }
 
     /// The layer name `config` and `--json` print for a value of `k` from a config file.
     pub fn label(&self, k: &str, enforced: bool) -> &'static str {
-        match (self.from_system.contains(k), enforced) {
+        match (self.from_system.contains(k) || enforced && self.system_enforce.contains(k), enforced) {
             (true, true) => SYSTEM_ENFORCED,
             (true, false) => SYSTEM,
             (false, true) => ENFORCED,
@@ -375,7 +392,8 @@ pub fn parse_config(text: &str, shown: &str) -> Result<Outer> {
         }
     }
     let config = layer(doc.get("policy").and_then(Item::as_table_like), shown, true)?;
-    Ok(Outer { config, config_path: shown.to_string(), targets, skills_sh, updates_managed, ..Default::default() })
+    let own_enforce = config.enforce.clone();
+    Ok(Outer { config, config_path: shown.to_string(), own_enforce, targets, skills_sh, updates_managed, ..Default::default() })
 }
 
 /// `config.toml` in the user's config dir, which need not exist yet.
@@ -463,7 +481,7 @@ pub fn resolve(project: &Layer, o: &Outer) -> Result<Effective> {
         // unused, so it cannot clash. A project may add to an enforced deny list (D57), not change
         // any other enforced key.
         if let (Some(e), Some(p), None, false) = (enforced, project.values.get(k), o.env.values.get(k), o.tightened.contains(k))
-            && if k == "deny-packages" { !tightens(k, p, e) } else { e != p }
+            && if k == "deny-packages" { !tightens(k, p, e) } else { !same(e, p) }
         {
             return Err(Error::new(MANIFEST, format!("policy.{k} is enforced as {e} by {}", o.path_of(k))).hint(format!(
                 "remove policy.{k} from {}, or ask whoever manages {} to lift it",
@@ -472,11 +490,10 @@ pub fn resolve(project: &Layer, o: &Outer) -> Result<Effective> {
             )));
         }
         // The environment repeating the enforced value changes nothing: it stays enforced.
-        let pick = if let Some(v) = o.env.values.get(k).filter(|v| enforced != Some(*v)) {
+        let pick = if let Some(v) = o.env.values.get(k).filter(|v| enforced.is_none_or(|e| !same(v, e))) {
             Some((v, ENVIRONMENT))
         } else if let Some(v) = enforced {
-            let added = project.values.get(k).filter(|p| k == "deny-packages" && tightens(k, p, v));
-            Some((added.unwrap_or(v), o.label(k, true)))
+            Some((v, o.label(k, true)))
         } else if let Some(v) = project.values.get(k) {
             Some((v, "skills.toml"))
         } else {
@@ -485,8 +502,25 @@ pub fn resolve(project: &Layer, o: &Outer) -> Result<Effective> {
         if let Some((v, from)) = pick {
             out.insert(k, (v.clone(), from));
         }
+        // An enforced deny list only adds (D57): every layer's entries apply, also the project's
+        // when the environment or a tightening config.toml sets the key.
+        if let (Some(_), Some((Value::List(l), _))) = (enforced.filter(|_| k == "deny-packages"), out.get_mut(k)) {
+            for v in [o.env.values.get(k), project.values.get(k), enforced].into_iter().flatten() {
+                if let Value::List(more) = v {
+                    l.extend(more.iter().filter(|p| !l.contains(p)).cloned().collect::<Vec<_>>());
+                }
+            }
+        }
     }
     Ok(out)
+}
+
+/// Equal values, lists in any order.
+fn same(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::List(a), Value::List(b)) => a.iter().collect::<BTreeSet<_>>() == b.iter().collect(),
+        _ => a == b,
+    }
 }
 
 /// Whether `k` comes from a layer the project cannot loosen: the environment or an enforced key.
@@ -533,7 +567,13 @@ mod tests {
         let user = |t: &str| over(sys.clone(), parse_config(t, "/u/config.toml").unwrap());
         let same = user("[policy]\nmin-release-age = \"3d\"\n").unwrap();
         assert!(same.tightened.is_empty() && same.config.enforce.contains("min-release-age"));
-        assert_eq!(same.path_of("min-release-age"), "/u/config.toml");
+        // The system file enforces the key, also when the user's file repeats or tightens it.
+        assert_eq!((same.path_of("min-release-age"), same.label("min-release-age", true)), ("/sys/config.toml", SYSTEM_ENFORCED));
+        let tighter = user("[policy]\nmin-release-age = \"5d\"\nenforce = [\"min-release-age\"]\n").unwrap();
+        assert_eq!((tighter.path_of("min-release-age"), tighter.label("min-release-age", true)), ("/sys/config.toml", SYSTEM_ENFORCED));
+        let clash = resolve(&proj("[policy]\nmin-release-age = \"1d\""), &same).unwrap_err();
+        assert!(clash.msg.contains("enforced as \"3d\" by /sys/config.toml") && clash.hint.unwrap().contains("manages /sys/"));
+        assert_eq!(tighter.own_enforce, tighter.system_enforce);
         // An exception may not go under the system's floor for its prefix, only above it.
         let ages = |a: &str| {
             user(&format!(
@@ -620,6 +660,9 @@ mod tests {
         assert!(resolve(&clash, &o).unwrap_err().msg.contains("policy.allow-sources is enforced"));
         let same = proj("[policy]\nallow-sources = [\"https://git.example.com/\"]");
         assert!(resolve(&same, &o).is_ok());
+        let two = |l: &str| cfg(&format!("[policy]\nallow-sources = [{l}]\nenforce = [\"allow-sources\"]")).unwrap();
+        let o2 = Outer { config: two("\"packagist\", \"github\""), ..Default::default() };
+        assert!(resolve(&proj("[policy]\nallow-sources = [\"github\", \"packagist\"]"), &o2).is_ok(), "any order");
 
         // The environment may narrow an enforced key, never widen it (D18).
         let env = |v: &str| env_layer(|k| (k == "SKILLCASK_ALLOW_SOURCES").then(|| v.to_string())).unwrap();
@@ -689,12 +732,26 @@ mod tests {
         let config = cfg("[policy]\ndeny-packages = [\"evil/*\"]\nenforce = [\"deny-packages\"]").unwrap();
         let o = Outer { config, config_path: "config.toml".into(), ..Default::default() };
         let more = proj("[policy]\ndeny-packages = [\"acme/bad\", \"evil/*\"]");
-        assert_eq!(resolve(&more, &o).unwrap()["deny-packages"], (Value::List(vec!["acme/bad".into(), "evil/*".into()]), ENFORCED));
+        assert_eq!(resolve(&more, &o).unwrap()["deny-packages"], (Value::List(vec!["evil/*".into(), "acme/bad".into()]), ENFORCED));
         let fewer = resolve(&proj("[policy]\ndeny-packages = [\"evil/x\"]"), &o).unwrap_err();
         assert!(fewer.msg.contains("policy.deny-packages is enforced as [\"evil/*\"]"), "{}", fewer.msg);
         let env = |v: &str| env_layer(|k| (k == "SKILLCASK_DENY_PACKAGES").then(|| v.to_string())).unwrap();
         assert!(resolve(&proj(""), &Outer { env: env("evil/*, acme/bad"), ..o.clone() }).is_ok());
-        assert!(resolve(&proj(""), &Outer { env: env(","), ..o }).unwrap_err().msg.contains("SKILLCASK_DENY_PACKAGES = [] loosens"));
+        assert!(
+            resolve(&proj(""), &Outer { env: env(","), ..o.clone() }).unwrap_err().msg.contains("SKILLCASK_DENY_PACKAGES = [] loosens")
+        );
+        // Regression: the project's entries were dropped when the environment or a tightening user
+        // file set the key, so acme/foo installed.
+        let p = proj("[policy]\ndeny-packages = [\"evil/*\", \"acme/foo\"]");
+        let e = resolve(&p, &Outer { env: env("evil/*, bad/x"), ..o.clone() }).unwrap();
+        assert_eq!(e["deny-packages"].0, Value::List(vec!["evil/*".into(), "bad/x".into(), "acme/foo".into()]));
+        let sys = parse_config("[policy]\ndeny-packages = [\"evil/*\"]\nenforce = [\"deny-packages\"]", "/sys/config.toml").unwrap();
+        let u = over(sys, parse_config("[policy]\ndeny-packages = [\"evil/*\", \"bad/x\"]", "/u/config.toml").unwrap()).unwrap();
+        assert!(u.tightened.contains("deny-packages"));
+        assert_eq!(
+            resolve(&p, &u).unwrap()["deny-packages"],
+            (Value::List(vec!["evil/*".into(), "bad/x".into(), "acme/foo".into()]), SYSTEM_ENFORCED)
+        );
     }
 
     #[test]

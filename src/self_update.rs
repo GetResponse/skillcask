@@ -29,7 +29,7 @@ pub fn run(verbose: bool, dry_run: bool) -> Result<()> {
         println!("skillcask {RUNNING} is the latest");
         return Ok(());
     }
-    if let Some(managed) = crate::policy::outer()?.updates_managed {
+    if let Some(managed) = crate::policy::updates_managed()? {
         return Err(
             Error::new(MANIFEST, format!("skillcask {RUNNING} -> {latest}: updates are managed by your organisation")).hint(managed)
         );

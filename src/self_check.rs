@@ -14,7 +14,10 @@ pub const RELEASES: &str = "https://github.com/GetResponse/skillcask/releases";
 
 /// One anonymous request; writes nothing. Every failure to fetch is a network error (exit 3).
 pub fn run(verbose: bool, json: bool) -> Result<()> {
-    let managed = crate::policy::outer()?.updates_managed;
+    let managed = crate::policy::updates_managed().unwrap_or_else(|e| {
+        ui::warn(format!("updates.managed unknown: {e}"));
+        None
+    });
     let latest = latest_release(verbose)?;
     let newer = latest.as_deref().is_some_and(is_newer);
     if json {
@@ -26,11 +29,11 @@ pub fn run(verbose: bool, json: bool) -> Result<()> {
         Some(l) if newer => {
             println!("skillcask {RUNNING}, latest {l}: {}", ui::out(ui::Color::Yellow, "update available"));
             ui::note(format!("release: {RELEASES}/tag/v{l}"));
-            if let Some(m) = &managed {
-                ui::note(format!("updates are managed by your organisation: {m}"));
-            }
         }
         Some(l) => println!("skillcask {RUNNING}, latest {l}: {}", ui::out(ui::Color::Green, "up to date")),
+    }
+    if let Some(m) = &managed {
+        ui::note(format!("updates are managed by your organisation: {m}"));
     }
     Ok(())
 }
