@@ -20,8 +20,8 @@ All skills of one repository share one entry in `skills.toml`:
 Which version you get:
 
 - **Repository with version tags** (`v1.3.1`): `add` writes `version = "^<major.minor>"`, like
-  for Composer packages, and `update` moves within it. The release time of a tag is its commit
-  date.
+  for Composer packages, and `update` moves within it. The release time of a tag is the
+  publication of its GitHub release, or its commit date when that is later or there is no release.
 - **Repository without tags**: the entry follows the default branch; `ref = "main"` names a
   branch, tag or commit instead. The lock pins the commit sha, so `install` keeps installing that
   commit until you run `update`.
@@ -43,8 +43,8 @@ the runner names: `SKILLCASK_GITHUB_API`, else GitHub Actions' `GITHUB_API_URL`,
 `api.github.com`; for an Enterprise URL set only in `skills.toml`, use
 `skillcask auth set ghe.example.com --username oauth2` or `github-oauth` in `auth.json`.
 
-skills.sh itself is not queried: its API is undocumented and may change without notice. Search
-on the website, then add what you picked.
+`skillcask search --skills-sh` also searches skills.sh (opt-in, since skills.sh receives the
+query); installing still goes through the GitHub API.
 
 ## Skills from any git repository
 

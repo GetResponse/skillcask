@@ -1,6 +1,6 @@
 # Commands
 
-Every command except `publish`, `validate` and `projects` takes `-g, --global`.
+Every command except `publish`, `validate`, `projects`, `auth`, `app` and plugins takes `-g, --global`.
 
 | Command | |
 |---|---|
@@ -27,7 +27,7 @@ Every command except `publish`, `validate` and `projects` takes `-g, --global`.
 | `ui` | A terminal UI over the commands above: skills with their state and updates, `info`, SKILL.md and `audit` per skill, add, adopt (also offered when an add hits a skill skillcask does not manage), update (diff first), remove, doctor, a filter of the list, search of the registries (and skills.sh, asked once), the repositories in use (`R`, `S` turns skills.sh on or off) and a projects picker; `g` switches between the project and `--global`. |
 | `app` | Opens the macOS app (see [macOS app](macos-app.md)); exits 1 when it is not installed, and on Linux and Windows. |
 | `self-check [--json]` | Whether a newer skillcask is released, from the `skillcask-app` cask file of the tap; one anonymous request, only when run; writes nothing. |
-| `self-update [--dry-run]` | Update skillcask: reruns the release's installer for an installer-script install (Linux, macOS), else prints the Homebrew, npm, cargo or app command and exits 1. `--dry-run` prints what would run. |
+| `self-update [--dry-run]` | Update skillcask: reruns the release's installer for an installer-script install (Linux, macOS), else prints the Homebrew, npm, bun, cargo or app command (for an unknown install, the release page) and exits 1. With `[updates] managed` in `config.toml` it prints that text instead and runs nothing ([see Install](install.md#update)). `--dry-run` prints what would run. |
 | `<other>` | Runs `skillcask-<other>` from `PATH`, like git and cargo plugins. |
 
 `status`, `outdated`, `info`, `search`, `doctor`, `audit`, `projects`, `config` and
@@ -36,8 +36,9 @@ warnings and errors stay on stderr. Package text in it is escaped as in the term
 (`<U+202E>`). `status --json` has `repositories`
 (`[{"name", "type", "url", "allowed"}]`) and `skills-sh`; `search --json` results carry `source` (the repository
 name, or `skills.sh`) and `installs`, and the document has `"skills-sh": true|false|null` (`null`:
-never decided). `self-check --json` is `{"version", "latest", "newer"}` (`latest` is `null` when
-the cask holds no readable version). For example `skillcask outdated --json | jq
+never decided). `self-check --json` is `{"version", "latest", "newer", "managed"}` (`latest` is `null` when
+the cask holds no readable version; `managed` is the `[updates] managed` text, `null` when unset,
+whatever the release state). For example `skillcask outdated --json | jq
 '.packages[] | select(.within != .locked)'`.
 
 Exit codes: 0 ok, 1 manifest/lock/status problems, 2 authentication, 3 network, 4 hash mismatch,

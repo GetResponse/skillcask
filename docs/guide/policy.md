@@ -23,9 +23,11 @@ from the environment. The first layer that sets a key wins:
    `SKILLCASK_DENY_PACKAGES` (lists comma-separated; against an enforced key only a stricter value
    is accepted: a longer cooldown, `deny-patterns` on, the others off, narrower sources, more
    denied packages);
-2. keys `config.toml` lists in `enforce`: a project that sets them otherwise fails;
+2. keys the machine-wide or the user's `config.toml` lists in `enforce`: a project that sets them
+   otherwise fails;
 3. `[policy]` in `skills.toml`;
-4. the other keys of `config.toml`, as defaults.
+4. the other keys of the user's `config.toml`, as defaults;
+5. the other keys of the machine-wide `config.toml` (below).
 
 ```toml
 # ~/.config/skillcask/config.toml: only the company registry and GitHub, in every project
