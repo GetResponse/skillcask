@@ -33,9 +33,9 @@ public struct DiffLine: Hashable, Sendable, Identifiable {
 
 extension UnifiedDiff.File {
     /// `lines` numbered: every `@@` header seeds the old and new counters, context lines advance both, `+` the
-    /// new one, `-` the old one. The CLI strips the trailing space of a blank context line, so an empty line
-    /// counts as context while the hunk still has lines to show; an empty line after a hunk is finished is the
-    /// blank the CLI prints between hunks and draws nothing. A `\ No newline at end of file` never reaches
+    /// new one, `-` the old one. The CLI prints a blank context line as one space; an empty line (that space
+    /// trimmed on the way) counts as context while the hunk still has lines to show, and draws nothing after
+    /// it. A `\ No newline at end of file` never reaches
     /// `lines` (`UnifiedDiff` drops it).
     public var diffLines: [DiffLine] {
         var rows: [DiffLine] = []

@@ -5,7 +5,8 @@ import Foundation
 public struct ConfigValueDocument: Decodable, Hashable, Sendable {
     /// `true`/`false`, a string, a number or a list, as the key has it; `.null` when not set.
     public let value: JSONValue
-    /// `config.toml`, `config.toml, enforced`, `skills.toml`, `environment` or `default`; nil when not set.
+    /// `config.toml`, `config.toml, enforced`, `system config.toml`, `system config.toml, enforced` (D60),
+    /// `skills.toml`, `environment` or `default`; nil when not set.
     public let from: String?
 
     enum CodingKeys: String, CodingKey {
@@ -58,6 +59,10 @@ public enum ConfigLayer: Hashable, Sendable {
     case configFile
     /// `config.toml, enforced`: listed in `policy.enforce`, so no project can loosen it.
     case enforced
+    /// `system config.toml` (D60): the machine-wide file; the user's config.toml may set the key over it.
+    case system
+    /// `system config.toml, enforced`: the organisation enforces it; the user's config.toml may only tighten it.
+    case systemEnforced
     /// A `SKILLCASK_*` variable of the CLI's environment: it wins over every file.
     case environment
     /// The built-in value.
@@ -71,6 +76,8 @@ public enum ConfigLayer: Hashable, Sendable {
         switch from {
         case "config.toml": self = .configFile
         case "config.toml, enforced": self = .enforced
+        case "system config.toml": self = .system
+        case "system config.toml, enforced": self = .systemEnforced
         case "environment": self = .environment
         case "default": self = .builtIn
         case "skills.toml": self = .manifest
@@ -78,7 +85,7 @@ public enum ConfigLayer: Hashable, Sendable {
         }
     }
 
-    /// config.toml sets the key, so `config --unset` has something to remove.
+    /// The user's config.toml sets the key, so `config --unset` has something to remove.
     public var isConfigFile: Bool {
         self == .configFile || self == .enforced
     }
@@ -89,7 +96,8 @@ public enum ConfigKey {
     /// The CLI's own order: `policy::KEYS`, then the keys `settings` appends.
     public static let order = [
         "policy.min-release-age", "policy.allow-ranges", "policy.packagist", "policy.github-requires",
-        "policy.allow-sources", "policy.deny-patterns", "policy.enforce", "agents.targets", "search.skills-sh",
+        "policy.allow-sources", "policy.deny-patterns", "policy.deny-packages", "policy.enforce", "agents.targets",
+        "search.skills-sh",
     ]
 
     /// How a value is edited and written.
@@ -106,7 +114,9 @@ public enum ConfigKey {
         "policy.allow-ranges", "policy.packagist", "policy.github-requires", "policy.deny-patterns",
         "search.skills-sh",
     ]
-    static let lists: Set<String> = ["policy.allow-sources", "policy.enforce", "agents.targets"]
+    static let lists: Set<String> = [
+        "policy.allow-sources", "policy.deny-packages", "policy.enforce", "agents.targets",
+    ]
 
     /// A known key's kind; a key a newer CLI adds is judged by its value.
     public static func kind(of key: String, value: JSONValue) -> Kind {
@@ -132,7 +142,7 @@ public enum ConfigKey {
     /// The variable that overrides a `policy.*` key (`policy::env_layer`): `SKILLCASK_MIN_RELEASE_AGE`; nil for
     /// the keys no variable sets.
     public static func environmentVariable(for key: String) -> String? {
-        let policyKeys = order.prefix(6)
+        let policyKeys = order.prefix { $0 != "policy.enforce" }
         guard policyKeys.contains(key), let name = key.split(separator: ".").last else { return nil }
         return "SKILLCASK_" + name.uppercased().replacingOccurrences(of: "-", with: "_")
     }

@@ -59,6 +59,17 @@ import Testing
         #expect(AgentTarget.resolve(nil, isGlobal: false).isEmpty)
     }
 
+    /// CLI 0.10.3 prints the pairs: the app takes them over its convention (here a directory no preset has).
+    @Test func targetsAgentsWinOverTheConvention() throws {
+        let json = #"""
+            {"entries":["claude","cursor"],"dirs":[".claude/x"],"from":"skills.toml",\#
+            "agents":[{"entry":"claude","dir":".claude/x"},{"entry":"cursor","dir":null}]}
+            """#
+        let targets = try JSONDecoder().decode(StatusDocument.Targets.self, from: Data(json.utf8))
+        let resolved = AgentTarget.resolve(targets, isGlobal: false)
+        #expect(resolved.map(\.entry) == ["claude", "cursor"] && resolved.map(\.directory) == [".claude/x", nil])
+    }
+
     @Test func onlyPresetsWithTheirOwnDirectoryGetOne() throws {
         // `cursor` reads the store even when a path target names `.cursor/skills`.
         let cursor = try Self.targets(["cursor", "./.cursor/skills"], [".cursor/skills"])

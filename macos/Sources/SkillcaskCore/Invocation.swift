@@ -55,10 +55,11 @@ public struct Invocation: Hashable, Sendable {
         /// per entry of a list key; prints `set <key> in <file>`. An empty list cannot be written (no values reads
         /// the key): `configUnset` removes it.
         case configSet(key: String, values: [String])
-        /// `config --unset -- <key>`: removes the key from the file; prints `removed <key> from <file>`.
+        /// `config --unset -- <key>`: removes the key from the file; prints `removed <key> from <file>`, or a note
+        /// that the file does not set it (exit 0 either way).
         case configUnset(key: String)
-        /// `self-check --json` (D51): `{"version", "latest", "newer"}`, one anonymous request for the tap's cask
-        /// file. Only behind `SelfCheckGate` (`CLIClient.selfCheck`): older CLIs would run a plugin.
+        /// `self-check --json` (D51): `{"version", "latest", "newer", "managed"}`, one anonymous request for the
+        /// tap's cask file. Only behind `SelfCheckGate` (`CLIClient.selfCheck`): older CLIs would run a plugin.
         case selfCheck
     }
 

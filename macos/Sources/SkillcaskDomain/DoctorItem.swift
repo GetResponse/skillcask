@@ -42,9 +42,9 @@ public enum DoctorItem: Hashable, Sendable {
     case committed([String])
     /// `.gitignore: stale managed block`.
     case staleBlock(file: String)
-    /// `.skillcask/skills/jira-syntax: not installed (netresearch/agent-jira-skill); run …`.
+    /// `.agents/skills/jira-syntax: not installed (netresearch/agent-jira-skill); run …`.
     case notInstalled(skill: String, package: String?)
-    /// `.skillcask/skills/x: modified (acme/x); run …`.
+    /// `.agents/skills/x: modified (acme/x); run …`.
     case modified(skill: String, package: String?)
 
     // MARK: - Warnings
@@ -189,7 +189,7 @@ extension ScopeSnapshot.Doctor {
     /// `passed`, typed.
     public var passedItems: [DoctorItem] { passed.map(DoctorItem.init(line:)) }
 
-    /// The skills `doctor` reports as not installed (`.skillcask/skills/<name>: not installed …`).
+    /// The skills `doctor` reports as not installed (`.agents/skills/<name>: not installed …`).
     public var missingSkills: Set<String> {
         Set(
             problemItems.compactMap { item in

@@ -3,8 +3,8 @@ import SwiftUI
 
 /// The Policy card (Overview): `status.policy` as setting, value and where it was set, with `enforced` in the
 /// warning colour, and the footnote explaining it. In a quiet project (Overview-States Healthy) each setting is
-/// one line, `Minimum release age 0 h default`. The board's "Open config.toml" link is not drawn: no CLI document
-/// names the user's config.toml path (Q1 family).
+/// one line, `Minimum release age 0 h default`. The board's "Open config.toml" link is not drawn: Settings ›
+/// Advanced has Open config.toml.
 struct PolicyCard: View {
     let snapshot: ScopeSnapshot
     /// Overview-States Healthy: the compact one-line form.
@@ -34,7 +34,7 @@ struct PolicyCard: View {
                         headers: [OverviewCopy.setting, OverviewCopy.value, OverviewCopy.setIn],
                         rows: snapshot.policy.map(row))
                     if snapshot.policy.contains(where: \.isEnforced) {
-                        Text(OverviewCopy.policyFootnote)
+                        Text(OverviewCopy.policyFootnote(snapshot.policy))
                             .font(Font.Token.caption)
                             .foregroundStyle(Color.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)

@@ -30,7 +30,7 @@ change fails until both are updated.
 | S13 | Onboarding: CLI missing or too old, first launch hints |
 | S14 | Settings: General, Search, Updates, Global, Advanced |
 | S15 | Activity drawer: one row per run this session with its transcript |
-| U1–U5 | App update (D51): sidebar card (consent, available, waiting), update sheet per install method (Homebrew, download, temporary copy), app menu Check for Updates…, check alerts, Settings › Updates app group |
+| U1–U5 | App update (D51): sidebar card (consent, available, waiting), update sheet per install method (Homebrew, download, temporary copy) or managed by the organisation (D61), app menu Check for Updates…, check alerts, Settings › Updates app group |
 
 Flows, walked end to end through the screens: F1 first launch, F2 add a skill, F3 update with
 review, F4 adopt, F5 fix problems.
@@ -121,7 +121,11 @@ Code comments cite these by number.
   variant and no release date. The sheet is 680 wide (U2 draws 740, with notes), its title is
   `sheetTitle` 20 pt (U2: 17), footers are one row, a temporary copy has no Skip and shows in
   Finder only from the primary. Settings' group is `Skillcask app` with no command-line tool line
-  and no pre-release switch; Check Now answers inline there, never as a main-window alert.
+  and no pre-release switch; Check Now answers inline there, never as a main-window alert. A managed
+  machine (no board, D61: the last `self-check` printed `managed`) gets one more variant: "Updates
+  are managed by your organisation" over the CLI's text, no steps and no command to copy, with
+  `Remind Me Tomorrow`, `Skip This Version` and the release page. A check without the key (a CLI
+  before 0.12.1) keeps the last answer; `"managed": null` clears it.
 - **G15** Agent badges (no board): a skill row shows which `[agents] targets` see the skill as 16 pt
   `Pill`s in the `.agentBadge` style: a text monogram (`CC`, `Cu`, `Cx`, `De`; a folder glyph for a
   path target; never a vendor logo). They come from `status.targets` and `doctor`'s per-target link
@@ -184,14 +188,13 @@ them by number; the numbers have gaps.
   pending update shows no flags.
 - **Q12** No board state for an empty filter without a query: "Nothing in <filter>" with Show All.
 - **Q15** The board says Reinstall keeps a copy; `install` keeps none, so the app warns and asks.
-- **Q19** `status.targets` prints `entries` (as written) and `dirs` (resolved) as two lists that are
-  not parallel: store agents get no directory and duplicates collapse. The app pairs them by
-  convention (a path entry is its own directory; `claude`, `kiro` and, in the global scope, `junie`
-  take their preset directory, which `resolve_targets` always lists in `dirs`; every other entry
-  reads the store `.agents/skills`; a repeated entry counts once). An add-only
-  `targets.agents: [{entry, dir}]` key (D32), with `dir: null` for the store,
-  would replace the convention, kept as the fallback for older CLIs, and a per-skill `links` map in
-  `status` entries would replace parsing `doctor`'s link lines.
+- **Q19** The app reads each agent's directory from `status.targets.agents: [{entry, dir}]` (CLI
+  0.10.3, `dir: null` for the store). An older CLI prints only `entries` (as written) and `dirs`
+  (resolved), two lists that are not parallel: store agents get no directory and duplicates collapse.
+  For it the app pairs them by convention (a path entry is its own directory; `claude`, `kiro` and,
+  in the global scope, `junie` take their preset directory, which `resolve_targets` always lists in
+  `dirs`; every other entry reads the store `.agents/skills`; a repeated entry counts once). A
+  per-skill `links` map in `status` entries would replace parsing `doctor`'s link lines.
 - **Q18** No command compares installed files with the lock: Review changes and the changed-file
   list are hidden; Reinstall is the only action.
 
@@ -201,8 +204,10 @@ them by number; the numbers have gaps.
   and the detail. The window title is the scope's name and path.
 - Sheets and the Remove alert are pinned to the scope they were opened for: switching the sidebar
   does not move them, and they close if that scope goes away.
-- One mutation at a time per scope (`MutationQueue`): the CLI has no lock of its own. Mutations of
-  other scopes and every read run in parallel; the scope's mutating actions are disabled meanwhile.
+- One mutation at a time in the whole app: `ActionRunner.run` refuses a second run while one is in
+  flight, and the mutating actions are disabled meanwhile. `MutationQueue` also orders a scope's
+  mutations (the CLI has no lock of its own), and that scope's quiet refreshes wait for them; every
+  read runs in parallel.
 - Short runs (Check, Sync, Refresh) show progress in the list header; sheet runs keep it in the
   sheet. The outcome is a toast at the bottom of the list column; a failure is a banner with the
   CLI's hint. Exit 4 (integrity) has its own variant and is never retried automatically.
@@ -220,7 +225,9 @@ them by number; the numbers have gaps.
 - Settings (⌘,) is the standard Settings window: CLI path and version, the skills.sh switch, GitHub
   sign-in (`auth set` / `auth remove`), the environment table, and the size of the adopted copies.
   Global (no board) lists every key of `-g config --json` with its layer and changes it through
-  `-g config`, read-only where the environment wins or `allow-sources` holds a redacted URL.
+  `-g config`, read-only where the environment wins, the system config.toml enforces the key (D60) or
+  `allow-sources` holds a redacted URL. A key only the system file sets has no Unset: the user's file
+  does not hold it.
 
 ## Safety
 

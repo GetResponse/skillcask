@@ -47,6 +47,14 @@ import Testing
         let report = StderrReport(parsing: coloured)
         #expect(report.error == "boom" && report.hint == "try again")
     }
+
+    /// Regression: a message with its own line breaks (`src/deps.rs` conflicts) was cut to its first line.
+    @Test func indentedLinesContinueTheError() {
+        let stderr = "error: acme/x: no version fits:\n  acme/a (^1.0)\n  acme/b (^2.0)\n  hint: run update\n  stray\n"
+        let report = StderrReport(parsing: stderr)
+        #expect(report.error == "acme/x: no version fits:\nacme/a (^1.0)\nacme/b (^2.0)")
+        #expect(report.hint == "run update" && report.other == ["  stray"])
+    }
 }
 
 @Suite struct VersionTests {

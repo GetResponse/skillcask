@@ -41,14 +41,10 @@ public enum Labels {
     /// `4.3.0 on 30 Oct` from the CLI note `4.3.0 eligible 2026-10-30T09:14:00Z` (the board's wording, the day
     /// in `timeZone`); `Cooldown` when the note is missing or says something else. Versions never carry a `v`.
     public static func cooldown(note: String?, timeZone: TimeZone = .current) -> String {
-        guard let note, let range = note.range(of: " eligible "),
-            let date = try? Date(note[range.upperBound...].trimmingCharacters(in: .whitespaces), strategy: .iso8601)
-        else { return cooldownPlaceholder }
-        var version = note[..<range.lowerBound].trimmingCharacters(in: .whitespaces)
-        if version.hasPrefix("v") {
-            version.removeFirst()
+        guard let note, let version = Update.notedVersion(note), let date = Update.eligibleDate(note) else {
+            return cooldownPlaceholder
         }
-        return "\(version) on \(Formatters.dayMonth(date, timeZone: timeZone))"
+        return "\(Update.bare(version)) on \(Formatters.dayMonth(date, timeZone: timeZone))"
     }
 
     /// Placeholder words for the two cases no board labels: a cooldown whose note names no eligible date, and a

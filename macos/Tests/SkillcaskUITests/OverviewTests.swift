@@ -158,9 +158,35 @@ import Testing
             ])
         #expect(
             SourcesCard.footnote(DesignFixtures.api)
-                == "GitHub is blocked by Allowed sources, set in config.toml by your organisation. Skills from it "
+                == "GitHub is blocked by Allowed sources, set and enforced in your config.toml. Skills from it "
                 + "stay installed but cannot be added or updated here.")
         #expect(SourcesCard.footnote(DesignFixtures.website) == nil)
+    }
+
+    /// Regression: every enforced key read "by your organisation"; only the system config.toml (D60) is theirs.
+    @Test func onlyTheSystemFileIsTheOrganisation() throws {
+        let json = #"""
+            {"ok":true,"entries":[],"policy":{"allow-sources":{"from":"system config.toml, enforced","value":["a"]},\#
+            "min-release-age":{"from":"config.toml, enforced","value":"3d"}}}
+            """#
+        let status = try JSONDecoder().decode(StatusDocument.self, from: Data(json.utf8))
+        let policy = ScopeSnapshot(status: status, audit: nil, doctor: nil, outdated: nil).policy
+        let system = try #require(policy.first { $0.kind == .allowSources })
+        let own = try #require(policy.first { $0.kind == .minReleaseAge })
+        #expect(
+            OverviewCopy.blockedFootnote(["GitHub"], policy: system)
+                == "GitHub is blocked by Allowed sources, set in system config.toml by your organisation. Skills from "
+                + "it stay installed but cannot be added or updated here.")
+        #expect(
+            OverviewCopy.policyFootnote([system])
+                == "“Enforced” means your organisation set it; the project cannot override it.")
+        #expect(
+            OverviewCopy.policyFootnote([own])
+                == "“Enforced” means your config.toml enforces it; the project cannot override it.")
+        #expect(
+            VersionsCopy.cooldownBody(minimumAge: own, released: nil)
+                .hasPrefix(
+                    "Your minimum release age is 3 d, set and enforced in your config.toml."))
     }
 
     // MARK: - Cards

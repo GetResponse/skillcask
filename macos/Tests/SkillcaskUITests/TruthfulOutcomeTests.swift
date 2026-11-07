@@ -51,7 +51,7 @@ import Testing
         #expect(store.partialFailure == nil)
     }
 
-    /// A refresh whose `status` fails replaces the partial warning with `lastError`: no strip about an older
+    /// A refresh whose `status` fails replaces the partial warning with `refreshError`: no strip about an older
     /// refresh's `audit` stays beside it. The strip's Details show the failure.
     @Test(.timeLimit(.minutes(1))) func aWholeFailedRefreshClearsThePartialWarning() async throws {
         let failure = CLIError.failed(code: .file, message: "cannot read skills.lock", hint: nil, stderr: "io: denied")
@@ -66,7 +66,7 @@ import Testing
         let partial = try #require(store.partialFailure)
         #expect(PartialRefreshStrip.details(of: partial.error) == "Cannot read skills.lock.\nio: denied")
         await store.refresh()
-        #expect(store.partialFailure == nil && store.lastError == failure && store.snapshot != nil)
+        #expect(store.partialFailure == nil && store.refreshError == failure && store.snapshot != nil)
     }
 
     /// On a first load nothing stands in: the warning says the findings are missing.
@@ -101,6 +101,11 @@ import Testing
         #expect(ActionRunner.verdict(of: try result(.doctor(fix: true), doctor, .signaled(9))) == .killed(signal: 9))
         guard case .decode = ActionRunner.verdict(of: try result(.doctor(fix: true), "half {", .exited(1))) else {
             Issue.record("stdout that is not JSON is unreadable")
+            return
+        }
+        // Regression: Repair reported success when its JSON did not decode as a doctor document.
+        guard case .decode = ActionRunner.verdict(of: try result(.doctor(fix: true), #"{"x":1}"#, .exited(0))) else {
+            Issue.record("a repair without a doctor document is not a success")
             return
         }
         #expect(ActionRunner.verdict(of: try result(.doctor(fix: false), "", .exited(0))) == .noDocument)
@@ -267,6 +272,25 @@ extension CLIError {
         #expect(store.skillsSh == expected)
         let invocation = try #require(await client.invocations.first)
         #expect(invocation.argv == ["-g", "config", "--json", "--", "search.skills-sh"])
+    }
+
+    /// Regression: the read had no generation guard, so a cancelled read reset the switch to unknown and a slow
+    /// earlier read could overwrite a later one.
+    @Test func onlyTheNewestSkillsShReadCounts() async {
+        let slow = Gate()
+        await client.json(Self.read, in: .personal, #"{"from":"config.toml","value":false}"#, gate: slow)
+        await client.json(Self.read, in: .personal, #"{"from":"system config.toml","value":true}"#)
+        let store = store()
+        let first = Task { await store.loadSkillsSh(in: context()) }
+        await slow.arrived()
+        await store.loadSkillsSh(in: context())
+        await slow.open()
+        await first.value
+        #expect(store.skillsSh == .on && store.skillsShFrom == "system config.toml")
+        #expect(SettingsCopy.storedIn(store.skillsShFrom) == "in system config.toml.")
+        await client.script(Self.read, in: .personal, .error(.cancelled))
+        await store.loadSkillsSh(in: context())
+        #expect(store.skillsSh == .on)
     }
 
     /// A read that fails (a broken config.toml) leaves the switch unknown: nothing falls back to the file.

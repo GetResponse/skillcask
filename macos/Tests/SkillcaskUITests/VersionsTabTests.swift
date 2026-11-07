@@ -35,7 +35,7 @@ import Testing
         #expect(callout.title == "4.3.0 becomes available on 30 Oct 2026.")
         #expect(
             callout.text
-                == "Your minimum release age is 3 d, set in config.toml and enforced by your organisation. It was "
+                == "Your minimum release age is 3 d, set and enforced in your config.toml. It was "
                 + "released 28 Oct 2026 at 09:14. Skillcask offers it once it is old enough. An older version in your "
                 + "range may be eligible now; Review changes… on the Overview shows what Update would lock.")
         #expect(content.rows.map(\.label) == ["Installed", "Allowed range", "Available in range", "Newest overall"])

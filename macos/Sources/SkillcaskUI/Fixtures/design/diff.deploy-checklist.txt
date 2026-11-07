@@ -14,7 +14,7 @@ local/deploy-checklist lock -> disk
 
 --- a/deploy-checklist/scripts/deploy.sh
 +++ b/deploy-checklist/scripts/deploy.sh
-@@ -3,4 +3,5 @@
+@@ -3,3 +3,4 @@
  set -eu
  helm upgrade --install api ./chart --kubeconfig "$KUBECONFIG"
 -ssh deploy.acme.example 'systemctl restart api'

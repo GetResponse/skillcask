@@ -5,13 +5,26 @@ public struct SelfCheckDocument: Decodable, Hashable, Sendable {
     public let version: String
     public let latest: String?
     public let newer: Bool
-    public let managed: String?
+    /// `.some(nil)` for `"managed": null` (nobody), `nil` when the key is absent: an older CLI does not know.
+    public let managed: String??
 
-    public init(version: String, latest: String?, newer: Bool, managed: String? = nil) {
+    enum CodingKeys: String, CodingKey {
+        case version, latest, newer, managed
+    }
+
+    public init(version: String, latest: String?, newer: Bool, managed: String?? = nil) {
         self.version = version
         self.latest = latest
         self.newer = newer
         self.managed = managed
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decode(String.self, forKey: .version)
+        latest = try c.decodeIfPresent(String.self, forKey: .latest)
+        newer = try c.decode(Bool.self, forKey: .newer)
+        managed = c.contains(.managed) ? .some(try c.decodeIfPresent(String.self, forKey: .managed)) : nil
     }
 
     /// `latest` read again strictly (`Version.init?(strict:)`): nil when it is null or anything but a plain
@@ -59,7 +72,13 @@ extension CLIClient {
         if let failure = result.failure(), Self.isUnknownSelfCheck(failure) {
             return .unsupported
         }
-        return .checked(try result.document(SelfCheckDocument.self))
+        let document = try result.document(SelfCheckDocument.self)
+        // A CLI that could not read `updates.managed` warns and prints null: that says nothing about the machine.
+        if StderrReport(parsing: result.stderr).warnings.contains(where: { $0.hasPrefix("updates.managed unknown") }) {
+            return .checked(
+                SelfCheckDocument(version: document.version, latest: document.latest, newer: document.newer))
+        }
+        return .checked(document)
     }
 
     /// An older CLI's refusal of the word `self-check`: `unknown command "self-check" (no skillcask-self-check on

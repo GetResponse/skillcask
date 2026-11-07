@@ -17,12 +17,18 @@ public struct StderrReport: Hashable, Sendable {
         self.other = other
     }
 
-    /// The first `error:` line wins; a later one is kept in `other` so nothing is lost.
+    /// The first `error:` line wins; a later one is kept in `other` so nothing is lost. A message's own line
+    /// breaks print as lines indented by two spaces (`required by: …`), which stay part of the error.
     public init(parsing stderr: String) {
+        var inError = false
         for raw in stderr.split(separator: "\n", omittingEmptySubsequences: true) {
             let line = Self.stripANSI(String(raw))
             if line.isEmpty { continue }
-            if let text = Self.strip("error: ", from: line), error == nil {
+            let continues = inError && line.hasPrefix("  ") && !line.hasPrefix("  hint: ")
+            inError = continues || (error == nil && line.hasPrefix("error: "))
+            if continues, let first = error {
+                error = first + "\n" + line.dropFirst(2)
+            } else if let text = Self.strip("error: ", from: line), error == nil {
                 error = text
             } else if let text = Self.strip("  hint: ", from: line), hint == nil {
                 hint = text

@@ -35,6 +35,12 @@ public enum StripCopy {
             .joined(separator: " ")
     }
 
+    /// The same strip when the whole refresh failed and the last snapshot stays (`ScopeStore.refreshError`).
+    /// Invented.
+    public static let refreshFailed = "Couldn’t refresh: this is what the last refresh read."
+    /// The same strip when `outdated` failed other than offline (`ScopeStore.checkError`). Invented.
+    public static let checkFailed = "Couldn’t check for updates: updates are from the last check."
+
     /// The partial-refresh strip's link once its details show. Invented (its other state is `OutcomeCopy.details`).
     public static let hideDetails = "Hide details"
 

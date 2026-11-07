@@ -368,8 +368,8 @@ import SkillcaskDomain
     /// false (a batch item: the batch shows one summary through `announce(_:)`); a failure is the banner for
     /// `.window` and only the returned `.failed` for `.sheet`, which shows it in place. A sheet's run never touches
     /// the window's banner or its Retry. Cancelling the calling task cancels the run. `failure` is the failure's
-    /// title as Copy words it ("Couldn’t sync."); nil falls back to `OutcomeCopy.couldNot(title)` for callers not
-    /// yet migrated (that reads "Couldn’t Syncing…." for a progressive title, so every caller should pass one).
+    /// title as Copy words it ("Couldn’t sync."); nil falls back to `OutcomeCopy.couldNot(title)` (that reads
+    /// "Couldn’t Syncing…." for a progressive title, so every caller should pass one).
     ///
     /// The returned value arrives after the scope's refresh. `onEnd` gets the same end, and the run's id (its
     /// `ActivityEntry`), as soon as the run is recorded and its toast set, before that refresh: a sheet closes
@@ -612,6 +612,12 @@ import SkillcaskDomain
         case .exited(0), .exited(1):
             if run.stdout.isEmpty {
                 return run.failure() ?? .noDocument
+            }
+            // Repair's document is its only record of what it fixed: one that does not decode is no success.
+            if run.invocation.command == .doctor(fix: true),
+                (try? JSONDecoder().decode(DoctorDocument.self, from: run.stdout)) == nil
+            {
+                return .decode("stdout is not a doctor document", raw: run.stdout)
             }
             if (try? JSONDecoder().decode(JSONValue.self, from: run.stdout)) != nil {
                 return nil

@@ -161,12 +161,21 @@ import Testing
         #expect(GlobalPane.readOnlyReason("policy.allow-sources", names) == nil)
         let enforced = ConfigValueDocument(value: .string("72h"), from: "config.toml, enforced")
         #expect(GlobalPane.readOnlyReason("policy.min-release-age", enforced) == nil)
+        let system = ConfigValueDocument(value: .string("72h"), from: "system config.toml")
+        #expect(GlobalPane.readOnlyReason("policy.min-release-age", system) == nil)
+        let systemList = ConfigValueDocument(value: .array([.string("allow-sources")]), from: "system config.toml")
+        #expect(GlobalPane.readOnlyReason("policy.enforce", systemList) == SettingsCopy.systemEnforcedNote)
+        let organisation = ConfigValueDocument(value: .string("72h"), from: "system config.toml, enforced")
+        #expect(GlobalPane.readOnlyReason("policy.min-release-age", organisation) == SettingsCopy.systemEnforcedNote)
     }
 
     /// Unset only where config.toml sets the key and does not enforce it: the CLI refuses `--unset` of a key
     /// `policy.enforce` lists (`Fixtures/0.9.4/config.refused-unset-enforced.stderr`).
     @Test func unsetIsOfferedOnlyWhereTheCLITakesIt() {
-        let offered = [ConfigLayer.configFile, .enforced, .builtIn, .environment].filter { GlobalPane.canUnset($0) }
+        let offered = [ConfigLayer.configFile, .enforced, .system, .systemEnforced, .builtIn, .environment]
+            .filter {
+                GlobalPane.canUnset($0)
+            }
         #expect(offered == [ConfigLayer.configFile])
         #expect(!GlobalPane.canUnset(nil))
     }

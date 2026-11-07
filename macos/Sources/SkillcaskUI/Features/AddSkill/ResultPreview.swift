@@ -96,7 +96,7 @@ struct ResultPreview: View {
         }
     }
 
-    /// `MIT · 4.1k installs · newest 4.3.0 · 4.2.0 will be installed; 4.3.0 is inside your 72h minimum release age`.
+    /// `MIT · 4.1k installs · newest 4.3.0 · 4.2.0 will be installed; 4.3.0 is inside your 3 d minimum release age`.
     private func meta(_ info: InfoDocument) -> Text {
         let lead = Self.metaParts(info, installs: search.selectedResult?.installs).joined(separator: " · ")
         let note = Self.installNote(

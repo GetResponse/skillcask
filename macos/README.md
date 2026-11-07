@@ -21,8 +21,10 @@ The app needs skillcask 0.9.4 or newer and asks to upgrade an older one.
 Update check (D51): app menu › Check for Updates… runs `skillcask self-check --json` (a CLI that
 lacks it, older than 0.10.2 and not the bundled one, is never asked). The daily check is off until
 the user says yes once in the sidebar card; Settings › Updates switches it and shows the last
-check. The app shows the Homebrew command or the release page; it never installs anything. A run
-without a bundle version (`swift run`), the sample data and `smoke-app.sh` check nothing.
+check. The app shows the Homebrew command or the release page, or, where `config.toml` sets
+`[updates] managed` (D61), only that text under "Updates are managed by your organisation"; it never
+installs anything. A run without a bundle version (`swift run`), the sample data and `smoke-app.sh`
+check nothing.
 
 Live refresh (spec D53): the selected scope's manifest, lock, `config.toml`, store, project skills
 directory and agent directories are watched (FSEvents), so a change made in a terminal or by an

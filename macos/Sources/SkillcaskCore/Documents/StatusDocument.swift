@@ -48,26 +48,43 @@ public struct StatusDocument: Decodable, Hashable, Sendable {
         }
     }
 
-    /// One effective policy key with where it came from (`skills.toml`, `config.toml`, `env`, `default`).
+    /// One effective policy key with where it came from (`skills.toml`, `config.toml`, `config.toml, enforced`,
+    /// `system config.toml`, `system config.toml, enforced`, `environment`, `default`).
     public struct Policy: Decodable, Hashable, Sendable {
         public let value: JSONValue
         public let from: String
     }
 
     public struct Targets: Decodable, Hashable, Sendable {
+        /// One distinct entry with the directory the CLI links into for it; `dir` is nil for an agent that reads
+        /// the store.
+        public struct Agent: Decodable, Hashable, Sendable {
+            public let entry: String
+            public let dir: String?
+
+            public init(entry: String, dir: String?) {
+                self.entry = entry
+                self.dir = dir
+            }
+        }
+
         public let entries: [String]
         public let dirs: [String]
-        /// `skills.toml`, `config.toml` or `default`.
+        /// `skills.toml`, `config.toml`, `system config.toml` or `default`.
         public let from: String?
         /// The project skills directory (`[agents] local`), relative to the project root, no `./` or trailing `/`;
         /// `null` with `--global`. Added after 0.10.2 (add-only, D32): nil from an older CLI, read as `.skills`.
         public let local: String?
+        /// `entries` paired with their directories (`src/manifest.rs` `resolve_targets`). Since 0.10.3: nil from an
+        /// older CLI, which `AgentTarget.resolve` pairs by convention.
+        public let agents: [Agent]?
 
-        public init(entries: [String], dirs: [String], from: String?, local: String? = nil) {
+        public init(entries: [String], dirs: [String], from: String?, local: String? = nil, agents: [Agent]? = nil) {
             self.entries = entries
             self.dirs = dirs
             self.from = from
             self.local = local
+            self.agents = agents
         }
     }
 

@@ -155,10 +155,10 @@ public enum AddSkillCopy {
         "newest \(version)"
     }
 
-    /// `4.2.0 will be installed; 4.3.0 is inside your 72h minimum release age` (board: `v4.2.0 … 72 h`, written
-    /// with the policy's own value).
+    /// `4.2.0 will be installed; 4.3.0 is inside your 3 d minimum release age` (board: `v4.2.0 … 72 h`, written
+    /// with the policy's own value as the Policy card writes it).
     public static func cooldown(install: String, newest: String, age: String) -> String {
-        "\(install) will be installed; \(newest) is inside your \(age) minimum release age"
+        "\(install) will be installed; \(newest) is inside your \(OverviewCopy.policyValue(age)) minimum release age"
     }
 
     /// Invented: the newest version is not the one `add` would pick, and no minimum release age explains why.

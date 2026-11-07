@@ -361,7 +361,10 @@ public enum OverviewCopy {
         let one = sources.count == 1
         var origin = ""
         if let policy {
-            origin = ", set in \(policy.origin)" + (policy.isEnforced ? " by your organisation" : "")
+            origin =
+                policy.isEnforcedByOrganisation
+                ? ", set in \(policy.origin) by your organisation"
+                : policy.isEnforced ? ", set and enforced in your config.toml" : ", set in \(policy.origin)"
         }
         return OutcomeCopy.list(sources) + (one ? " is" : " are") + " blocked by \(policyName(.allowSources))"
             + origin + ". Skills from " + (one ? "it" : "them") + " stay installed but cannot be added or updated here."
@@ -378,7 +381,17 @@ public enum OverviewCopy {
     public static let value = "Value"
     public static let setIn = "Set in"
     public static let enforced = "enforced"
-    public static let policyFootnote = "“Enforced” means your organisation set it; the project cannot override it."
+    /// Under the Policy card when a row is enforced: the organisation only for the system config.toml (D60).
+    public static func policyFootnote(_ rows: [ScopeSnapshot.PolicyRow]) -> String {
+        let enforced = rows.filter(\.isEnforced)
+        let byOrganisation = enforced.filter(\.isEnforcedByOrganisation).count
+        let who =
+            byOrganisation == 0
+            ? "your config.toml enforces it"
+            : byOrganisation == enforced.count
+                ? "your organisation set it" : "your organisation or your own config.toml set it"
+        return "“Enforced” means \(who); the project cannot override it."
+    }
 
     /// The board's names for the policy keys; an unknown key is shown as the CLI prints it.
     public static func policyName(_ kind: ScopeSnapshot.PolicyRow.Kind) -> String {

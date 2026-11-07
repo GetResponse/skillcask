@@ -62,9 +62,12 @@ public enum SettingsCopy {
     public static let skillsShNote =
         "Your search text is sent to skills.sh when you use Add Skill…. Packagist and your project’s own sources are always searched."
 
-    /// `Stored as search.skills-sh = true in config.toml.`, split around the mono key.
+    /// `Stored as search.skills-sh = true in config.toml.`, split around the mono key; `from` is the layer
+    /// `config` names (`system config.toml` for D60's file).
     public static let storedAs = "Stored as"
-    public static let inConfigToml = "in config.toml."
+    public static func storedIn(_ from: String?) -> String {
+        "in \(from ?? "config.toml")."
+    }
 
     /// The mono fragment: `search.skills-sh = true`.
     public static func skillsShStored(_ on: Bool) -> String {
@@ -151,6 +154,7 @@ public enum SettingsCopy {
         case "policy.github-requires": "Allow GitHub dependencies:"
         case "policy.allow-sources": "Allowed sources:"
         case "policy.deny-patterns": "Refuse risky patterns:"
+        case "policy.deny-packages": "Refused packages:"
         case "policy.enforce": "Enforced settings:"
         case "agents.targets": "Agents:"
         case "search.skills-sh": alsoSearchSkillsSh
@@ -163,6 +167,8 @@ public enum SettingsCopy {
         switch layer {
         case .configFile?: "from config.toml"
         case .enforced?: "enforced in config.toml"
+        case .system?: "from the system config.toml"
+        case .systemEnforced?: "enforced in the system config.toml"
         case .environment?: "from the environment"
         case .builtIn?: "built-in default"
         case .manifest?: "from skills.toml"
@@ -183,6 +189,10 @@ public enum SettingsCopy {
     public static let enforcedNote = "Enforced: no project can loosen it."
     /// After `enforcedNote`: the row has no Unset, since the CLI refuses to unset a key `policy.enforce` lists.
     public static let unsetEnforcedFirst = "To unset it, remove it from Enforced settings first."
+
+    /// Under a key the system config.toml enforces (D60): the row is read-only. Invented.
+    public static let systemEnforcedNote =
+        "Your organisation enforces this in the system config.toml; ask whoever manages this Mac to change it."
 
     /// Under a key a `SKILLCASK_*` variable sets: the row is read-only.
     public static func environmentNote(variable: String?) -> String {

@@ -124,6 +124,16 @@ import Testing
                 .pathInSkill == "SKILL.md")
     }
 
+    /// Regression: a removed `-- x` (an SQL comment) prints as `--- x` and an added `++ y` as `+++ y`; inside a
+    /// hunk they are lines, not the next file's header.
+    @Test func hunkLinesThatLookLikeFileHeaders() throws {
+        let text = "a/b 1.0.0 -> 1.1.0\n--- a/s/q.sql\n+++ b/s/q.sql\n@@ -1,2 +1,2 @@\n--- x\n+++ y\n same\n"
+        let files = try #require(UnifiedDiff(text: text).packages.first).files
+        #expect(files.map(\.path) == ["s/q.sql"])
+        #expect(files.first?.diffLines.map(\.kind) == [.hunk, .removed, .added, .context])
+        #expect(files.first?.diffLines.map(\.text) == ["@@ -1,2 +1,2 @@", "-- x", "++ y", "same"])
+    }
+
     @Test func headerShapes() {
         #expect(UnifiedDiff.File.hunkHeader("@@ -8,11 +8,16 @@ Reading") == (8, 11, 8, 16))
         #expect(UnifiedDiff.File.hunkHeader("@@ -0,0 +1 @@") == (0, 0, 1, 1))

@@ -129,7 +129,7 @@ import Testing
     // MARK: - Retry
 
     /// A runner whose `install` fails with `exit`, then (when scripted) succeeds; the refresh after each run is
-    /// left unscripted, so it fails quietly into `lastError`.
+    /// left unscripted, so it fails quietly into `refreshError`.
     func failingSync(exit: Int32, thenSucceeds: Bool) async -> (ActionRunner, ScopeStore) {
         await client.lines(.install(frozen: false), in: scope, [], exit: exit)
         if thenSucceeds {
