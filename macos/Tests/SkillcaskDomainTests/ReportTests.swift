@@ -78,7 +78,7 @@ import Testing
             acme/one 1.0.0 -> 1.1.0
             --- a/one/SKILL.md
             +++ b/one/SKILL.md
-            @@ -1,3 +1,3 @@
+            @@ -1,2 +1,2 @@
              # One
             -old
             +new
@@ -117,7 +117,7 @@ import Testing
                 "one/SKILL.md", "one/scripts/run.sh", "one/gone.md", "one/logo.png", "one/big.txt", "one/tool",
             ])
         #expect(one.files.map(\.change) == [.modified, .added, .removed, .binary, .tooLarge, .modeOnly])
-        #expect(one.files[0].lines == ["@@ -1,3 +1,3 @@", " # One", "-old", "+new"])
+        #expect(one.files[0].lines == ["@@ -1,2 +1,2 @@", " # One", "-old", "+new"])
         #expect(one.files[1].lines == ["@@ -0,0 +1 @@", "+echo hi"])
         let two = diff.packages[1]
         #expect(two.from == nil && two.to == "2.0.0" && two.files.map(\.change) == [.added])

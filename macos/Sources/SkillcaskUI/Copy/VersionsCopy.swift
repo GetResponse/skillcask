@@ -126,10 +126,11 @@ public enum VersionsCopy {
         var sentences: [String] = []
         if let minimumAge {
             let value = OverviewCopy.policyValue(minimumAge.value)
-            sentences.append(
-                minimumAge.isEnforced
-                    ? "Your minimum release age is \(value), set in \(minimumAge.origin) and enforced by your organisation."
-                    : "Your minimum release age is \(value), set in \(minimumAge.origin).")
+            let source =
+                minimumAge.isEnforcedByOrganisation
+                ? "set in \(minimumAge.origin) and enforced by your organisation"
+                : minimumAge.isEnforced ? "set and enforced in your config.toml" : "set in \(minimumAge.origin)"
+            sentences.append("Your minimum release age is \(value), \(source).")
         }
         if let date {
             sentences.append(

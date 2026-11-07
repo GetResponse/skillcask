@@ -314,7 +314,7 @@ import Testing
         let info = AddSkillSamples.jiraInfo
         #expect(
             ResultPreview.installNote(info, minimumAge: "72h", pinned: false, hasEntry: false)
-                == "4.2.0 will be installed; 4.3.0 is inside your 72h minimum release age")
+                == "4.2.0 will be installed; 4.3.0 is inside your 72 h minimum release age")
         #expect(
             ResultPreview.installNote(info, minimumAge: "72h", pinned: true, hasEntry: false)
                 == "4.2.0 will be installed", "a typed constraint may be the cause")
@@ -439,6 +439,21 @@ import Testing
         await gate.open()
         await search.infoTask?.value
         #expect(search.infos.isEmpty && search.infoErrors.isEmpty)
+    }
+
+    /// Regression: selecting a result whose preview failed again kept the old error while the new read ran.
+    @Test(.timeLimit(.minutes(1))) func reselectingAFailedResultClearsItsError() async {
+        await client.script(.info(.package(Self.jira)), in: scope, .error(.noDocument))
+        let search = search()
+        search.selection = Self.jira
+        await search.infoTask?.value
+        #expect(search.infoErrors[Self.jira] != nil)
+        await client.json(.info(.package(Self.jira)), in: scope, #"{"package":"netresearch/agent-jira-skill"}"#)
+        search.selection = nil
+        search.selection = Self.jira
+        #expect(search.infoErrors[Self.jira] == nil)
+        await search.infoTask?.value
+        #expect(search.infos[Self.jira] != nil && search.infoErrors[Self.jira] == nil)
     }
 
     @Test(.timeLimit(.minutes(1))) func theConsentAnswerSurvivesTheNextKeystroke() async throws {

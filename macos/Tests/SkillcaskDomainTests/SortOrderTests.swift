@@ -63,6 +63,7 @@ import Testing
             #"{"ok":true,"entries":[],"policy":{"min-release-age":{"from":"system config.toml, enforced","value":"3d"}}}"#
         )
         let row = ScopeSnapshot(status: system, audit: nil, doctor: nil, outdated: nil).policy[0]
-        #expect(row.isEnforced && row.origin == "system config.toml")
+        #expect(row.isEnforced && row.origin == "system config.toml" && row.isEnforcedByOrganisation)
+        #expect(!snapshot.policy[0].isEnforcedByOrganisation)
     }
 }

@@ -5,10 +5,12 @@ import SwiftUI
 /// config.toml that `skillcask -g config --json` lists (D48), one Settings row each, with its value, the
 /// layer it comes from, and a system control to change it through `CLISettingsStore`. A boolean is a switch that
 /// writes at once; a list or a string is shown in mono and edited in place (Edit, then Save or Cancel); a key
-/// config.toml sets has Unset, except an enforced one (the CLI refuses to unset it while `policy.enforce` lists it). Read-only, with the reason under it: a key a `SKILLCASK_*` variable sets (the
-/// environment wins over the file) and `allow-sources` holding a URL (shown redacted, so writing it back would
-/// drop its credentials). An enforced key stays editable: with `-g` config.toml is the user's own file, the CLI
-/// accepts the change, and enforcement only stops projects from loosening it.
+/// config.toml sets has Unset, except an enforced one (the CLI refuses to unset it while `policy.enforce` lists
+/// it). Read-only, with the reason under it: a key a `SKILLCASK_*` variable sets (the environment wins over the
+/// file), a key the system config.toml enforces and its `policy.enforce` (D60), and `allow-sources` holding a URL
+/// (shown redacted, so writing it back would drop its credentials). A key the user's config.toml enforces stays
+/// editable: with `-g` config.toml is the user's own file, the CLI accepts the change, and enforcement only stops
+/// projects from loosening it.
 struct GlobalPane: View {
     @Environment(AppStore.self) private var app
 
@@ -225,6 +227,10 @@ struct GlobalPane: View {
     static func readOnlyReason(_ key: String, _ setting: ConfigValueDocument) -> String? {
         if setting.layer == .environment {
             return SettingsCopy.environmentNote(variable: ConfigKey.environmentVariable(for: key))
+        }
+        // `policy.enforce` from the system file is the organisation's list, not one the user's file holds.
+        if setting.layer == .systemEnforced || (key == "policy.enforce" && setting.layer == .system) {
+            return SettingsCopy.systemEnforcedNote
         }
         if ConfigKey.mayHoldCredentials(key), case .array(let entries) = setting.value,
             entries.contains(where: { $0.shown.contains("://") })

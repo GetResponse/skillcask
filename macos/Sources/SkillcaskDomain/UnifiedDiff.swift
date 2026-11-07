@@ -58,9 +58,19 @@ public struct UnifiedDiff: Hashable, Sendable {
             current = nil
         }
 
+        // Lines the open hunk's `@@` header still counts: a removed `-- x` prints as `--- x`, not a file header.
+        var left = (old: 0, new: 0)
         for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
             let line = String(raw)
-            if line.hasPrefix("--- ") {
+            if file != nil, left.old > 0 || left.new > 0, line.isEmpty || "+- ".contains(line.first ?? " ") {
+                file?.lines.append(line)
+                if !line.hasPrefix("+") { left.old -= 1 }
+                if !line.hasPrefix("-") { left.new -= 1 }
+            } else if file != nil, line.hasPrefix("@@") {
+                let header = File.hunkHeader(line)
+                left = (header.oldCount, header.newCount)
+                file?.lines.append(line)
+            } else if line.hasPrefix("--- ") {
                 closeFile()
                 let old = line != "--- /dev/null"
                 file = (old ? String(line.dropFirst(6)) : "", old, false, false, [])

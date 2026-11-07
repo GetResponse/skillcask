@@ -54,12 +54,16 @@ public struct UpdateState: Hashable, Sendable {
     }
 
     /// A check's outcome, automatic or manual. A document sets `lastCheckAt` and, when its `latest` is a strict
-    /// version, `latestSeen` (a cask the CLI could not read keeps the last known one). An unsupported CLI and every
-    /// failure (offline, timed out) change nothing, so the card stays as it was and nothing is shown.
+    /// version, `latestSeen` (a cask the CLI could not read keeps the last known one), and `managed` when the
+    /// document has the key (a CLI before 0.12.1 never prints it, which says nothing about the machine). An
+    /// unsupported CLI and every failure (offline, timed out) change nothing, so the card stays as it was and
+    /// nothing is shown.
     public mutating func record(_ result: Result<SelfCheckOutcome, CLIError>, at now: Date) {
         guard case .success(.checked(let document)) = result else { return }
         lastCheckAt = now
-        managed = document.managed
+        if let managed = document.managed {
+            self.managed = managed
+        }
         if let latest = document.latestVersion {
             latestSeen = latest
         }

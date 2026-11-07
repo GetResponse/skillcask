@@ -105,7 +105,7 @@ public struct VersionsModel: Hashable, Sendable {
     public let within: String?
     public let latest: String?
     public let latestReleased: Date?
-    /// The `min-release-age` policy row, nil when unset or `0h`.
+    /// The `min-release-age` policy row, nil when unset or zero (`0`; `0h` before 0.12.1).
     public let minimumAge: ScopeSnapshot.PolicyRow?
     public let status: Status
     /// The waiting version; also set when the status is `available` and a newer version still cools down.

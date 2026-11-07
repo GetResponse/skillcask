@@ -76,10 +76,16 @@ import SkillcaskDomain
     public private(set) var isRefreshing = false
     /// `outdated` is in flight: Check Now is disabled, the strip may say so.
     public private(set) var isCheckingUpdates = false
-    /// When the documents were last read, whatever the trigger.
+    /// When the last refresh of the trio ended with `status` read; nil before one (an interrupted first load
+    /// leaves a status-only snapshot that is not fresh).
     public private(set) var checkedAt: Date?
-    /// The last failure of a read-only command; kept beside the snapshot so the header can say what went wrong.
-    public private(set) var lastError: CLIError?
+    /// Why the last refresh failed entirely; the snapshot on screen is an older one. Cleared by one that reads.
+    public private(set) var refreshError: CLIError?
+    /// Why the last `outdated` failed. Cleared by one that answers.
+    public private(set) var checkError: CLIError?
+    /// The last `outdated` failed on the network: the list stays offline through local refreshes until a check
+    /// answers.
+    private var checkFailedOffline = false
     /// The last refresh read `status` but `audit` or `doctor` failed: the findings or Health on screen are the
     /// previous ones (or missing on a first load), and the Overview header says so. Cleared by a refresh in which
     /// both answered.
@@ -209,9 +215,9 @@ import SkillcaskDomain
 
     private func refreshIfStale(recording read: Read?) async {
         guard isStale, await queueIsIdle() else { return }
-        let firstOpen = snapshot == nil
+        let firstOpen = checkedAt == nil
         await refresh(keeping: nil, recording: read)
-        if firstOpen, snapshot != nil, settings?.checkUpdatesOnOpen == true {
+        if firstOpen, checkedAt != nil, settings?.checkUpdatesOnOpen == true {
             await checkUpdates(recording: nil)
         }
     }
@@ -295,15 +301,16 @@ import SkillcaskDomain
                 }
             }
             documents.repair = repair
-            lastError = nil
+            refreshError = nil
             partialFailure = firstError.map { PartialFailure(failed: failed, kept: kept, error: $0) }
             rebuild()
+            checkedAt = snapshot?.checkedAt
         case .failure(.cancelled):
             documents.repair = nil
         case .failure(let error):
             documents.repair = nil
-            lastError = error
-            // The whole refresh failed: `lastError` says why, and no strip about `audit` or `doctor` from an older
+            refreshError = error
+            // The whole refresh failed: `refreshError` says why, and no strip about `audit` or `doctor` from an older
             // refresh stays beside it. The snapshot stays, and so does its link check (`doctorFailed`).
             partialFailure = nil
             reindexAgents()
@@ -356,13 +363,17 @@ import SkillcaskDomain
         switch outcome {
         case .success(let document):
             documents.outdated = document
-            lastError = nil
+            checkError = nil
+            checkFailedOffline = false
             rebuild()
         case .failure(.cancelled):
             break
         case .failure(let error):
-            lastError = error
-            if snapshot != nil, case .failed(.network, _, _, _) = error {
+            checkError = error
+            if case .failed(.network, _, _, _) = error {
+                checkFailedOffline = true
+            }
+            if snapshot != nil, checkFailedOffline {
                 presentation = .offline
             } else if snapshot == nil {
                 presentation = Presentation.forFailedLoad(error)
@@ -462,8 +473,7 @@ import SkillcaskDomain
             outdated: documents.outdated)
         snapshot = built
         reindexAgents()
-        checkedAt = built.checkedAt
-        presentation = .ready
+        presentation = checkFailedOffline ? .offline : .ready
         if selection != nil, built.entry(id: selection) == nil {
             selection = nil
             detail = nil

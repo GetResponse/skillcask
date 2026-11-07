@@ -122,6 +122,13 @@ struct ScopeOverviewView: View {
             if let partial = store.partialFailure, isSetUp {
                 PartialRefreshStrip(partial, showsDetails: showsPartialDetails)
             }
+            if let error = store.refreshError, store.snapshot != nil, isSetUp {
+                PartialRefreshStrip(StripCopy.refreshFailed, error: error)
+            }
+            // Offline already has the list's strip.
+            if let error = store.checkError, store.snapshot != nil, !store.isOffline, isSetUp {
+                PartialRefreshStrip(StripCopy.checkFailed, error: error)
+            }
         }
         .padding(.top, Self.headerTopPadding)
         .padding(.horizontal, Size.columnPadding)

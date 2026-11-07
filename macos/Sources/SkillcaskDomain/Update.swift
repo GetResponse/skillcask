@@ -12,8 +12,8 @@ public struct Update: Hashable, Sendable {
     public struct Cooldown: Hashable, Sendable {
         /// The waiting version as the CLI spells it (`4.3.0`; registries may spell `v4.3.0`). Never from a GitHub or
         /// git source: `github::newest` ignores the minimum release age and `outdated` prints no cooldown note there
-        /// (src/github.rs 285–297, src/commands.rs 1713–1722), so such a row shows `available` even when `update`
-        /// would not lock it yet; the Review sheet says so when `diff` finds nothing (`ReviewStore`).
+        /// (`src/github.rs` `newest`, `src/commands.rs` `outdated`), so such a row shows `available` even when
+        /// `update` would not lock it yet; the Review sheet says so when `diff` finds nothing (`ReviewStore`).
         public let version: String
         /// When it becomes eligible; nil when neither the note nor the planned `eligible` key names a date.
         public let eligible: Date?
@@ -93,17 +93,17 @@ public struct Update: Hashable, Sendable {
     }
 
     /// The date of `4.3.0 eligible 2026-10-26T21:44:27Z`.
-    static func eligibleDate(_ note: String) -> Date? {
+    public static func eligibleDate(_ note: String) -> Date? {
         guard let parts = split(note) else { return nil }
         return date(parts.date)
     }
 
     /// The version of `4.3.0 eligible 2026-10-26T21:44:27Z`, as spelled; nil for any other note (a moved tag).
-    static func notedVersion(_ note: String) -> String? {
+    public static func notedVersion(_ note: String) -> String? {
         split(note)?.version
     }
 
-    /// `<version> eligible <date>`, the one shape `outdated` prints for a cooldown (`src/commands.rs` 1743–1746):
+    /// `<version> eligible <date>`, the one shape `outdated` prints for a cooldown (`src/commands.rs` `outdated`):
     /// one word before ` eligible `, one word after it.
     private static func split(_ note: String) -> (version: String, date: String)? {
         let text = note.trimmingCharacters(in: .whitespacesAndNewlines)

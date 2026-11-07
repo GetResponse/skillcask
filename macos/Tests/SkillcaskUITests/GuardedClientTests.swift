@@ -124,6 +124,20 @@ import Testing
         #expect(!app.isSetUp(bare))
         #expect(app.isSetUp(.personal) && app.isSetUp(.project(URL(fileURLWithPath: "/tmp/elsewhere"))))
     }
+
+    /// Regression: the app's own check took a directory named skills.toml for a manifest; the CLI's `find_root`
+    /// wants a file, so the app's default is the guard's check.
+    @Test func aFolderNamedSkillsTomlIsNotSetUp() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "GuardedClientTests-\(UUID())")
+        try FileManager.default.createDirectory(
+            at: root.appending(path: "skills.toml"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let settings = SettingsStore(defaults: UserDefaults(suiteName: "GuardedClientTests-\(UUID())") ?? .standard)
+        settings.remember(project: root)
+        let app = AppStore(settings: settings, client: client, capabilities: capabilities)
+        await app.refreshSetUp()
+        #expect(app.projects.map(\.isSetUp) == [false])
+    }
 }
 
 /// A counter a main-actor callback can bump.

@@ -15,7 +15,8 @@ import Testing
     @Test func aFreshConfigListsEveryKeyInTheCLIsOrder() throws {
         let document = try list("config.empty")
         #expect(document.file == "/Users/me/.config/skillcask/config.toml")
-        #expect(document.orderedKeys == ConfigKey.order)
+        // 0.9.4 predates `policy.deny-packages` (D57).
+        #expect(document.orderedKeys == ConfigKey.order.filter { $0 != "policy.deny-packages" })
         #expect(
             document.settings["policy.min-release-age"] == ConfigValueDocument(value: .string("72h"), from: "default"))
         #expect(document.settings["policy.min-release-age"]?.layer == .builtIn)
@@ -42,6 +43,13 @@ import Testing
         #expect(ConfigLayer("skills.toml") == .manifest && ConfigLayer("later") == .other("later"))
     }
 
+    /// D60's machine-wide file: its own layers, neither of them the user's config.toml (no Unset).
+    @Test func systemLayers() {
+        #expect(ConfigLayer("system config.toml") == .system)
+        #expect(ConfigLayer("system config.toml, enforced") == .systemEnforced)
+        #expect(!ConfigLayer.system.isConfigFile && !ConfigLayer.systemEnforced.isConfigFile)
+    }
+
     /// A key a newer CLI adds follows the known ones, by name, and is edited by the type of its value.
     @Test func unknownKeysFollowByName() throws {
         let synthetic = #"""
@@ -61,6 +69,8 @@ import Testing
     @Test func environmentVariables() {
         #expect(ConfigKey.environmentVariable(for: "policy.min-release-age") == "SKILLCASK_MIN_RELEASE_AGE")
         #expect(ConfigKey.environmentVariable(for: "policy.allow-sources") == "SKILLCASK_ALLOW_SOURCES")
+        #expect(ConfigKey.environmentVariable(for: "policy.deny-packages") == "SKILLCASK_DENY_PACKAGES")
+        #expect(ConfigKey.kind(of: "policy.deny-packages", value: .null) == .list)
         #expect(ConfigKey.environmentVariable(for: "policy.enforce") == nil)
         #expect(ConfigKey.environmentVariable(for: "search.skills-sh") == nil)
         #expect(ConfigKey.mayHoldCredentials("policy.allow-sources") && !ConfigKey.mayHoldCredentials("agents.targets"))

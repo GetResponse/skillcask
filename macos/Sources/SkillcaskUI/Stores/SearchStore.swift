@@ -498,8 +498,6 @@ import SkillcaskDomain
 
     /// Loads the selection's preview again after a failure.
     func retryPreview() {
-        guard let selection else { return }
-        infoErrors[selection] = nil
         selectionChanged()
     }
 
@@ -570,6 +568,8 @@ import SkillcaskDomain
             prefillRename()
             return
         }
+        // A result that failed before is read again: its old error would stand beside (or over) the new answer.
+        infoErrors[selection] = nil
         let target = selectedSpec?.infoTarget ?? selection
         infoTask = Task { [weak self] in
             guard let outcome = await self?.read(InfoDocument.self, .info(.package(target))), let self,

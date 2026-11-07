@@ -73,7 +73,7 @@ import Testing
         // Nothing scripted: the whole refresh fails and clears the partial-failure strip, but the snapshot on screen
         // keeps its older `doctor` answer, so its links stay unchecked.
         await store.refresh()
-        #expect(store.lastError != nil && store.partialFailure == nil)
+        #expect(store.refreshError != nil && store.partialFailure == nil)
         #expect(store.agentIndex.check == .failed)
         #expect(store.agentReach(for: pdf).links.map(\.state) == [.unknown, .unknown])
     }
@@ -212,6 +212,36 @@ import Testing
         await store.checkUpdates()
         #expect(store.presentation == .offline && store.isOffline)
         #expect(store.snapshot?.entries.count == 1)
+        // Regression: a local refresh used to clear offline; only a check that answers does.
+        await scriptTrio(Self.status([("pdf", "1.2.0")]))
+        await store.refresh()
+        #expect(store.isOffline && store.refreshError == nil && store.checkError != nil)
+        await client.json(.outdated, in: scope, #"{"packages":[],"behind":[]}"#)
+        await store.checkUpdates()
+        #expect(!store.isOffline && store.checkError == nil)
+    }
+
+    /// Regression: a first load cancelled after `status` left a status-only snapshot that counted as fresh, so
+    /// re-opening the scope never read `audit` and `doctor` and skipped the first-open check.
+    @Test(.timeLimit(.minutes(1))) func anInterruptedFirstLoadIsStillStale() async {
+        let gate = Gate()
+        await client.json(.status, in: scope, Self.status([("pdf", "1.2.0")]))
+        await client.json(.audit, in: scope, Self.emptyAudit, gate: gate)
+        await client.json(.doctor(fix: false), in: scope, Self.cleanDoctor)
+        let store = store()
+        let first = Task { await store.refreshIfStale() }
+        await gate.arrived()
+        while store.snapshot == nil {
+            await Task.yield()
+        }
+        first.cancel()
+        await gate.open()
+        await first.value
+        #expect(store.checkedAt == nil)
+        await scriptTrio(Self.status([("pdf", "1.2.0")]))
+        await store.refreshIfStale()
+        #expect(await client.commands.filter { $0 == .status }.count == 2)
+        #expect(store.checkedAt != nil)
     }
 
     @Test(.timeLimit(.minutes(1))) func aFailedFirstLoadBecomesAPresentation() async {

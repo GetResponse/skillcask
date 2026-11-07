@@ -2,11 +2,11 @@ import SkillcaskCore
 
 /// One `[agents] targets` entry of `status.targets` with the directory the CLI links into for it.
 ///
-/// `targets.entries` (as written) and `targets.dirs` (resolved, deduplicated) are not parallel lists: an agent that
-/// reads the shared store gets no directory (D29), and two entries naming one directory link once. The app pairs
-/// them by the CLI's preset convention: a path entry (it holds a `/`) is its own directory, the presets with a
-/// directory of their own (`ownDirectory`) take theirs (`resolve_targets` always lists it in `dirs`), and any other
-/// entry reads the store. `macos/DESIGN.md` Q19 names the CLI key that would replace this.
+/// `targets.agents` gives the pairs (CLI 0.10.3). Before it, `targets.entries` (as written) and `targets.dirs`
+/// (resolved, deduplicated) are not parallel lists: an agent that reads the shared store gets no directory (D29),
+/// and two entries naming one directory link once. For such a CLI the app pairs them by the preset convention: a
+/// path entry (it holds a `/`) is its own directory, the presets with a directory of their own (`ownDirectory`)
+/// take theirs (`resolve_targets` always lists it in `dirs`), and any other entry reads the store (DESIGN.md Q19).
 public struct AgentTarget: Hashable, Sendable, Identifiable {
     /// The entry as written in `[agents] targets`: `claude`, `cursor`, `./tools/skills`.
     public let entry: String
@@ -73,6 +73,9 @@ public struct AgentTarget: Hashable, Sendable, Identifiable {
     /// Every entry of `targets` paired with its directory, in the order written, a repeated entry once.
     public static func resolve(_ targets: StatusDocument.Targets?, isGlobal: Bool) -> [AgentTarget] {
         guard let targets else { return [] }
+        if let agents = targets.agents {
+            return agents.map { AgentTarget(entry: $0.entry, directory: $0.dir, isGlobal: isGlobal) }
+        }
         var seen: Set<String> = []
         return targets.entries.compactMap { entry in
             guard seen.insert(entry).inserted else { return nil }

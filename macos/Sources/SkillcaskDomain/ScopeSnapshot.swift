@@ -68,9 +68,15 @@ public struct ScopeSnapshot: Hashable, Sendable {
             kind == .allowSources
         }
 
-        /// Set by the organisation's `config.toml` and not overridable by the project (`ENFORCED` in policy.rs).
+        /// Listed in `policy.enforce` of a config.toml, so the project cannot loosen it (`ENFORCED` in policy.rs).
         public var isEnforced: Bool {
             from.hasSuffix(Self.enforcedSuffix)
+        }
+
+        /// Enforced by the root-owned system config.toml (D60), the organisation's; the user's own config.toml
+        /// enforces only what the user chose.
+        public var isEnforcedByOrganisation: Bool {
+            from == "system config.toml" + Self.enforcedSuffix
         }
 
         /// The file or layer the value was set in, without the enforcement note: `config.toml`, `system config.toml`.

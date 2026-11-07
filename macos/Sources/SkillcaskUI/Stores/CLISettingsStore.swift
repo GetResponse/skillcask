@@ -68,6 +68,8 @@ import SkillcaskDomain
     // MARK: - State
 
     public private(set) var skillsSh: SkillsSh = .unknown
+    /// The layer that sets it: `config.toml` or `system config.toml` (D60).
+    public private(set) var skillsShFrom: String?
     /// The value being written while `config` runs.
     public private(set) var pendingSkillsSh: Bool?
     public private(set) var skillsShFailure: UserMessage?
@@ -105,6 +107,8 @@ import SkillcaskDomain
     /// Counts reads of `globalSettings`: only the newest one may set it, so a slow earlier read cannot overwrite
     /// what a later one (after a change) read.
     @ObservationIgnored private var globalGeneration = 0
+    /// The same for `skillsSh`.
+    @ObservationIgnored private var skillsShGeneration = 0
 
     /// A write of config.toml is running: the skills.sh switch or a Global change. One at a time, so two `config`
     /// runs never race on the file and each read-back sees its own write.
@@ -132,21 +136,23 @@ import SkillcaskDomain
     }
 
     /// Reads the switch through `-g config --json -- search.skills-sh`. A read that fails (a broken config.toml)
-    /// leaves it `.unknown`: the app does not read the file itself.
+    /// leaves it `.unknown`: the app does not read the file itself. As for `loadGlobalSettings`, a cancelled read
+    /// changes nothing and only the newest read sets the state.
     public func loadSkillsSh(in context: Context) async {
         guard !isPreloaded else { return }
-        skillsSh = await Self.configState(in: context) ?? .unknown
-    }
-
-    /// `config --json`'s answer as the switch's state; nil when it did not answer with a document.
-    private static func configState(in context: Context) async -> SkillsSh? {
+        skillsShGeneration += 1
+        let generation = skillsShGeneration
         do throws(CLIError) {
             let invocation = try Invocation(
-                .config(key: skillsShKey), in: .personal, capabilities: context.capabilities)
+                .config(key: Self.skillsShKey), in: .personal, capabilities: context.capabilities)
             // Exit 1 with `{"value": null}` when nothing sets it: the document decides, not the exit.
-            return state(of: try await context.client.run(invocation).document(ConfigValueDocument.self))
+            let document = try await context.client.run(invocation).document(ConfigValueDocument.self)
+            guard generation == skillsShGeneration else { return }
+            skillsSh = Self.state(of: document) ?? .unknown
+            skillsShFrom = document.from
         } catch {
-            return nil
+            guard generation == skillsShGeneration, error != .cancelled else { return }
+            skillsSh = .unknown
         }
     }
 

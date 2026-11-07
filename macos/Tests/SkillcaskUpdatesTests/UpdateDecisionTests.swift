@@ -169,7 +169,11 @@ import Testing
             .success(.checked(SelfCheckDocument(version: "1.2.1", latest: nil, newer: false, managed: "IT"))), at: now)
         #expect(state.managed == "IT")
         state.record(.success(.checked(SelfCheckDocument(version: "1.2.1", latest: nil, newer: false))), at: now)
-        #expect(state.managed == nil, "each answer says it again")
+        #expect(state.managed == "IT", "regression: an older CLI's answer without the key kept clearing it")
+        state.record(
+            .success(.checked(SelfCheckDocument(version: "1.2.1", latest: nil, newer: false, managed: .some(nil)))),
+            at: now)
+        #expect(state.managed == nil, "`managed: null` says nobody manages it")
     }
 }
 

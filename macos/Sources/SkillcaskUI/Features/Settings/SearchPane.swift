@@ -67,7 +67,7 @@ struct SearchPane: View {
         case .on, .off:
             return Text(lead + SettingsCopy.storedAs + " ")
                 + Text(SettingsCopy.skillsShStored(isOn)).font(Font.Token.monoSmall)
-                + Text(" " + SettingsCopy.inConfigToml)
+                + Text(" " + SettingsCopy.storedIn(store.skillsShFrom))
         case .notSet:
             return Text(lead + SettingsCopy.skillsShNotSet)
         case .unknown:

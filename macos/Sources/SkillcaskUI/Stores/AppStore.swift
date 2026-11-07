@@ -123,11 +123,6 @@ import SkillcaskDomain
     private let textReader: ScopeStore.TextReader
     private let manifestExists: @Sendable (URL) -> Bool
 
-    /// Whether `root/skills.toml` exists on disk: the live check.
-    public static let manifestOnDisk: @Sendable (URL) -> Bool = {
-        FileManager.default.fileExists(atPath: $0.appending(path: "skills.toml").path)
-    }
-
     // MARK: - State
 
     public private(set) var cli: CLIState = .locating
@@ -218,7 +213,7 @@ import SkillcaskDomain
         settings: SettingsStore, queue: MutationQueue = MutationQueue(), locator: Locator = Locator(),
         environment: EnvironmentPolicy = .default, makeClient: (@Sendable (URL) -> any CLIClient)? = nil,
         textReader: @escaping ScopeStore.TextReader = ScopeStore.readText,
-        manifestExists: @escaping @Sendable (URL) -> Bool = AppStore.manifestOnDisk,
+        manifestExists: @escaping @Sendable (URL) -> Bool = GuardedClient.manifestOnDisk,
         liveRefresh: LiveRefresh = LiveRefresh(watcher: FSEventsWatcher())
     ) {
         self.settings = settings
@@ -246,7 +241,7 @@ import SkillcaskDomain
         settings: SettingsStore, queue: MutationQueue = MutationQueue(), client: any CLIClient,
         capabilities: Capabilities, environment: EnvironmentPolicy = .default,
         textReader: @escaping ScopeStore.TextReader = ScopeStore.readText,
-        manifestExists: @escaping @Sendable (URL) -> Bool = AppStore.manifestOnDisk,
+        manifestExists: @escaping @Sendable (URL) -> Bool = GuardedClient.manifestOnDisk,
         liveRefresh: LiveRefresh = LiveRefresh(watcher: NoFileWatcher())
     ) {
         self.settings = settings
@@ -388,6 +383,7 @@ import SkillcaskDomain
         isRedetecting = true
         defer { isRedetecting = false }
         settings.binaryPath = nil
+        binary = nil
         client = nil
         stores.removeAll()
         summaries.reset()

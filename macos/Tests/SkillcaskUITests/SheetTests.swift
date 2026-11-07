@@ -132,7 +132,9 @@ import Testing
         let run = SheetRun()
         #expect(
             run.start(update, title: "Updating pdf…", outcome: { $0 }, in: store, runner: runner, onSuccess: {}) == nil)
-        #expect(run.phase == .failed(SheetRun.refusal("Updating pdf…")), "the sheet says why nothing started")
+        #expect(
+            run.phase == .failed(SheetRun.refusal(failure: OutcomeCopy.couldNot("Updating pdf…"))),
+            "the sheet says why nothing started")
         #expect(run.failure?.reason == SheetCopy.anotherRunInFlight && run.canClose)
         #expect(ListState.resolve(store: store, running: runner.current).progressTitle == ActionCopy.syncing)
         await gate.open()
@@ -268,7 +270,7 @@ import Testing
         await sync.arrived()
         await refresh.open()
         await batch?.value
-        #expect(run.failure == SheetRun.refusal("Adopting b…"))
+        #expect(run.failure == SheetRun.refusal(failure: OutcomeCopy.couldNot("Adopting b…")))
         #expect(run.items.map(\.state.isSkipped) == [false, false, true] && run.doneCount == 1)
         await sync.open()
         await window.value

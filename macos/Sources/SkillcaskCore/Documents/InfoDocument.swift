@@ -27,7 +27,7 @@ public struct InfoDocument: Decodable, Hashable, Sendable {
     public let why: [String]
 
     public let skill: String?
-    /// `package`, `project`, `hand-written` or `not managed` (D41).
+    /// `package`, `project` or `hand-written` (D41, `src/commands.rs` `why_skill`).
     public let kind: String?
     /// Relative to the scope root.
     public let path: String?

@@ -116,7 +116,7 @@ import SkillcaskCore
     /// closes itself there; the runner has set the toast); on a failure the phase holds the message. Returns the
     /// task, or nil when this sheet or the app already runs something (for the app, the phase holds `refusal`).
     /// `failure` is the failure's title from Copy ("Couldn’t adopt caveman."); nil falls back to
-    /// `OutcomeCopy.couldNot(title)` for callers not yet migrated. `report` builds the toast from the transcript
+    /// `OutcomeCopy.couldNot(title)`. `report` builds the toast from the transcript
     /// instead of `outcome` (Adopt: "Adopted caveman (4.0.1)" from the CLI's `added` line); `emphasis` are its
     /// semibold parts; `tone` the toast's tone from the transcript.
     @discardableResult public func start(
@@ -265,12 +265,8 @@ import SkillcaskCore
         }
     }
 
-    /// The message of a command the runner would not start: another run is in flight.
-    static func refusal(_ title: String) -> UserMessage {
-        refusal(failure: OutcomeCopy.couldNot(title))
-    }
-
-    /// The refusal under a failure title from Copy ("Couldn’t adopt caveman.").
+    /// The message of a command the runner would not start (another run is in flight), under a failure title from
+    /// Copy ("Couldn’t adopt caveman.").
     static func refusal(failure: String) -> UserMessage {
         UserMessage(title: failure, reason: SheetCopy.anotherRunInFlight, severity: .neutral)
     }

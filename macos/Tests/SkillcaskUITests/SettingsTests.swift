@@ -349,6 +349,19 @@ import Testing
         _ = await locating.value
     }
 
+    /// Regression: when detection then found nothing, Settings still named the binary just forgotten.
+    @Test func useDetectedForgetsTheChosenBinary() async {
+        let client = FakeCLIClient()
+        await client.script(.version, in: .personal, .result(stdout: "skillcask 0.9.4 (a)\n", exit: 0, lines: []))
+        let chosen = URL(fileURLWithPath: "/chosen/skillcask")
+        let locator = Locator(path: nil, bundled: nil) { $0 == chosen }
+        let app = AppStore(settings: Self.settings(), locator: locator) { _ in client }
+        #expect(await app.locate(executable: chosen) == nil)
+        #expect(app.binary == .configured(chosen))
+        await app.useDetectedBinary()
+        #expect(app.binary == nil)
+    }
+
     // MARK: - Copy
 
     @Test func sourcesSentenceNamesTheProjectsOwnSources() {

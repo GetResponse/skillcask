@@ -97,6 +97,16 @@ import Testing
         let managed = Scripted(stdout: #"{"latest":"0.10.2","managed":"IT","newer":true,"version":"0.10.1"}"# + "\n")
         let answer = try await managed.selfCheck(binary: bundled, capabilities: capabilities)
         #expect(answer == .checked(SelfCheckDocument(version: "0.10.1", latest: "0.10.2", newer: true, managed: "IT")))
+        let unmanaged = Scripted(stdout: #"{"latest":"0.10.2","managed":null,"newer":true,"version":"0.10.1"}"# + "\n")
+        let none = try await unmanaged.selfCheck(binary: bundled, capabilities: capabilities)
+        #expect(
+            none == .checked(SelfCheckDocument(version: "0.10.1", latest: "0.10.2", newer: true, managed: .some(nil))))
+        #expect(document.managed == nil, "absent: the CLI did not say")
+        let unknown = Scripted(
+            stdout: #"{"latest":"0.10.2","managed":null,"newer":true,"version":"0.10.1"}"# + "\n",
+            stderr: "warning: updates.managed unknown: config.toml: expected `=`\n")
+        let unread = try await unknown.selfCheck(binary: bundled, capabilities: capabilities)
+        #expect(unread == .checked(SelfCheckDocument(version: "0.10.1", latest: "0.10.2", newer: true)))
     }
 
     /// The cask held nothing readable: the CLI warns on stderr and still exits 0 with `latest: null`.
