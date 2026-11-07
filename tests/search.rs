@@ -42,7 +42,7 @@ fn search_lists_gitlab_skill_packages_and_survives_a_broken_repository() {
         "skills.toml",
         &format!("[repositories]\nbroken = {{ type = \"composer\", url = \"{}\" }}\n[policy]\npackagist = false\n", s.url("/nope")),
     );
-    p.expect(&["search", "beta"], 3);
+    p.expect(&["search", "beta"], 1);
 }
 
 /// A project whose only registry has `acme/beta`, with skills.sh served by `s`.

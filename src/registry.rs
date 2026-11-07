@@ -268,7 +268,7 @@ impl<'a> Registry<'a> {
                 Some(host) if !self.http.has_credential(url.as_str()) => format!(" (private repository? `skillcask auth set {host}`)"),
                 _ => String::new(),
             };
-            Error::new(NETWORK, format!("repository {}: {} not found{hint}", repo.name, crate::http::redact(&url)))
+            Error::new(MANIFEST, format!("repository {}: {} not found{hint}", repo.name, crate::http::redact(&url)))
         })?;
         let r = Rc::new((url, json));
         self.roots.borrow_mut().insert(repo.url.clone(), r.clone());

@@ -367,11 +367,12 @@ fn composer_404_names_auth_set_once_when_no_token_is_set() {
     let p = Project::new(&s);
     p.manifest(&s, "");
     let host = s.base.trim_start_matches("https://").to_string();
-    let out = p.expect(&["search", "x"], 3);
+    let out = p.expect(&["search", "x"], 1);
     assert!(out.contains(&format!("skillcask auth set {host}")), "{out}");
     // search used to prefix the repository name a second time
     assert!(!out.contains("repository fix: repository fix:"), "{out}");
     p.write("auth.json", &json!({ "bearer": { host: "t0ken" } }).to_string());
-    let out = p.expect(&["add", "acme/one"], 3);
+    // A missing or private repository is configuration (exit 1), as on GitHub and git (D65).
+    let out = p.expect(&["add", "acme/one"], 1);
     assert!(out.contains("not found") && !out.contains("auth set"), "{out}");
 }
