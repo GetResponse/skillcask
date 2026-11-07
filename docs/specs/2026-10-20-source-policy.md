@@ -22,7 +22,8 @@ reader of `skills.toml` does not see them.
 ## Non-goals
 
 - Repositories shared through the user config (one private registry declared for all projects).
-- A system-wide config (`/etc`).
+- ~~A system-wide config (`/etc`).~~ Added by D60 (2026-11-06): a root-owned `config.toml` at a
+  fixed path, read under the user's (D63).
 
 ## Layers
 
@@ -100,7 +101,9 @@ by hand into `.agents/skills` are its code, reviewed like it; `audit` scans them
 skillcask runs with the user's rights and does not try to stop them; only the operating system
 could, with a config directory the user cannot write (managed by MDM, which also makes the global
 `skills.toml` and `skills.lock` of D13 read-only, not the store they install into) and a locked
-environment. A rule nobody may skip is checked where the developer does not control the run: a
+environment. Since D60 and D63 the root-owned system `config.toml` is such a file: the user's
+config, `SKILLCASK_HOME`, `XDG_CONFIG_HOME` and `HOME` cannot loosen or move it, but an
+administrator of the machine can still change it. A rule nobody may skip is checked where the developer does not control the run: a
 required check on pull requests to the default branch, with the policy in the job's environment,
 that runs `install --frozen`. That holds every merged lock to every key but `deny-patterns` (a
 repository's own `min-release-age` included, unless `config.toml` enforces the key); `deny-patterns`
