@@ -14,7 +14,9 @@ import SkillcaskDomain
 /// - A source typed into the field (`PackageSpec`: `vendor/name`, `github:…`, `git:https://…`) skips search and
 ///   becomes the selection after the same debounce, so its preview comes straight from `info`.
 /// - `info --json -- <package>` downloads the dist (about a second): it runs only for the selected result, is
-///   cancelled when the selection moves, and is cached for the sheet's lifetime.
+///   cancelled when the selection moves, and is cached for the sheet's lifetime. After an add in this sheet the
+///   added package's previews are read again when their rows are next selected (`added(_:)`); the added row
+///   keeps its preview while it stays selected.
 @MainActor @Observable final class SearchStore {
     /// The results column.
     enum Results: Hashable {
@@ -43,6 +45,16 @@ import SkillcaskDomain
         let existingPackage: String
         /// `<vendor>-<skill>`, as the CLI suggests it (`suggest` in `src/commands.rs`).
         let suggestion: String
+    }
+
+    /// What the user chose for an `add`: the row, and the rule, skills and name set in its preview. Not the command
+    /// built from them, which also reads `info` and the scope's snapshot and so can change under the same choices.
+    struct Choices: Hashable {
+        let selection: String?
+        /// The chosen rule, a branch with its name; nil while the CLI's default stands.
+        let rule: VersionRule?
+        let excludedSkills: Set<String>
+        let renameTo: String
     }
 
     /// A source the results can be narrowed to, and how many of the loaded results it has.
@@ -101,6 +113,9 @@ import SkillcaskDomain
     var excludedSkills: Set<String> = []
     /// The name typed into the rename field; prefilled with the clash's suggestion.
     var renameTo = ""
+    /// What was chosen for the `add` that just exited 0 for the selection (`added(_:)`); nil once the selection
+    /// moved.
+    private(set) var justAdded: Choices?
 
     @ObservationIgnored private(set) var searchTask: Task<Void, Never>?
     @ObservationIgnored private(set) var infoTask: Task<Void, Never>?
@@ -111,6 +126,8 @@ import SkillcaskDomain
     @ObservationIgnored private var isPreloading = false
 
     @ObservationIgnored private var hasBegun = false
+    /// Selections whose cached `info` predates their add in this sheet.
+    @ObservationIgnored private var staleInfos: Set<String> = []
 
     /// A store for `scope`'s sheet, with the field pre-filled (`AppStore.Sheet.addSkill(query:)`). Runs nothing
     /// until `begin()`: a view's `init` may build it more than once.
@@ -448,6 +465,32 @@ import SkillcaskDomain
             skills: skills)
     }
 
+    /// The choices as they stand.
+    var choices: Choices {
+        Choices(
+            selection: selection, rule: rule == nil ? nil : effectiveRule, excludedSkills: excludedSkills,
+            renameTo: renameTo.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// The choices are those of the `add` that just succeeded: the sheet stays open on the added row, where Return
+    /// would run it a second time (the CLI resolves the package again, rewrites its entry and prints `added` once
+    /// more, `src/commands.rs` `add`). Another skill, rule or name is a different `add`, and so is the same one
+    /// after the selection moved: then it is the re-add every installed package allows.
+    var isRepeat: Bool {
+        justAdded == choices
+    }
+
+    /// An `add` with `choices` exited 0 for the selection: it is not offered again while the selection stays, and
+    /// every cached preview of its package (the selection, and other rows of the same repository such as
+    /// `github:owner/repo/other-skill`), which says what `add` would do to a package not yet in the lock, is read
+    /// again when its row is next selected.
+    func added(_ choices: Choices) {
+        justAdded = choices
+        guard let selection else { return }
+        let package = PackageSpec.packageName(of: selection)
+        staleInfos.formUnion(infos.keys.filter { PackageSpec.packageName(of: $0) == package })
+    }
+
     /// `--repository <name>` when the result came from a custom repository of the scope: what the user picked,
     /// not whichever repository the CLI tries first. Packagist, GitHub and git sources take no flag.
     private func repository(for spec: PackageSpec) -> String? {
@@ -564,6 +607,10 @@ import SkillcaskDomain
         rule = nil
         excludedSkills = []
         renameTo = ""
+        justAdded = nil
+        if let selection, staleInfos.remove(selection) != nil {
+            infos[selection] = nil
+        }
         guard !isEnded, let selection, infos[selection] == nil else {
             prefillRename()
             return

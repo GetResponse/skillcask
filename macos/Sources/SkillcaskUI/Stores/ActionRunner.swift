@@ -11,7 +11,8 @@ import SkillcaskDomain
 /// Wired here: `sync` (`install`), `check` (`doctor`), `repair` (`doctor --fix`), `restoreFromLock`
 /// (`install --frozen`). Add, update, remove and adopt run from their sheets through `SheetRun`, which calls
 /// `run(_:title:outcome:in:from:)` with `.sheet`: the same bookkeeping applies, but the progress and a failure stay
-/// in the sheet (S11) instead of the list header and banner.
+/// in the sheet (S11) instead of the list header and banner. Add Skill stays open after an add, so its runs set no
+/// toast; the sheet leaves one through `announce(_:emphasis:id:)` when it closes (`AddSkillVisit`).
 @MainActor @Observable public final class ActionRunner {
     /// Where a run was started, which decides where its progress and failure show (S11): the list header and the
     /// banner for the toolbar, menus and Overview; inside the sheet for a sheet's run.
@@ -365,15 +366,17 @@ import SkillcaskDomain
     /// Runs `command` in `store`'s scope with a live transcript, records it, shows its outcome and asks the store
     /// for its targeted refresh. One run at a time in the whole app: a second call while `current` is set does
     /// nothing and returns nil, because the toolbar is disabled meanwhile. Success is a toast unless `announce` is
-    /// false (a batch item: the batch shows one summary through `announce(_:)`); a failure is the banner for
+    /// false (a batch item: the batch shows one summary through `announce(_:)`; an add of the Add Skill sheet: the
+    /// sheet stays open and toasts when it closes); a failure is the banner for
     /// `.window` and only the returned `.failed` for `.sheet`, which shows it in place. A sheet's run never touches
     /// the window's banner or its Retry. Cancelling the calling task cancels the run. `failure` is the failure's
     /// title as Copy words it ("Couldn’t sync."); nil falls back to `OutcomeCopy.couldNot(title)` (that reads
     /// "Couldn’t Syncing…." for a progressive title, so every caller should pass one).
     ///
     /// The returned value arrives after the scope's refresh. `onEnd` gets the same end, and the run's id (its
-    /// `ActivityEntry`), as soon as the run is recorded and its toast set, before that refresh: a sheet closes
-    /// there, so the toast shows while the list header carries the refresh (S11). Not called for a refused run.
+    /// `ActivityEntry`), as soon as the run is recorded and its toast set, before that refresh: a sheet that closes
+    /// on success closes there, so the toast shows while the list header carries the refresh (S11). Not called for a
+    /// refused run.
     /// `emphasis` are the toast's semibold parts (the skill names). `onStdout` gets the stdout of a run that
     /// exited 0, whole, from the run's result (the live transcript keeps only its last
     /// `ActivityEntry.transcriptLimit` lines), just before `onEnd`.
@@ -459,9 +462,11 @@ import SkillcaskDomain
         }
     }
 
-    /// The one toast of a batch (Adopt All: "Adopted 9 skills"), after its items ran with `announce: false`.
-    public func announce(_ text: String, emphasis: [String] = []) {
-        outcome = .toast(ToastMessage(id: UUID(), text: text, emphasizing: emphasis))
+    /// The one toast of runs that ended with `announce: false`: a batch (Adopt All: "Adopted 9 skills"), or the adds
+    /// of an Add Skill sheet once it closes. `id` names the run "Show details" opens (the one add of a sheet); a
+    /// summary names none.
+    public func announce(_ text: String, emphasis: [String] = [], id: UUID = UUID()) {
+        outcome = .toast(ToastMessage(id: id, text: text, emphasizing: emphasis))
     }
 
     /// Cancels the running command, if any.

@@ -99,8 +99,12 @@ struct ResultPreview: View {
     /// `MIT · 4.1k installs · newest 4.3.0 · 4.2.0 will be installed; 4.3.0 is inside your 3 d minimum release age`.
     private func meta(_ info: InfoDocument) -> Text {
         let lead = Self.metaParts(info, installs: search.selectedResult?.installs).joined(separator: " · ")
-        let note = Self.installNote(
-            info, minimumAge: minimumAge, pinned: search.selectedSpec?.pinned != nil, hasEntry: search.hasEntry)
+        // The add that just succeeded locked the package; its `info` still reads as before the add.
+        let note =
+            search.justAdded == nil
+            ? Self.installNote(
+                info, minimumAge: minimumAge, pinned: search.selectedSpec?.pinned != nil, hasEntry: search.hasEntry)
+            : nil
         guard let note else {
             return Text(lead).foregroundStyle(Color.textSecondary)
         }

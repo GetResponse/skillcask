@@ -7,8 +7,8 @@ import Testing
 
 /// The Add Skill sheet's logic: the debounced search and its stale answers, the skills.sh consent, the
 /// Installed marker, the spec with its version rule, the gating on `add --skill` and `add --rename`, and Add through
-/// `SheetRun` (success, failure, cancel). Source-shape detection is `PackageSpecTests`. Views are not tested; their
-/// inputs are.
+/// `SheetRun` (failure, cancel; what a success leaves in the open sheet is `AddSkillVisitTests`). Source-shape
+/// detection is `PackageSpecTests`. Views are not tested; their inputs are.
 @Suite @MainActor struct AddSkillTests {
     let client = FakeCLIClient()
     let scope = Scope.project(URL(fileURLWithPath: "/tmp/add-tests"))
@@ -511,24 +511,22 @@ import Testing
         await client.json(.doctor(fix: false), in: scope, ScopeStoreTests.cleanDoctor)
     }
 
-    @Test(.timeLimit(.minutes(1))) func addSuccessClosesTheSheetWithTheBoardsToast() async throws {
+    /// The board's transcript prints no `added` line: the add is worded from the package alone.
+    @Test(.timeLimit(.minutes(1))) func addSuccessStaysInTheSheetWithoutAToast() async throws {
         let search = search()
         search.preload(query: Self.jira, selection: Self.jira, info: AddSkillSamples.jiraInfo)
         let command = try #require(search.command)
         await client.lines(command, in: scope, DesignFixtures.Transcripts.addJira)
         await scriptRefresh()
         let runner = ActionRunner(queue: MutationQueue())
-        let run = SheetRun()
-        var closed = false
-        let toast = AddSkillSheet.toast(package: Self.jira, skills: search.chosenSkills, version: search.info?.version)
-        await run.start(
-            command, title: AddSkillCopy.adding(Self.jira), outcome: { _ in toast }, in: search.store, runner: runner,
-            onSuccess: { closed = true }
-        )?
-        .value
-        #expect(closed && run.phase == .succeeded)
-        #expect(runner.toast?.text == "Added jira-syntax and jira-communication (4.2.0)")
+        let visit = AddSkillVisit(search: search)
+        await visit.add(runner: runner)?.value
+        #expect(visit.run.phase == .succeeded && runner.toast == nil)
+        #expect(visit.status == "Added netresearch/agent-jira-skill" && search.selection == Self.jira)
         #expect(runner.activity.first?.title == "Adding netresearch/agent-jira-skill…")
+        await visit.close(runner: runner)?.value
+        #expect(runner.toast?.text == "Added netresearch/agent-jira-skill")
+        #expect(search.store.selection == "jira-syntax", "the first skill of the add")
     }
 
     @Test(.timeLimit(.minutes(1))) func addFailureStaysWithTheCLIsHint() async throws {
@@ -587,7 +585,7 @@ import Testing
         #expect(
             AddSkillCopy.noResultsBody(sources: ["packagist", "acme"], skillsShOn: false)
                 == "in packagist and acme. skills.sh is off; turn it on in Settings › Search to include it.")
-        #expect(AddSkillSheet.toast(package: "a/b", skills: [], version: nil) == "Added a/b")
+        #expect(AddSkillCopy.added(package: "a/b", skills: [], version: nil) == "Added a/b")
     }
 
     // MARK: - Flow-F2 rules
@@ -660,13 +658,13 @@ import Testing
     @Test func theAddToastReadsTheVersionFromTheCLILine() {
         let ref = [OutputLine.stdout(#"added netresearch/agent-jira-skill = "main" (3f2a9c1d0b7e)"#)]
         #expect(
-            AddSkillSheet.toast(package: Self.jira, skills: ["jira-syntax", "jira-communication"], transcript: ref)
+            AddSkillCopy.added(package: Self.jira, skills: ["jira-syntax", "jira-communication"], transcript: ref)
                 == "Added jira-syntax and jira-communication (3f2a9c1d0b7e)")
         let tag = [OutputLine.stdout(#"added netresearch/agent-jira-skill = "^4.2" (4.2.0)"#)]
         #expect(
-            AddSkillSheet.toast(package: Self.jira, skills: ["jira-syntax"], transcript: tag)
+            AddSkillCopy.added(package: Self.jira, skills: ["jira-syntax"], transcript: tag)
                 == "Added jira-syntax (4.2.0)")
         #expect(
-            AddSkillSheet.toast(package: Self.jira, skills: ["jira-syntax"], transcript: []) == "Added \(Self.jira)")
+            AddSkillCopy.added(package: Self.jira, skills: ["jira-syntax"], transcript: []) == "Added \(Self.jira)")
     }
 }

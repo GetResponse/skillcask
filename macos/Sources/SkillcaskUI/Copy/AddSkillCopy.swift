@@ -6,16 +6,18 @@ import SkillcaskDomain
 /// where noted; versions carry no `v` prefix (the `DesignFixtures` decision).
 ///
 /// Invented (no board draws them): `searching`, `loadingPreview`, `idleTitle`, `idleBody`, `noSelection`,
-/// `allSkillsAdded`, `addOne`, `showOutput`, `couldNotAdd`, `added(package:)`, `footerPersonal`, `willInstall`,
-/// `noResultsBody` for skills.sh on or undecided, the rule label `upToNextMinor`, `branchLabel`, `branchProblem`,
-/// the Branch form of `ruleNote`, and the accessibility labels `ruleHint` and `installedHint`. "Exact", "Latest" and
-/// "Branch" are Flow-F2's ("Up to next major (default) / Exact / Latest / Branch").
+/// `allSkillsAdded`, `addOne`, `showOutput`, `couldNotAdd`, `added(package:)`, `addedSoFar`, `status(_:count:)`,
+/// `summary(done:scope:)`, `done`, `footerPersonal`, `willInstall`, `noResultsBody` for skills.sh on or undecided,
+/// the rule label `upToNextMinor`, `branchLabel`, `branchProblem`, the Branch form of `ruleNote`, and the
+/// accessibility labels `ruleHint` and `installedHint`. "Exact", "Latest" and "Branch" are Flow-F2's ("Up to next
+/// major (default) / Exact / Latest / Branch").
 ///
-/// Declared deviations from Flow-F2: the success toast is `OutcomeCopy.added` ("Added **jira-syntax** and
-/// **jira-communication** (4.2.0)", names semibold, up to two lines) and the sheet then selects the first new row
-/// only ("new rows selected"), since the skill list is single-selection (`ScopeStore.selection` is one id); Branch
-/// is offered beside the version rules, so a GitHub repository without tags (no rule shown) keeps the CLI's
-/// default branch.
+/// Declared deviations from Flow-F2: the sheet stays open after an add, so several skills can be added in one
+/// visit: the footer says what was added (`status(_:count:)`), and the toast shows once the sheet closes. After one
+/// add it is `OutcomeCopy.added` ("Added **jira-syntax** and **jira-communication** (4.2.0)", names semibold, up to
+/// two lines), after several `summary(done:scope:)`; the skill list then selects one row only, the last add's first
+/// skill ("new rows selected"), since it is single-selection (`ScopeStore.selection` is one id). Branch is offered
+/// beside the version rules, so a GitHub repository without tags (no rule shown) keeps the CLI's default branch.
 public enum AddSkillCopy {
     // MARK: - Header
 
@@ -266,6 +268,22 @@ public enum AddSkillCopy {
         "Add as \(name)"
     }
 
+    /// Invented: the footer's close button once something was added in this sheet (Cancel until then, and while a
+    /// run is in flight).
+    public static let done = "Done"
+
+    /// Invented: beside the last add's words in the footer, from the second add of the sheet on: how many skills
+    /// it added so far (`· 3 skills added`).
+    public static func addedSoFar(_ total: Int) -> String {
+        total == 1 ? "· 1 skill added" : "· \(total) skills added"
+    }
+
+    /// Invented: the footer after an add as one sentence, for VoiceOver: the add's own words and the count, when
+    /// there is one (`Added pdf (1.4.0) · 3 skills added`).
+    public static func status(_ last: String, count: String?) -> String {
+        count.map { "\(last) \($0)" } ?? last
+    }
+
     // MARK: - Progress
 
     /// `Adding netresearch/agent-jira-skill…`: the run's title in the sheet and in Activity.
@@ -285,9 +303,31 @@ public enum AddSkillCopy {
 
     // MARK: - Outcome
 
-    /// Invented: the toast when the provided skills were not known (the preview never loaded).
+    /// Invented: the add's words when the provided skills are not known (the package lists none), or the CLI
+    /// printed no version.
     public static func added(package: String) -> String {
         "Added \(package)"
+    }
+
+    /// What an add says, in the footer and in the toast: `Added jira-syntax and jira-communication (4.2.0)`
+    /// (`OutcomeCopy.added`); `added(package:)` when the skills or the version are not known.
+    static func added(package: String, skills: [String], version: String?) -> String {
+        guard let version, !skills.isEmpty else { return added(package: package) }
+        return OutcomeCopy.added(skills, version: version)
+    }
+
+    /// The same from the CLI's own `added <package> = "<constraint>" (<version>)` line (`src/commands.rs`
+    /// `finish_add`): the version it locked, which `info` cannot promise before the run (a GitHub or git ref
+    /// locks a commit and prints its first 12 hex digits, `src/github.rs` 278, `src/git.rs` 635).
+    static func added(package: String, skills: [String], transcript: [OutputLine]) -> String {
+        let version = MutationReport(verbLines: ActionRunner.stdout(of: transcript)).addedVersions.values.first
+        return added(package: package, skills: skills, version: version)
+    }
+
+    /// Invented: the one toast of a sheet that added more than once, when it closes: `Added 3 skills to api`
+    /// (as Adopt's batch: `AdoptCopy.summary(done:scope:)`).
+    public static func summary(done: Int, scope: String) -> String {
+        done == 1 ? "Added 1 skill to \(scope)" : "Added \(done) skills to \(scope)"
     }
 
     /// `Couldn’t find acme/jira-triage-v2.`

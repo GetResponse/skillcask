@@ -8,7 +8,9 @@ extension PreviewRegistry {
     /// AddSkill-States boards. `preview` is the AddSkill board ("jira", consent card, the selected package's
     /// preview); `name-clash` is the 0.9.4 path (the CLI's error after Add); `capable-name-clash` and
     /// `capable-skills` run against a CLI with the planned `add --rename` and `add --skill` (not shipped at 0.9.4).
-    /// `success` is the window after the sheet closed: the toast in the list column, the first new skill selected.
+    /// `added` is the sheet after an add, still open: the added row selected and marked Installed, the footer saying
+    /// what was added, Done in place of Cancel. `success` is the window after that sheet closed: the toast in the
+    /// list column, the new skill selected.
     /// `rule-branch` and `rule-latest` show Flow-F2's Branch and Latest rules on the rule button. The source
     /// filter's states search My Skills for "pocock": `filter-source` narrows to skills.sh (GitHub dimmed at 0),
     /// `filter-empty` keeps a GitHub filter from an earlier query ("No results from GitHub", Show All), and
@@ -28,6 +30,11 @@ extension PreviewRegistry {
                 selection: AddSkillSamples.jiraPackage)
         },
         sheet("progress", boardScope: true, previewState: .progress) {
+            $0.preload(
+                query: DesignFixtures.jiraQuery, results: .loaded(DesignFixtures.jiraSearch), skillsSh: .disabled,
+                selection: AddSkillSamples.jiraPackage, info: AddSkillSamples.jiraInfo)
+        },
+        sheet("added", previewState: .added, snapshot: AddSkillSamples.afterAdd) {
             $0.preload(
                 query: DesignFixtures.jiraQuery, results: .loaded(DesignFixtures.jiraSearch), skillsSh: .disabled,
                 selection: AddSkillSamples.jiraPackage, info: AddSkillSamples.jiraInfo)
@@ -113,11 +120,12 @@ extension PreviewRegistry {
         },
     ]
 
-    /// A sheet over api (`boardScope`: the AddSkill board's variant), or over My Skills when `personal`, at its
-    /// minimum (the board size) unless `size` says otherwise.
+    /// A sheet over api (`boardScope`: the AddSkill board's variant; `snapshot`: another state of it), or over My
+    /// Skills when `personal`, at its minimum (the board size) unless `size` says otherwise.
     private static func sheet(
         _ state: String, capable: Bool = false, boardScope: Bool = false, personal: Bool = false,
-        previewState: AddSkillSamples.State? = nil, size: CGSize = Size.addSkillSheet,
+        previewState: AddSkillSamples.State? = nil, snapshot: ScopeSnapshot? = nil,
+        size: CGSize = Size.addSkillSheet,
         _ setUp: @escaping @MainActor @Sendable (SearchStore) -> Void
     ) -> Entry {
         Entry(id: "P3-9", state: state, size: size) {
@@ -125,8 +133,9 @@ extension PreviewRegistry {
                 AddSkillSample(
                     capable: capable, previewState: previewState?.sheetState,
                     scope: personal ? .personal : Boot.apiScope,
-                    snapshot: personal
-                        ? DesignFixtures.personal : boardScope ? AddSkillSamples.boardScope : DesignFixtures.api,
+                    snapshot: snapshot
+                        ?? (personal
+                            ? DesignFixtures.personal : boardScope ? AddSkillSamples.boardScope : DesignFixtures.api),
                     setUp: setUp))
         }
     }
@@ -138,14 +147,23 @@ enum AddSkillSamples {
     enum State: Sendable {
         case progress
         case clashFailure
+        case added
 
         var sheetState: AddSkillSheet.PreviewState {
             switch self {
             case .progress: .running(AddSkillSamples.progress)
             case .clashFailure: .addFailure(AddSkillSamples.clashFailure)
+            case .added: .added([AddSkillSamples.added])
             }
         }
     }
+
+    /// The add of `added`: the board's two skills at the version the CLI locked.
+    static let added = AddSkillVisit.Added(
+        package: jiraPackage, skills: ["jira-syntax", "jira-communication"],
+        text: AddSkillCopy.added(
+            package: jiraPackage, skills: ["jira-syntax", "jira-communication"], version: "4.2.0"),
+        runID: nil)
 
     /// The enlarged sheet of `preview-large` and `progress-large`.
     static let largeSheet = CGSize(width: 1280, height: 860)
@@ -312,7 +330,7 @@ private struct AddSkillSuccessSample: View {
                 detail: SkillDetail(
                     info: Boot.fixtureInfo(for: "jira-syntax"), text: Boot.fixtureText(for: "jira-syntax")))
         stores.runner.announce(
-            AddSkillSheet.toast(
+            AddSkillCopy.added(
                 package: AddSkillSamples.jiraPackage, skills: ["jira-syntax", "jira-communication"], version: "4.2.0"),
             emphasis: ["jira-syntax", "jira-communication"])
         _stores = State(initialValue: stores)
