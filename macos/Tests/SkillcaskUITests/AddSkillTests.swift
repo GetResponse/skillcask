@@ -594,6 +594,15 @@ import Testing
         #expect(AddSkillCopy.added(package: "a/b", skills: [], version: nil) == "Added a/b")
     }
 
+    /// The run's output box: the board's 112 pt in the board's sheet (and in Adopt's shorter one), every extra point
+    /// of a taller sheet, and one placeholder line until the CLI prints.
+    @Test func theOutputBoxKeepsTheBoardsHeightAndGrowsWithTheSheet() {
+        #expect(AddSkillProgress.outputHeight(in: AddSkillProgress.boardHeight) == 112)
+        #expect(AddSkillProgress.outputHeight(in: 240) == 112, "never smaller")
+        #expect(AddSkillProgress.outputHeight(in: AddSkillProgress.boardHeight + 440.6) == 552)
+        #expect(AddSkillCopy.waitingForOutput == "Waiting for output…")
+    }
+
     // MARK: - Flow-F2 rules
 
     /// Flow-F2: "Up to next major (default) / Exact / Latest / Branch". Latest and Branch need `allow-ranges`

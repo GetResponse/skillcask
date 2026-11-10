@@ -6,8 +6,9 @@ import SkillcaskDomain
 /// where noted; versions carry no `v` prefix (the `DesignFixtures` decision).
 ///
 /// Invented (no board draws them): `searching`, `loadingPreview`, `idleTitle`, `idleBody`, `noSelection`,
-/// `allSkillsAdded`, `selectionKept`, `oneSkillAdded`, `otherSkillsIn`, `addOne`, `showOutput`, `couldNotAdd`,
-/// `added(package:)`, `addedSoFar`, `status(_:count:)`, `summary(done:scope:)`, `done`, `footerPersonal`,
+/// `allSkillsAdded`, `selectionKept`, `oneSkillAdded`, `otherSkillsIn`, `addOne`, `showOutput`, `waitingForOutput`,
+/// `couldNotAdd`, `added(package:)`, `addedSoFar`, `status(_:count:)`, `summary(done:scope:)`, `done`,
+/// `footerPersonal`,
 /// `willInstall`, `noResultsBody` for skills.sh on or undecided, the rule label `upToNextMinor`, `branchLabel`,
 /// `branchProblem`, the Branch form of `ruleNote`, and the accessibility labels `ruleHint` and `installedHint`.
 /// "Exact", "Latest" and "Branch" are Flow-F2's ("Up to next major (default) / Exact / Latest / Branch").
@@ -325,6 +326,8 @@ public enum AddSkillCopy {
     }
 
     public static let hideOutput = "Hide output"
+    /// Invented: the output box's one line until the CLI prints its first (also Adopt's single run).
+    public static let waitingForOutput = "Waiting for output…"
     /// Invented: the same link once the output is hidden.
     public static let showOutput = "Show output"
 

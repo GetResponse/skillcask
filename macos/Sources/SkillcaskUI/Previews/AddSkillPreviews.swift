@@ -15,7 +15,8 @@ extension PreviewRegistry {
     /// filter's states search My Skills for "pocock": `filter-source` narrows to skills.sh (GitHub dimmed at 0),
     /// `filter-empty` keeps a GitHub filter from an earlier query ("No results from GitHub", Show All), and
     /// `installs-column` is the unfiltered list whose long `github:` names truncate before the 4- and 5-digit counts.
-    /// `preview-large` and `progress-large` draw the resizable sheet at 1280×860.
+    /// `preview-large` and `progress-large` draw the resizable sheet at 1280×860. `progress-waiting` and
+    /// `progress-waiting-large` (at the 1600×1100 cap) are the run before the CLI's first line.
     static let addSkill: [Entry] = [
         sheet("preview", boardScope: true) {
             $0.preload(
@@ -115,6 +116,17 @@ extension PreviewRegistry {
                 query: DesignFixtures.jiraQuery, results: .loaded(DesignFixtures.jiraSearch), skillsSh: .disabled,
                 selection: AddSkillSamples.jiraPackage, info: AddSkillSamples.jiraInfo)
         },
+        // The run before the CLI printed anything: the output box at its full size, with its placeholder.
+        sheet("progress-waiting", boardScope: true, previewState: .waiting) {
+            $0.preload(
+                query: DesignFixtures.jiraQuery, results: .loaded(DesignFixtures.jiraSearch), skillsSh: .disabled,
+                selection: AddSkillSamples.jiraPackage, info: AddSkillSamples.jiraInfo)
+        },
+        sheet("progress-waiting-large", boardScope: true, previewState: .waiting, size: Size.addSkillSheetMax) {
+            $0.preload(
+                query: DesignFixtures.jiraQuery, results: .loaded(DesignFixtures.jiraSearch), skillsSh: .disabled,
+                selection: AddSkillSamples.jiraPackage, info: AddSkillSamples.jiraInfo)
+        },
         Entry(id: "P3-9", state: "success", size: CGSize(width: 1280, height: 800)) {
             AnyView(AddSkillSuccessSample())
         },
@@ -146,12 +158,14 @@ enum AddSkillSamples {
     /// A run the sheet shows without one: built at render time, so the progress clock reads 0:07.
     enum State: Sendable {
         case progress
+        case waiting
         case clashFailure
         case added
 
         var sheetState: AddSkillSheet.PreviewState {
             switch self {
             case .progress: .running(AddSkillSamples.progress)
+            case .waiting: .running(AddSkillSamples.waiting)
             case .clashFailure: .addFailure(AddSkillSamples.clashFailure)
             case .added: .added([AddSkillSamples.added])
             }
@@ -269,6 +283,12 @@ enum AddSkillSamples {
         AddSkillProgress.Model(
             title: AddSkillCopy.adding(jiraPackage), startedAt: Date().addingTimeInterval(-7),
             lines: DesignFixtures.Transcripts.addJira.map(OutputLine.stdout))
+    }
+
+    /// The same run one second in, before its first line.
+    static var waiting: AddSkillProgress.Model {
+        AddSkillProgress.Model(
+            title: AddSkillCopy.adding(jiraPackage), startedAt: Date().addingTimeInterval(-1), lines: [])
     }
 
     static let notFound = AddSkillCopy.previewFailure(

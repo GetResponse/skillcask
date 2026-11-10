@@ -169,6 +169,10 @@ Code comments cite these by number.
   with the toast and the new rows selected. The footer's note gives way to what was added (an ok dot
   and the add's words, from the second add on with the count of skills), Cancel reads Done, and the
   toast and the selection of AddSkill-States "Success" follow when the sheet closes (Interaction).
+- **G18** The run's output box in the Add Skill and Adopt sheets (`AddSkillProgress`) spans the
+  width and keeps its height from the first frame: the board's 112 pt in the board-size sheet, plus
+  every point a taller sheet adds. Until the CLI prints it holds one placeholder line ("Waiting for
+  output…", no board) where the first line will be.
 - The toast's shadow (`0 8pt 24pt`, black at 0.16 light / 0.5 dark) lives in `Toast.Shadow`; no
   shadow token exists yet. Cards never have a shadow.
 
