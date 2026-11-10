@@ -11,6 +11,8 @@ import SkillcaskCore
 /// - One add at a time: the next one starts only after the run ended, and never the same `add` again while the
 ///   selection stays on the added row (`SearchStore.isRepeat`).
 /// - A failure stays in the preview pane as before; what was added before it stays counted.
+/// - An add names its skills from the preview. Once the scope's refresh after it has landed, a skill the scope
+///   does not have is no longer claimed, counted or selected (`settle`).
 /// - When the sheet goes away (`cancelOrClose(runner:)`, `disappeared(runner:)`), the one toast shows (the add's
 ///   own after one add, a summary after several) and the skill list selects the last added skill.
 ///
@@ -20,12 +22,15 @@ import SkillcaskCore
     /// One add that exited 0.
     struct Added: Hashable, Sendable {
         let package: String
-        /// The skills as agents see them; empty when the package's preview listed none.
-        let skills: [String]
+        /// The skills as agents see them; empty when the package's preview listed none, or none of them is in the
+        /// scope (`addedNothing`).
+        var skills: [String]
         /// `Added jira-syntax and jira-communication (4.2.0)`, from the CLI's `added` line.
-        let text: String
+        var text: String
         /// The run's `ActivityEntry`, for the toast's "Show details".
         let runID: UUID?
+        /// The scope's refresh after the add has none of the skills it named: it counts for nothing.
+        var addedNothing = false
     }
 
     /// What takes the keyboard: the header's field, or the results list.
@@ -63,6 +68,8 @@ import SkillcaskCore
     @ObservationIgnored private var runs: [Task<Void, Never>] = []
     /// The selection an add made after the sheet was gone; that add's task ends with it.
     @ObservationIgnored private var lateSelection: Task<Void, Never>?
+    /// Where in `added` each run that exited 0 stands, until its refresh has landed (`settle`).
+    @ObservationIgnored private var unsettled: [UUID: Int] = [:]
 
     init(search: SearchStore, onClose: @escaping () -> Void = {}) {
         self.search = search
@@ -80,14 +87,14 @@ import SkillcaskCore
     }
 
     /// The skills added in this visit, each counted once however often its package was added; a package whose
-    /// skills are not known counts as one.
+    /// skills are not known counts as one, an add that added nothing as none.
     var skillCount: Int {
-        Set(added.flatMap { $0.skills.isEmpty ? [$0.package] : $0.skills }).count
+        Set(added.filter { !$0.addedNothing }.flatMap { $0.skills.isEmpty ? [$0.package] : $0.skills }).count
     }
 
-    /// The count beside the last add's words, from the second add on.
+    /// The count beside the last add's words, from the second add on, while there is something to count.
     private var countNote: String? {
-        added.count > 1 ? AddSkillCopy.addedSoFar(skillCount) : nil
+        added.count > 1 && skillCount > 0 ? AddSkillCopy.addedSoFar(skillCount) : nil
     }
 
     /// What the visit added, in one sentence: the footer's accessibility label and VoiceOver's announcement after
@@ -118,7 +125,9 @@ import SkillcaskCore
         guard canAdd, let command = search.command, let spec = search.selectedSpec else { return nil }
         let skills = addedNames
         let package = spec.base
+        let lockName = spec.package
         let choices = search.choices
+        let ticket = UUID()
         focusAfterRun = .field
         announcementAfterRun = nil
         let run = run.start(
@@ -126,13 +135,38 @@ import SkillcaskCore
             outcome: { _ in AddSkillCopy.added(package: package) },
             report: { _, transcript in AddSkillCopy.added(package: package, skills: skills, transcript: transcript) },
             emphasis: skills, announce: false, in: search.store, runner: runner,
-            onSuccess: { self.succeeded(choices, package: package, skills: skills, runner: runner) })
+            onSuccess: {
+                self.succeeded(choices, package: package, skills: skills, runner: runner)
+                self.unsettled[ticket] = self.added.count - 1
+            })
         guard let run else { return nil }
-        runs.append(run)
-        return Task {
+        let settled = Task {
             await run.value
+            settle(ticket, package: lockName)
+        }
+        runs.append(settled)
+        return Task {
+            await settled.value
             await lateSelection?.value
         }
+    }
+
+    /// The scope's refresh after an add landed: the add keeps the skills it named that the scope has under its
+    /// package. When some are missing (skills.toml renames the skill, so `status` knows another name and the add
+    /// changed nothing), its words fall back to the package's, and with none left it counts for nothing. A refresh
+    /// that failed says nothing, and the add's words stand.
+    private func settle(_ ticket: UUID, package: String) {
+        let store = search.store
+        guard let index = unsettled.removeValue(forKey: ticket), store.refreshError == nil,
+            let entries = store.snapshot?.entries
+        else { return }
+        let present = Set(entries.filter { $0.package?.lowercased() == package }.map(\.name))
+        let named = added[index].skills
+        let found = named.filter(present.contains)
+        guard found != named else { return }
+        added[index].skills = found
+        added[index].text = AddSkillCopy.added(package: package)
+        added[index].addedNothing = found.isEmpty
     }
 
     private func succeeded(_ choices: SearchStore.Choices, package: String, skills: [String], runner: ActionRunner) {
@@ -184,7 +218,7 @@ import SkillcaskCore
     /// the scope before the last add drops a selection it does not know (`ScopeStore.rebuild`).
     private func conclude(runner: ActionRunner) -> Task<Void, Never>? {
         guard let last = added.last else { return nil }
-        if added.count == 1 {
+        if added.count == 1 || skillCount == 0 {
             runner.announce(last.text, emphasis: last.skills, id: last.runID ?? UUID())
         } else {
             runner.announce(AddSkillCopy.summary(done: skillCount, scope: ShellCopy.name(of: search.store.scope)))
@@ -197,7 +231,8 @@ import SkillcaskCore
             for run in runs {
                 await run.value
             }
-            if store.selection == nil {
+            // The last add may have settled meanwhile: only a skill it still names is selected.
+            if store.selection == nil, let skill = self.added.last?.skills.first {
                 await store.select(skill)
             }
         }

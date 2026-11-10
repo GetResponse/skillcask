@@ -221,17 +221,26 @@ them by number; the numbers have gaps.
   progress covers the body during the run; then the results are back with the same query, source
   filter and scroll position, the selection and the keyboard on the added row (the field keeps the
   keyboard after a typed source, a failure or a cancel), and the row reads Installed once the scope
-  has refreshed. One add at a time; the add that just succeeded is not offered again while the
-  selection stays on its row and the rule, skills and name chosen are the same. Once the selection
-  came back to it, it adds as any installed package does (`add` resolves the entry again and keeps
-  its constraint), with its preview read again. The footer says what the last add added, worded and
-  styled as its toast, and from the second add on the count (`· 3 skills added`), which is never
-  truncated; VoiceOver reads them as one element and hears them after each add. Cancel reads Done,
-  except while a run is in flight, when it reads Cancel and stops that run only. No toast shows over
-  the open sheet. When it closes (Done, Esc, or its scope going away): one add leaves its own toast,
-  several leave one summary (`Added 3 skills to api`, each skill counted once), and the skills list
-  selects the last add's first skill, also when a refresh from before that add lands afterwards. A
-  failed add stays in the preview pane with the CLI's hint; what was added before it stays counted.
+  has refreshed. A result that names one skill of a package (skills.sh lists
+  `github:owner/repo/skill`) reads Installed only when that skill is in the scope; while only other
+  skills of the package of that name are, its description says which, and Add installs it next to
+  them (`add` merges it into a GitHub entry's `skills` and resolves the entry again, so on a branch
+  ref the package's other skills may move). When skills.toml has the package from another source,
+  `add` replaces that entry: the preview warns and names the skills known to go. A result for a whole
+  package reads Installed when the package is in the lock. One add at a time; the add that just
+  succeeded is not offered again while the selection stays on its row and the rule, skills and name
+  chosen are the same. Once the selection came back to it, it adds as any installed package does
+  (`add` resolves the entry again and keeps its constraint), with its preview read again. The footer
+  says what the last add added, worded and styled as its toast, and from the second add on the count
+  (`· 3 skills added`), which is never truncated; VoiceOver reads them as one element and hears them
+  after each add. Cancel reads Done, except while a run is in flight, when it reads Cancel and stops
+  that run only. No toast shows over the open sheet. When it closes (Done, Esc, or its scope going
+  away): one add leaves its own toast, several leave one summary (`Added 3 skills to api`, each
+  skill counted once), and the skills list selects the last add's first skill, also when a refresh
+  from before that add lands afterwards. A failed add stays in the preview pane with the CLI's hint;
+  what was added before it stays counted. A skill that skills.toml renames is known to `status` only
+  by its new name: its result does not read Installed, and an add that leaves the scope without the
+  skill it named is neither worded, counted nor selected as that skill.
 - Add Skill's source filter is client-side over one `search` document: All, then one chip per
   allowed repository, skills.sh when searched and any other source the results name, each with its
   count. Single select; clicking the active chip goes back to All. The filter persists across

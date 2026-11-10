@@ -128,7 +128,7 @@ import Testing
         await visit.search.infoTask?.value
         let command = try #require(visit.search.command)
         await client.lines(command, in: scope, [#"added acme/jira = "main" (3f2a9c1d0b7e)"#])
-        await scriptRefresh([])
+        await scriptRefresh([Added(package: "acme/jira", skill: "jira", version: "3f2a9c1d0b7e")])
         await visit.add(runner: runner)?.value
         #expect(visit.status == "Added jira (3f2a9c1d0b7e)")
         #expect(visit.focusAfterRun == .field, "there is no list to return to")
@@ -520,9 +520,9 @@ import Testing
     /// The cache is per row, and two rows can be one package (skills.sh lists `github:owner/repo/<skill>`): the
     /// other row's preview predates the add as well.
     @Test(.timeLimit(.minutes(1))) func anotherRowOfTheAddedPackageIsReadAgainToo() async throws {
-        let pdf = "github:anthropics/skills/pdf"
-        let docx = "github:anthropics/skills/docx"
-        let document = #"{"package":"anthropics/skills","skills":[{"name":"pdf"},{"name":"docx"}]}"#
+        let pdf = "github:acme/office/pdf"
+        let docx = "github:acme/office/docx"
+        let document = #"{"package":"acme/office","skills":[{"name":"pdf"},{"name":"docx"}]}"#
         let visit = visit()
         visit.search.sourceFilter = nil
         visit.search.preload(
@@ -533,19 +533,352 @@ import Testing
                     json: #"{"results":[{"name":"\#(pdf)","source":"skills.sh"},"#
                         + #"{"name":"\#(docx)","source":"skills.sh"}],"skills-sh":true}"#)))
         for row in [docx, pdf] {
-            await client.json(.info(.package("github:anthropics/skills")), in: scope, document)
+            await client.json(.info(.package("github:acme/office")), in: scope, document)
             visit.search.selection = row
             await visit.search.infoTask?.value
         }
         let command = try #require(visit.search.command)
-        await client.lines(command, in: scope, [#"added anthropics/skills = "main" (3f2a9c1d0b7e)"#])
+        await client.lines(command, in: scope, [#"added acme/office = "main" (3f2a9c1d0b7e)"#])
         await scriptRefresh([])
         await visit.add(runner: runner)?.value
-        await client.json(.info(.package("github:anthropics/skills")), in: scope, document)
+        await client.json(.info(.package("github:acme/office")), in: scope, document)
         visit.search.selection = docx
         #expect(visit.search.preview == .loading, "not the preview from before the add")
         await visit.search.infoTask?.value
         #expect(visit.search.info != nil)
+    }
+
+    // MARK: - Skills of one package
+
+    static let alpha = Added(package: "acme/tools", skill: "alpha", version: "3f2a9c1d0b7e")
+    static let beta = Added(package: "acme/tools", skill: "beta", version: "3f2a9c1d0b7e")
+    static let alphaRow = "github:acme/tools/alpha"
+    static let betaRow = "github:acme/tools/beta"
+
+    /// A visit whose results are two skills of one repository, as skills.sh lists them, and the whole repository.
+    func toolsVisit(capabilities: Capabilities = Capabilities(version: Capabilities.minimum)) -> AddSkillVisit {
+        let visit = visit(capabilities: capabilities)
+        visit.search.sourceFilter = nil
+        let rows = [Self.alphaRow, Self.betaRow].map { #"{"name":"\#($0)","source":"skills.sh"}"# }
+        visit.search.preload(
+            query: "tools",
+            results: .loaded(
+                DesignFixtures.decode(
+                    SearchDocument.self,
+                    json: #"{"results":[\#(rows.joined(separator: ",")),"#
+                        + #"{"name":"github:acme/tools","source":"github"}],"skills-sh":true}"#)))
+        return visit
+    }
+
+    /// `info` of the repository: every skill before it is locked, afterwards the lock's skills only
+    /// (`src/commands.rs` `info`: "The locked version's skills are the lock's"). `why` is the entry's line, or the
+    /// requirer's for a package that is only a dependency.
+    static func toolsInfo(
+        locked: [String]?, source: String = "github", why: String = #"acme/tools: in skills.toml as \"main\""#
+    ) -> String {
+        let skills = (locked ?? ["alpha", "beta", "gamma"]).map { #"{"name":"\#($0)"}"# }.joined(separator: ",")
+        let why = locked == nil ? "" : "\"\(why)\""
+        return #"{"package":"acme/tools","source":"\#(source)","version":"3f2a9c1d0b7e","locked":\#(locked != nil),"#
+            + #""skills":[\#(skills)],"versions":[],"why":[\#(why)]}"#
+    }
+
+    /// The `info` a row of the repository asks for: the entry's own (`acme/tools`) once the scope's snapshot has
+    /// the package from skills.toml, the repository's (`github:acme/tools`) before.
+    static let entryTarget = "acme/tools"
+    static let repositoryTarget = "github:acme/tools"
+
+    /// Selects a row of the repository and loads its preview; `locked` is what the lock selects by then.
+    func selectTools(
+        _ row: String, in visit: AddSkillVisit, locked: [String]?, source: String = "github",
+        why: String = #"acme/tools: in skills.toml as \"main\""#, dependency: Bool = false
+    ) async {
+        let target = locked == nil || dependency ? Self.repositoryTarget : Self.entryTarget
+        await client.json(
+            .info(.package(target)), in: scope, Self.toolsInfo(locked: locked, source: source, why: why))
+        visit.search.selection = row
+        await visit.search.infoTask?.value
+    }
+
+    /// Reads the scope with `installed` in the lock, as it was before the sheet opened.
+    func load(_ installed: [Added], in visit: AddSkillVisit) async {
+        await scriptRefresh(installed)
+        await visit.search.store.refresh()
+    }
+
+    /// Adds the selected row at exit 0; `installed` is what the lock holds afterwards.
+    func addTools(in visit: AddSkillVisit, installed: [Added]) async throws {
+        let command = try #require(visit.search.command)
+        await client.lines(command, in: scope, [#"added acme/tools = "main" (3f2a9c1d0b7e)"#])
+        await scriptRefresh(installed)
+        await visit.add(runner: runner)?.value
+    }
+
+    func toolsRow(_ name: String, in visit: AddSkillVisit) throws -> SearchDocument.Result {
+        try #require(visit.search.filteredResults.first { $0.name == name })
+    }
+
+    /// The marker is the skill's, not the package's: one added skill does not mark its package's other rows.
+    @Test(.timeLimit(.minutes(1))) func onlyTheAddedSkillsRowReadsInstalled() async throws {
+        let visit = toolsVisit()
+        let (alpha, beta) = (try toolsRow(Self.alphaRow, in: visit), try toolsRow(Self.betaRow, in: visit))
+        #expect(!visit.search.isInstalled(alpha) && !visit.search.isInstalled(beta))
+        #expect(visit.search.otherInstalledSkills(of: beta).isEmpty)
+        await selectTools(Self.alphaRow, in: visit, locked: nil)
+        try await addTools(in: visit, installed: [Self.alpha])
+        #expect(visit.search.isInstalled(alpha) && visit.search.installedSkills(of: alpha) == ["alpha"])
+        #expect(!visit.search.isInstalled(beta), "beta is not in the scope")
+        #expect(visit.search.installedSkills(of: beta).isEmpty)
+        #expect(visit.search.otherInstalledSkills(of: beta) == ["alpha"])
+        #expect(visit.search.otherInstalledSkills(of: alpha).isEmpty, "an installed row says only that")
+        let whole = try toolsRow("github:acme/tools", in: visit)
+        #expect(visit.search.isInstalled(whole) && visit.search.installedSkills(of: whole) == ["alpha"])
+        #expect(visit.search.otherInstalledSkills(of: whole).isEmpty, "a row for the whole package has no others")
+    }
+
+    /// After alpha, `info` lists the lock's skills only (alpha): beta's preview still names beta, says it joins
+    /// alpha, and Add sends beta's own spec, which the CLI merges into the entry's `skills`.
+    @Test(.timeLimit(.minutes(1))) func anotherSkillsRowPreviewsAndAddsThatSkill() async throws {
+        let visit = toolsVisit()
+        await selectTools(Self.alphaRow, in: visit, locked: nil)
+        #expect(visit.search.providedSkills.map(\.name) == ["alpha"])
+        #expect(visit.search.skillsNote == "Only this skill is added, not the whole package.")
+        try await addTools(in: visit, installed: [Self.alpha])
+        await selectTools(Self.betaRow, in: visit, locked: ["alpha"])
+        #expect(visit.search.providedSkills.map(\.name) == ["beta"], "not alpha, the one skill `info` lists")
+        #expect(visit.search.chosenSkills == ["beta"])
+        #expect(visit.search.skillsNote == "Only this skill is added, next to alpha from the same package.")
+        #expect(
+            visit.search.command
+                == .add(spec: Self.betaRow, repository: nil, adopt: false, rename: [:], skills: []))
+        #expect(!visit.search.isRepeat && visit.canAdd)
+        #expect(visit.search.entryWarning == nil)
+        #expect(await client.commands.contains(.info(.package(Self.entryTarget))), "the entry's own source is asked")
+    }
+
+    /// The scope may still be refreshing when the next row is selected: the repository's `info` is asked then, and
+    /// the package this sheet added from GitHub is known to be a GitHub entry.
+    @Test(.timeLimit(.minutes(1))) func aSkillSelectedBeforeTheRefreshStillJoinsTheAddedOne() async throws {
+        let visit = toolsVisit()
+        await selectTools(Self.alphaRow, in: visit, locked: nil)
+        let command = try #require(visit.search.command)
+        await client.lines(command, in: scope, [#"added acme/tools = "main" (3f2a9c1d0b7e)"#])
+        let gate = Gate()
+        await client.json(.status, in: scope, Self.status([Self.alpha]), gate: gate)
+        await client.json(.audit, in: scope, ScopeStoreTests.emptyAudit)
+        await client.json(.doctor(fix: false), in: scope, ScopeStoreTests.cleanDoctor)
+        let run = visit.add(runner: runner)
+        await gate.arrived()
+        await client.json(
+            .info(.package(Self.repositoryTarget)), in: scope, Self.toolsInfo(locked: ["alpha"]))
+        visit.search.selection = Self.betaRow
+        await visit.search.infoTask?.value
+        #expect(visit.search.skillsNote == "Only this skill is added, not the whole package.", "alpha not read yet")
+        await gate.open()
+        await run?.value
+        #expect(visit.search.skillsNote == "Only this skill is added, next to alpha from the same package.")
+        #expect(visit.search.entryWarning == nil)
+    }
+
+    /// `info` lists every skill of a package that is not locked: a skill it does not list is not invented.
+    @Test(.timeLimit(.minutes(1))) func aSkillTheRepositoryDoesNotListIsNotInvented() async throws {
+        let visit = toolsVisit()
+        await selectTools("github:acme/tools/delta", in: visit, locked: nil)
+        #expect(visit.search.info?.locked == false && visit.search.providedSkills.isEmpty)
+        #expect(visit.search.chosenSkills == ["delta"], "the CLI stays the judge")
+    }
+
+    @Test(.timeLimit(.minutes(1))) func aSkillRowSaysItsLineWhereSkillsCanBeChosenToo() async throws {
+        let visit = toolsVisit(capabilities: Self.capable)
+        await selectTools(Self.alphaRow, in: visit, locked: nil)
+        #expect(visit.search.canChooseSkills)
+        #expect(visit.search.skillsNote == "Only this skill is added, not the whole package.")
+        await selectTools("github:acme/tools", in: visit, locked: nil)
+        #expect(visit.search.skillsNote == nil, "the checkboxes say it")
+    }
+
+    // MARK: - A package of the same name from another source
+
+    /// `add github:owner/repo[/skill]` merges only into a GitHub entry; an entry of that name from a registry is
+    /// replaced, and its skills are removed (`src/commands.rs` `add_vcs`, which looks for GitHub entries only).
+    /// `info github:…` reports `github` whatever the entry is, so the entry's own `info` is asked.
+    @Test(.timeLimit(.minutes(1))) func aSkillOfAPackageFromAnotherSourceWarnsThatAddReplacesIt() async throws {
+        let visit = toolsVisit()
+        await load([Self.alpha], in: visit)
+        let beta = try toolsRow(Self.betaRow, in: visit)
+        #expect(!visit.search.isInstalled(beta) && visit.search.otherInstalledSkills(of: beta) == ["alpha"])
+        let why = #"acme/tools: in skills.toml as \"^1.0\""#
+        await selectTools(Self.betaRow, in: visit, locked: ["alpha"], source: "composer", why: why)
+        #expect(await client.commands.last == .info(.package(Self.entryTarget)))
+        #expect(visit.search.replacedSource == "composer")
+        #expect(
+            visit.search.entryWarning
+                == UserMessage(
+                    title: "acme/tools is already in this project from a Composer repository.",
+                    reason: "Add replaces that entry with the GitHub repository and removes alpha.",
+                    severity: .warning))
+        #expect(visit.search.skillsNote == "Only this skill is added, not the whole package.", "no “next to alpha”")
+        #expect(visit.search.providedSkills.map(\.name) == ["beta"])
+        #expect(visit.search.existingConstraint == nil && visit.search.keptConstraint == nil, "^1.0 is not kept")
+        #expect(visit.search.ruleBase == nil, "the version is the registry package's")
+        #expect(
+            visit.search.command
+                == .add(spec: Self.betaRow, repository: nil, adopt: false, rename: [:], skills: []))
+        #expect(visit.canAdd)
+
+        await selectTools("github:acme/tools", in: visit, locked: ["alpha"], source: "composer", why: why)
+        #expect(
+            visit.search.entryWarning?.reason == "Add replaces that entry with the GitHub repository.",
+            "which of its skills the repository has is not known")
+        #expect(visit.search.providedSkills.isEmpty, "the lock's skills are the registry package's")
+        #expect(visit.search.skillsNote == nil && visit.canAdd)
+
+        await selectTools(Self.alphaRow, in: visit, locked: ["alpha"], source: "git", why: why)
+        #expect(
+            visit.search.entryWarning?.title == "acme/tools is already in this project from a git URL."
+                && visit.search.entryWarning?.reason == "Add replaces that entry with the GitHub repository.")
+    }
+
+    @Test(.timeLimit(.minutes(1))) func theWarningGoesOnceTheAddReplacedTheEntry() async throws {
+        let visit = toolsVisit()
+        await load([Self.alpha], in: visit)
+        await selectTools(
+            Self.betaRow, in: visit, locked: ["alpha"], source: "composer",
+            why: #"acme/tools: in skills.toml as \"^1.0\""#)
+        try await addTools(in: visit, installed: [Self.beta])
+        #expect(visit.search.entryWarning == nil && visit.status == "Added beta (3f2a9c1d0b7e)")
+        #expect(visit.search.providedSkills.map(\.name) == ["beta"])
+    }
+
+    /// A package that is only a dependency has no skills.toml entry for `add` to merge into: nothing is promised
+    /// about the skill a requirer brought.
+    @Test(.timeLimit(.minutes(1))) func aSkillOfADependencyPromisesNoNeighbour() async throws {
+        let visit = toolsVisit()
+        let status =
+            #"{"ok":true,"entries":[{"package":"acme/tools","skill":"alpha","version":"1.0.0","state":"ok","#
+            + #""ok":true,"via":["acme/req"]}],"policy":{},"repositories":[]}"#
+        await client.json(.status, in: scope, status)
+        await client.json(.audit, in: scope, ScopeStoreTests.emptyAudit)
+        await client.json(.doctor(fix: false), in: scope, ScopeStoreTests.cleanDoctor)
+        await visit.search.store.refresh()
+        await selectTools(
+            Self.betaRow, in: visit, locked: ["alpha"], why: "acme/tools: required by acme/req (^1.0)",
+            dependency: true)
+        #expect(await client.commands.last == .info(.package(Self.repositoryTarget)), "no entry to ask about")
+        #expect(visit.search.skillsNote == "Only this skill is added, not the whole package.")
+        #expect(visit.search.entryWarning == nil && visit.canAdd)
+    }
+
+    // MARK: - An add that added nothing new
+
+    static let renamed = Added(package: "acme/tools", skill: "acme-alpha", version: "3f2a9c1d0b7e")
+
+    /// skills.toml renames alpha (`rename = { alpha = "acme-alpha" }`): `status` knows only the new name, so the
+    /// row for alpha is not Installed and its add changes nothing. The visit claims no skill the scope lacks.
+    @Test(.timeLimit(.minutes(1))) func anAddWhoseSkillIsNotInTheScopeClaimsNoSkill() async throws {
+        let visit = toolsVisit()
+        await load([Self.renamed], in: visit)
+        await selectTools(Self.alphaRow, in: visit, locked: ["acme-alpha"])
+        try await addTools(in: visit, installed: [Self.renamed])
+        #expect(visit.status == "Added acme/tools" && visit.skillCount == 0)
+        #expect(visit.footer == .added(text: "Added acme/tools", emphasis: [], count: nil))
+        #expect(visit.cancelOrClose(runner: runner) == nil, "no skill to select")
+        #expect(runner.toast?.text == "Added acme/tools" && visit.search.store.selection == nil)
+    }
+
+    @Test(.timeLimit(.minutes(1))) func anAddOfNothingNewIsNotCounted() async throws {
+        let visit = toolsVisit()
+        await load([Self.renamed], in: visit)
+        await selectTools(Self.betaRow, in: visit, locked: ["acme-alpha"])
+        try await addTools(in: visit, installed: [Self.renamed, Self.beta])
+        await selectTools(Self.alphaRow, in: visit, locked: ["acme-alpha", "beta"])
+        try await addTools(in: visit, installed: [Self.renamed, Self.beta])
+        #expect(visit.status == "Added acme/tools · 1 skill added" && visit.skillCount == 1)
+        await visit.cancelOrClose(runner: runner)?.value
+        #expect(runner.toast?.text == "Added 1 skill to add-visit-tests")
+        #expect(visit.search.store.selection == nil, "the last add named no skill of the scope")
+    }
+
+    /// A refresh that failed says nothing about what the add did: its words stand.
+    @Test(.timeLimit(.minutes(1))) func aFailedRefreshLeavesTheAddsWords() async throws {
+        let visit = toolsVisit()
+        await selectTools(Self.alphaRow, in: visit, locked: nil)
+        let command = try #require(visit.search.command)
+        await client.lines(command, in: scope, [#"added acme/tools = "main" (3f2a9c1d0b7e)"#])
+        await client.script(.status, in: scope, .error(.noDocument))
+        await client.json(.audit, in: scope, ScopeStoreTests.emptyAudit)
+        await client.json(.doctor(fix: false), in: scope, ScopeStoreTests.cleanDoctor)
+        await visit.add(runner: runner)?.value
+        #expect(visit.search.store.refreshError != nil)
+        #expect(visit.status == "Added alpha (3f2a9c1d0b7e)" && visit.skillCount == 1)
+    }
+
+    @Test(.timeLimit(.minutes(1))) func twoSkillsOfOnePackageAreTwoAdds() async throws {
+        let visit = toolsVisit()
+        await selectTools(Self.alphaRow, in: visit, locked: nil)
+        try await addTools(in: visit, installed: [Self.alpha])
+        #expect(visit.status == "Added alpha (3f2a9c1d0b7e)" && !visit.canAdd)
+        await selectTools(Self.betaRow, in: visit, locked: ["alpha"])
+        try await addTools(in: visit, installed: [Self.alpha, Self.beta])
+        #expect(visit.search.skillsNote == "Adding it again keeps this package’s current skills.", "beta is there")
+        #expect(
+            await adds()
+                == [Self.alphaRow, Self.betaRow]
+                .map {
+                    .add(spec: $0, repository: nil, adopt: false, rename: [:], skills: [])
+                })
+        let (alpha, beta) = (try toolsRow(Self.alphaRow, in: visit), try toolsRow(Self.betaRow, in: visit))
+        #expect(visit.search.isInstalled(alpha) && visit.search.isInstalled(beta))
+        #expect(visit.search.installedSkills(of: beta) == ["beta"])
+        #expect(visit.search.otherInstalledSkills(of: beta).isEmpty)
+        #expect(visit.status == "Added beta (3f2a9c1d0b7e) · 2 skills added" && visit.skillCount == 2)
+        #expect(
+            visit.footer == .added(text: "Added beta (3f2a9c1d0b7e)", emphasis: ["beta"], count: "· 2 skills added"))
+        #expect(visit.search.isRepeat && !visit.canAdd, "beta was just added")
+        await selectTools(Self.alphaRow, in: visit, locked: ["alpha", "beta"])
+        #expect(!visit.search.isRepeat && visit.canAdd, "alpha is another add than beta")
+        #expect(
+            visit.search.skillsNote == "Adding it again keeps this package’s current skills.",
+            "alpha is there: nothing is added next to beta")
+        visit.cancelOrClose(runner: runner)
+        #expect(runner.toast?.text == "Added 2 skills to add-visit-tests")
+    }
+
+    /// A row for the whole package adds what `info` lists; once the package has an entry, `add` keeps that
+    /// entry's skills (`src/commands.rs` `add_vcs`), so the line under the list no longer promises every skill.
+    @Test(.timeLimit(.minutes(1))) func aWholePackageRowSaysWhatAddKeeps() async throws {
+        let visit = toolsVisit()
+        await selectTools("github:acme/tools", in: visit, locked: nil)
+        #expect(visit.search.providedSkills.map(\.name) == ["alpha", "beta", "gamma"])
+        #expect(visit.search.skillsNote == "This version of skillcask adds every skill in the package.")
+        await selectTools(Self.alphaRow, in: visit, locked: nil)
+        try await addTools(in: visit, installed: [Self.alpha])
+        await selectTools("github:acme/tools", in: visit, locked: ["alpha"])
+        #expect(visit.search.providedSkills.map(\.name) == ["alpha"])
+        #expect(visit.search.skillsNote == "Adding it again keeps this package’s current skills.")
+        #expect(visit.canAdd)
+    }
+
+    @Test func theRowSaysWhichSkillsOfItsPackageAreThere() {
+        let row = "github:Acme/tools/beta"
+        #expect(
+            ResultRow.note(for: row, installedAs: ["alpha"], otherSkills: [], isPersonal: false)
+                == "Already in this project as alpha.")
+        #expect(
+            ResultRow.note(for: row, installedAs: [], otherSkills: ["alpha"], isPersonal: false)
+                == "This project already has alpha from acme/tools.")
+        #expect(
+            ResultRow.note(for: row, installedAs: [], otherSkills: ["alpha", "gamma"], isPersonal: true)
+                == "My Skills already has alpha and gamma from acme/tools.")
+        #expect(
+            ResultRow.note(for: row, installedAs: [], otherSkills: ["a", "b", "c"], isPersonal: false)
+                == "This project already has a, b and c from acme/tools.")
+        #expect(
+            ResultRow.note(for: row, installedAs: [], otherSkills: ["a", "b", "c", "d", "e"], isPersonal: false)
+                == "This project already has a, b and 3 more from acme/tools.", "two lines hold it")
+        #expect(ResultRow.note(for: row, installedAs: [], otherSkills: [], isPersonal: false) == nil)
+        #expect(
+            AddSkillCopy.oneSkillAdded(alongside: ["a", "b", "c", "d"])
+                == "Only this skill is added, next to a, b and 2 more from the same package.")
     }
 
     // MARK: - Copy
@@ -564,20 +897,21 @@ import Testing
     /// Two skills of one package count as two; the same package added twice counts once.
     @Test(.timeLimit(.minutes(1))) func theCountIsOfSkillsNotOfRuns() async throws {
         let visit = visit()
+        let boards = Added(package: Self.cli.package, skill: "jira-boards", version: Self.cli.version)
         await select(Self.cli, in: visit, skills: ["jira-cli", "jira-boards"])
         let command = try #require(visit.search.command)
         await client.lines(command, in: scope, [#"added atlassian/jira-cli-skill = "^2.1" (2.1.0)"#])
-        await scriptRefresh([Self.cli])
+        await scriptRefresh([Self.cli, boards])
         await visit.add(runner: runner)?.value
         #expect(visit.status == "Added jira-cli and jira-boards (2.1.0)" && visit.skillCount == 2)
-        try await add(Self.markdown, in: visit, installed: [Self.cli, Self.markdown])
+        try await add(Self.markdown, in: visit, installed: [Self.cli, boards, Self.markdown])
         #expect(visit.status == "Added jira-to-md (0.9.0) · 3 skills added")
         await client.json(
             .info(.package(Self.cli.package)), in: scope, Self.info(Self.cli, skills: ["jira-cli", "jira-boards"]))
         visit.search.selection = Self.cli.package
         await visit.search.infoTask?.value
         await client.lines(command, in: scope, [#"added atlassian/jira-cli-skill = "^2.1" (2.1.0)"#])
-        await scriptRefresh([Self.cli, Self.markdown])
+        await scriptRefresh([Self.cli, boards, Self.markdown])
         await visit.add(runner: runner)?.value
         #expect(visit.status == "Added jira-cli and jira-boards (2.1.0) · 3 skills added")
     }

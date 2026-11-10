@@ -8,8 +8,9 @@ import SwiftUI
 /// (AddSkill-States failures), with the action the CLI's hint suggests.
 ///
 /// Gated on the CLI (`Capabilities`): the provided skills are checkboxes only with `add --skill`, read-only and all
-/// ticked otherwise; the name-clash rename field shows only with `add --rename` (on 0.9.4 the clash is the CLI's
-/// error and hint after Add).
+/// ticked otherwise, with a line that says what Add does (`SearchStore.skillsNote`); a result that names one skill
+/// lists that skill, read-only. The name-clash rename field shows only with `add --rename` (on 0.9.4 the clash is
+/// the CLI's error and hint after Add).
 struct ResultPreview: View {
     @Bindable var search: SearchStore
     /// The last Add's failure as the sheet words it; nil when none is on screen.
@@ -43,6 +44,9 @@ struct ResultPreview: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: Spacing.m) {
                     failureBlock
+                    if let warning = search.entryWarning {
+                        FailureBanner(warning)
+                    }
                     summary(info)
                     if let clash = search.clash {
                         clashBlock(clash)
@@ -181,8 +185,8 @@ struct ResultPreview: View {
                     RoundedRectangle(cornerRadius: Radius.m, style: .continuous)
                         .strokeBorder(Color.separator, lineWidth: Size.hairline))
             }
-            if !search.canChooseSkills {
-                Text(AddSkillCopy.allSkillsAdded)
+            if let note = search.skillsNote {
+                Text(note)
                     .font(Font.Token.caption)
                     .foregroundStyle(Color.textSecondary)
             }

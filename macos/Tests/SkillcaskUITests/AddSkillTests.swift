@@ -380,12 +380,14 @@ import Testing
         let info = DesignFixtures.text("info.package.anthropics-skills", "json")
             .replacingOccurrences(
                 of: #""locked": true"#, with: #""locked": false"#)
-        await client.json(.info(.package("github:anthropics/skills")), in: scope, info)
+        // api's skills.toml names anthropics/skills, so the entry is asked: its `source` says whether `add` merges.
+        await client.json(.info(.package("anthropics/skills")), in: scope, info)
         let search = search()
         search.query = spec
         await search.searchTask?.value
         await search.infoTask?.value
-        #expect(await client.commands == [.info(.package("github:anthropics/skills"))])
+        #expect(await client.commands == [.info(.package("anthropics/skills"))])
+        #expect(search.entryWarning == nil, "a GitHub entry")
         #expect(search.providedSkills.map(\.name) == ["pdf"] && search.chosenSkills == ["pdf"])
         #expect(search.command == .add(spec: spec, repository: nil, adopt: false, rename: [:], skills: []))
         let pinned = try #require(PackageSpec.parse("github:Owner/Repo/skill@v1"))
@@ -506,7 +508,11 @@ import Testing
     // MARK: - Add
 
     func scriptRefresh() async {
-        await client.json(.status, in: scope, ScopeStoreTests.status([("jira-syntax", "4.2.0")]))
+        let skills = ["jira-syntax", "jira-communication"]
+            .map {
+                AddSkillVisitTests.Added(package: Self.jira, skill: $0, version: "4.2.0")
+            }
+        await client.json(.status, in: scope, AddSkillVisitTests.status(skills))
         await client.json(.audit, in: scope, ScopeStoreTests.emptyAudit)
         await client.json(.doctor(fix: false), in: scope, ScopeStoreTests.cleanDoctor)
     }

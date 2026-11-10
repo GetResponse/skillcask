@@ -88,7 +88,8 @@ struct ResultsColumn: View {
             ForEach(search.filteredResults, id: \.name) { result in
                 ResultRow(
                     result: result, installedAs: search.installedSkills(of: result),
-                    isBlocked: search.isBlocked(result), isSelected: result.name == search.selection,
+                    otherSkills: search.otherInstalledSkills(of: result), isBlocked: search.isBlocked(result),
+                    isSelected: result.name == search.selection,
                     isPersonal: search.store.scope.isPersonal
                 )
                 .tag(Optional(result.name))
