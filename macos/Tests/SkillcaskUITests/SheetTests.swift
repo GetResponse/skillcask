@@ -43,6 +43,25 @@ import Testing
         #expect(runner.activity.first?.transcript == [.stdout("Updating pdf 1.2.0 → 1.4.0 (packagist)…")])
     }
 
+    /// A sheet that stays open after exit 0 (Add Skill) starts without a toast and reads what the run said.
+    @Test(.timeLimit(.minutes(1))) func aQuietStartLeavesNoToastAndKeepsWhatTheRunSaid() async {
+        await client.lines(update, in: scope, ["Updating pdf 1.2.0 → 1.4.0 (packagist)…"])
+        await scriptRefresh()
+        let runner = ActionRunner(queue: MutationQueue())
+        let run = SheetRun()
+        #expect(run.headline == nil)
+        var succeeded = false
+        let task = run.start(
+            update, title: "Updating pdf…", outcome: { "Updated pdf in \($0)" }, announce: false, in: store(),
+            runner: runner, onSuccess: { succeeded = true })
+        await task?.value
+        #expect(succeeded && run.phase == .succeeded && runner.toast == nil)
+        #expect(run.headline == "Updated pdf in sheet-tests" && run.runID == runner.activity.first?.id)
+        let id = UUID()
+        runner.announce("Updated pdf", emphasis: ["pdf"], id: id)
+        #expect(runner.toast?.id == id && runner.toast?.emphasis == ["pdf"])
+    }
+
     @Test(.timeLimit(.minutes(1))) func failureKeepsTheSheetOpenWithItsMessageAndNoBanner() async {
         await client.script(
             update, in: scope, .error(.failed(code: .network, message: "no route to host", hint: nil, stderr: "")))

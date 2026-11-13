@@ -14,7 +14,9 @@ import SkillcaskDomain
 /// - A source typed into the field (`PackageSpec`: `vendor/name`, `github:…`, `git:https://…`) skips search and
 ///   becomes the selection after the same debounce, so its preview comes straight from `info`.
 /// - `info --json -- <package>` downloads the dist (about a second): it runs only for the selected result, is
-///   cancelled when the selection moves, and is cached for the sheet's lifetime.
+///   cancelled when the selection moves, and is cached for the sheet's lifetime. After an add in this sheet the
+///   added package's previews are read again when their rows are next selected (`added(_:)`); the added row
+///   keeps its preview while it stays selected.
 @MainActor @Observable final class SearchStore {
     /// The results column.
     enum Results: Hashable {
@@ -43,6 +45,16 @@ import SkillcaskDomain
         let existingPackage: String
         /// `<vendor>-<skill>`, as the CLI suggests it (`suggest` in `src/commands.rs`).
         let suggestion: String
+    }
+
+    /// What the user chose for an `add`: the row, and the rule, skills and name set in its preview. Not the command
+    /// built from them, which also reads `info` and the scope's snapshot and so can change under the same choices.
+    struct Choices: Hashable {
+        let selection: String?
+        /// The chosen rule, a branch with its name; nil while the CLI's default stands.
+        let rule: VersionRule?
+        let excludedSkills: Set<String>
+        let renameTo: String
     }
 
     /// A source the results can be narrowed to, and how many of the loaded results it has.
@@ -101,6 +113,9 @@ import SkillcaskDomain
     var excludedSkills: Set<String> = []
     /// The name typed into the rename field; prefilled with the clash's suggestion.
     var renameTo = ""
+    /// What was chosen for the `add` that just exited 0 for the selection (`added(_:)`); nil once the selection
+    /// moved.
+    private(set) var justAdded: Choices?
 
     @ObservationIgnored private(set) var searchTask: Task<Void, Never>?
     @ObservationIgnored private(set) var infoTask: Task<Void, Never>?
@@ -111,6 +126,13 @@ import SkillcaskDomain
     @ObservationIgnored private var isPreloading = false
 
     @ObservationIgnored private var hasBegun = false
+    /// Selections whose cached `info` predates their add in this sheet.
+    @ObservationIgnored private var staleInfos: Set<String> = []
+    /// Selections whose `info` was asked for the package's skills.toml entry (`entryTarget(for:)`), so its `source`
+    /// is the entry's.
+    private var entryInfos: Set<String> = []
+    /// Packages (lock names) an `add` of a `github:` spec exited 0 for in this sheet: GitHub entries since.
+    private var addedFromGitHub: Set<String> = []
 
     /// A store for `scope`'s sheet, with the field pre-filled (`AppStore.Sheet.addSkill(query:)`). Runs nothing
     /// until `begin()`: a view's `init` may build it more than once.
@@ -216,15 +238,42 @@ import SkillcaskDomain
         Set(store.snapshot?.entries.compactMap { $0.package?.lowercased() } ?? [])
     }
 
-    /// The Installed marker: the result's package is already in this scope's lock.
+    /// The Installed marker: the result's package is already in this scope's lock. A result that names one skill
+    /// of a package (`github:owner/repo/skill`, as skills.sh lists them) is installed only when that skill is:
+    /// `add` of such a spec installs that skill alone (`src/commands.rs` `add_vcs`).
     func isInstalled(_ result: SearchDocument.Result) -> Bool {
-        installedPackages.contains(PackageSpec.packageName(of: result.name))
+        !installedSkills(of: result).isEmpty
     }
 
-    /// The skills a result's package already installs in this scope (`Already in this project as jira-cli.`).
+    /// The skills the result already installs in this scope (`Already in this project as jira-cli.`): its
+    /// package's, or the one skill it names. `status` prints a skill under the name it is installed as, so a skill
+    /// renamed in skills.toml is not recognized as the one a result names.
     func installedSkills(of result: SearchDocument.Result) -> [String] {
-        let package = PackageSpec.packageName(of: result.name)
-        return store.snapshot?.entries.filter { $0.package?.lowercased() == package }.map(\.name) ?? []
+        let spec = PackageSpec.parse(result.name)
+        let package = spec?.package ?? result.name.lowercased()
+        guard let skill = spec?.skill else {
+            return store.snapshot?.entries.filter { $0.package?.lowercased() == package }.map(\.name) ?? []
+        }
+        return installedSkills(ofPackage: package).filter { $0 == skill }
+    }
+
+    /// The other skills of its package in this scope, for a result that names one skill which is not there itself
+    /// (`This project already has pdf from anthropics/skills.`), whatever source they came from: `status` does not
+    /// print one. Empty for a result that names a whole package.
+    func otherInstalledSkills(of result: SearchDocument.Result) -> [String] {
+        guard let spec = PackageSpec.parse(result.name), let skill = spec.skill else { return [] }
+        let installed = installedSkills(ofPackage: spec.package)
+        return installed.contains(skill) ? [] : installed
+    }
+
+    /// The skills of `package` (a lock name, lowercased) in this scope, without its rows about the package itself.
+    private func installedSkills(ofPackage package: String) -> [String] {
+        store.snapshot?.entries
+            .filter { entry in
+                if case .packageOnly = entry.kind { return false }
+                return entry.package?.lowercased() == package
+            }
+            .map(\.name) ?? []
     }
 
     /// A result from a repository this scope's policy does not allow (`status.repositories[].allowed`).
@@ -301,9 +350,10 @@ import SkillcaskDomain
     }
 
     /// The version `info` says `add` would install, when it is a number the rule can be built from. Nil hides the
-    /// rule: no info yet, a git ref, or a constraint typed into the field.
+    /// rule: no info yet, a git ref, a constraint typed into the field, or the version of another source's entry
+    /// (`replacedSource`).
     var ruleBase: VersionRule.Base? {
-        guard selectedSpec?.pinned == nil, let version = info?.version else { return nil }
+        guard selectedSpec?.pinned == nil, replacedSource == nil, let version = info?.version else { return nil }
         return VersionRule.Base(version)
     }
 
@@ -352,11 +402,84 @@ import SkillcaskDomain
     }
 
     /// The skills the preview lists: the package's, or only the one a `github:owner/repo/skill` spec selects
-    /// (skills.sh results have that shape; `info` reads the whole repository).
+    /// (skills.sh results have that shape; `info` reads the whole repository). Once the package is locked, `info`
+    /// lists the lock's skills only (`src/commands.rs` `info`), so another skill of a package that is partly in
+    /// the scope is missing from it: the spec's skill is then listed by its name alone. The CLI stays the judge of
+    /// whether the repository has it. While the entry is another source's (`replacedSource`), the lock's skills
+    /// are that source's, not the repository's: only the spec's own skill is listed.
     var providedSkills: [InfoDocument.Skill] {
-        let all = info?.skills ?? []
+        let all = replacedSource == nil ? info?.skills ?? [] : []
         guard let skill = selectedSpec?.skill else { return all }
-        return all.filter { $0.name == skill }
+        let named = all.filter { $0.name == skill }
+        if named.isEmpty, info?.locked == true {
+            return [InfoDocument.Skill(name: skill)]
+        }
+        return named
+    }
+
+    /// The line under the provided skills, which says what Add does where they cannot be chosen.
+    /// - A `github:…/skill` spec adds its one skill. Next to the package's skills already in the scope only where
+    ///   `add` merges it into their entry (`joinsEntry`); when the skill is there itself, nothing is added and the
+    ///   entry is resolved again.
+    /// - Without `add --skill` a package is added whole; once it has an entry, `add` keeps that entry's skills
+    ///   (`src/commands.rs` `add`, `add_vcs`), which are the ones a locked package's `info` lists.
+    /// - An entry `add` replaces (`replacedSource`) keeps nothing: `entryWarning` says so.
+    var skillsNote: String? {
+        if let spec = selectedSpec, let skill = spec.skill {
+            let installed = installedSkills(ofPackage: spec.package)
+            guard joinsEntry else { return AddSkillCopy.oneSkillAdded(alongside: []) }
+            return installed.contains(skill)
+                ? AddSkillCopy.selectionKept : AddSkillCopy.oneSkillAdded(alongside: installed)
+        }
+        if canChooseSkills || replacedSource != nil {
+            return nil
+        }
+        return existingConstraint != nil ? AddSkillCopy.selectionKept : AddSkillCopy.allSkillsAdded
+    }
+
+    // MARK: - The package's entry
+
+    /// What `info` is asked about a `github:` spec whose package this scope's skills.toml already names: the
+    /// package itself, nil otherwise. `info github:owner/repo` reports `github` whatever the entry is, and
+    /// `add github:…` merges only into a GitHub entry: one from a registry is replaced (`src/commands.rs` `info`,
+    /// `add_vcs`). Asked by its name, `info` answers from the entry and says its source; for a GitHub entry the
+    /// document is the same. A typed `@` pin is left to the repository's `info`, which a registry would refuse.
+    private func entryTarget(for spec: PackageSpec) -> String? {
+        guard spec.kind == .github, spec.pinned == nil, let entries = store.snapshot?.entries else { return nil }
+        let named = entries.contains { entry in
+            if case .package(let package) = entry.kind { package.lowercased() == spec.package } else { false }
+        }
+        return named ? spec.package : nil
+    }
+
+    /// The source (`composer`, `git`) of the skills.toml entry that `add` of the selected `github:` spec replaces
+    /// with the GitHub repository; nil when there is no such entry, it is a GitHub one, or it is not known.
+    var replacedSource: String? {
+        guard let selection, let spec = selectedSpec, spec.kind == .github, entryInfos.contains(selection),
+            !addedFromGitHub.contains(spec.package), let source = info?.source, source != "github"
+        else { return nil }
+        return source
+    }
+
+    /// The warning over the preview while Add replaces the package's entry. A registry entry loses its skills to
+    /// the one skill the spec names (observed: `removed alpha`); what a whole repository or a git entry keeps is
+    /// not known here, so no skill is named for them.
+    var entryWarning: UserMessage? {
+        guard let source = replacedSource, let spec = selectedSpec else { return nil }
+        let removed =
+            spec.skill != nil && source != "git"
+            ? installedSkills(ofPackage: spec.package).filter { $0 != spec.skill } : []
+        return ErrorCopy.entryReplaced(
+            package: spec.package, source: source, removed: removed, personal: store.scope.isPersonal)
+    }
+
+    /// `add` merges the selected `github:…/skill` spec into the package's entry: the entry is known to be a
+    /// GitHub one, from an add in this sheet, or from its own `info` naming it in skills.toml (`why`). A package
+    /// that is only a dependency has no entry to merge into.
+    private var joinsEntry: Bool {
+        guard let selection, let spec = selectedSpec, spec.kind == .github else { return false }
+        return addedFromGitHub.contains(spec.package)
+            || (entryConstraint != nil && entryInfos.contains(selection) && info?.source == "github")
     }
 
     /// The provided skills that will be added: every one, unless the CLI can choose and some were unticked. A
@@ -369,10 +492,15 @@ import SkillcaskDomain
         return canChooseSkills ? all.filter { !excludedSkills.contains($0) } : all
     }
 
-    /// The constraint of the package's existing skills.toml entry, from `info`'s `why`
-    /// (`vendor/name: in skills.toml as "^4.2"`): `add` keeps it when no constraint is given
-    /// (`src/commands.rs` `add`).
+    /// The constraint of the package's existing skills.toml entry that `add` keeps when no constraint is given
+    /// (`src/commands.rs` `add`); nil for an entry `add` replaces (`replacedSource`).
     var existingConstraint: String? {
+        replacedSource == nil ? entryConstraint : nil
+    }
+
+    /// The constraint of the package's skills.toml entry, from `info`'s `why`
+    /// (`vendor/name: in skills.toml as "^4.2"`).
+    private var entryConstraint: String? {
         guard let info, let package = info.package ?? selectedSpec?.package else { return nil }
         let prefix = "\(package): in skills.toml as \""
         guard let line = info.why.first(where: { $0.hasPrefix(prefix) && $0.hasSuffix("\"") }) else { return nil }
@@ -446,6 +574,35 @@ import SkillcaskDomain
         return .add(
             spec: spec.text(constraint: constraint), repository: repository(for: spec), adopt: false, rename: rename,
             skills: skills)
+    }
+
+    /// The choices as they stand.
+    var choices: Choices {
+        Choices(
+            selection: selection, rule: rule == nil ? nil : effectiveRule, excludedSkills: excludedSkills,
+            renameTo: renameTo.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// The choices are those of the `add` that just succeeded: the sheet stays open on the added row, where Return
+    /// would run it a second time (the CLI resolves the package again, rewrites its entry and prints `added` once
+    /// more, `src/commands.rs` `add`). Another skill, rule or name is a different `add`, and so is the same one
+    /// after the selection moved: then it is the re-add every installed package allows.
+    var isRepeat: Bool {
+        justAdded == choices
+    }
+
+    /// An `add` with `choices` exited 0 for the selection: it is not offered again while the selection stays, and
+    /// every cached preview of its package (the selection, and other rows of the same repository such as
+    /// `github:owner/repo/other-skill`), which says what `add` would do to a package not yet in the lock, is read
+    /// again when its row is next selected.
+    func added(_ choices: Choices) {
+        justAdded = choices
+        guard let selection else { return }
+        let package = PackageSpec.packageName(of: selection)
+        if selectedSpec?.kind == .github {
+            addedFromGitHub.insert(package)
+        }
+        staleInfos.formUnion(infos.keys.filter { PackageSpec.packageName(of: $0) == package })
     }
 
     /// `--repository <name>` when the result came from a custom repository of the scope: what the user picked,
@@ -564,19 +721,28 @@ import SkillcaskDomain
         rule = nil
         excludedSkills = []
         renameTo = ""
+        justAdded = nil
+        if let selection, staleInfos.remove(selection) != nil {
+            infos[selection] = nil
+            entryInfos.remove(selection)
+        }
         guard !isEnded, let selection, infos[selection] == nil else {
             prefillRename()
             return
         }
         // A result that failed before is read again: its old error would stand beside (or over) the new answer.
         infoErrors[selection] = nil
-        let target = selectedSpec?.infoTarget ?? selection
+        let entryTarget = selectedSpec.flatMap(entryTarget)
+        let target = entryTarget ?? selectedSpec?.infoTarget ?? selection
         infoTask = Task { [weak self] in
             guard let outcome = await self?.read(InfoDocument.self, .info(.package(target))), let self,
                 self.selection == selection, !Task.isCancelled, !isEnded
             else { return }
             switch outcome {
             case .success(let document):
+                if entryTarget != nil {
+                    entryInfos.insert(selection)
+                }
                 infos[selection] = document
                 prefillRename()
             case .failure(.cancelled):

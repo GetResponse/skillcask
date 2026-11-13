@@ -22,10 +22,10 @@ change fails until both are updated.
 | S5 | Security tab: audit findings grouped by rule, reach as chip groups, changed-on-disk actions |
 | S6 | Versions tab: installed, within range, latest, cooldown, tag moved |
 | S7 | Review Update sheet: per-file diff before `update`; Update All |
-| S8 | Add Skill sheet: search, source filter, consent for skills.sh, preview of the provided skills, progress, failures |
+| S8 | Add Skill sheet: search, source filter, consent for skills.sh, preview of the provided skills, progress, failures; stays open after an add, with what was added in the footer |
 | S9 | Adopt sheet: single (known or unknown source) and batch |
 | S10 | Remove alert: single and multi |
-| S11 | Running: progress in the list header or the sheet, toast, failure banner, integrity failure |
+| S11 | Running: progress in the list header or the sheet, toast, failure banner, integrity failure. Exit 0 closes the Review Update and Adopt sheets with the toast; the Add Skill sheet stays open and toasts when it closes |
 | S12 | Health results popover: problems, warnings, repaired, passed |
 | S13 | Onboarding: CLI missing or too old, first launch hints |
 | S14 | Settings: General, Search, Updates, Global, Advanced |
@@ -165,6 +165,14 @@ Code comments cite these by number.
   next open (`SheetSizing`). The results column keeps the board's 440 pt up to an 1100 pt sheet,
   then takes 40 % of the width up to 520 pt; the preview takes the rest. One layout at every size
   (`AddSkillColumns`), so the board-size renders are unchanged.
+- **G17** The Add Skill sheet stays open after an add; Flow-F2 and AddSkill-States "Success" close it
+  with the toast and the new rows selected. The footer's note gives way to what was added (an ok dot
+  and the add's words, from the second add on with the count of skills), Cancel reads Done, and the
+  toast and the selection of AddSkill-States "Success" follow when the sheet closes (Interaction).
+- **G18** The run's output box in the Add Skill and Adopt sheets (`AddSkillProgress`) spans the
+  width and keeps its height from the first frame: the board's 112 pt in the board-size sheet, plus
+  every point a taller sheet adds. Until the CLI prints it holds one placeholder line ("Waiting for
+  output…", no board) where the first line will be.
 - The toast's shadow (`0 8pt 24pt`, black at 0.16 light / 0.5 dark) lives in `Toast.Shadow`; no
   shadow token exists yet. Cards never have a shadow.
 
@@ -213,6 +221,30 @@ them by number; the numbers have gaps.
   CLI's hint. Exit 4 (integrity) has its own variant and is never retried automatically.
 - Activity (⌥⌘L) is a drawer in the list column with one row per run this session: title, command,
   exit word, duration and the full transcript. It opens by itself only from a failure's Details.
+- The Add Skill sheet stays open after an add, so several skills can be added in one visit. The
+  progress covers the body during the run; then the results are back with the same query, source
+  filter and scroll position, the selection and the keyboard on the added row (the field keeps the
+  keyboard after a typed source, a failure or a cancel), and the row reads Installed once the scope
+  has refreshed. A result that names one skill of a package (skills.sh lists
+  `github:owner/repo/skill`) reads Installed only when that skill is in the scope; while only other
+  skills of the package of that name are, its description says which, and Add installs it next to
+  them (`add` merges it into a GitHub entry's `skills` and resolves the entry again, so on a branch
+  ref the package's other skills may move). When skills.toml has the package from another source,
+  `add` replaces that entry: the preview warns and names the skills known to go. A result for a whole
+  package reads Installed when the package is in the lock. One add at a time; the add that just
+  succeeded is not offered again while the selection stays on its row and the rule, skills and name
+  chosen are the same. Once the selection came back to it, it adds as any installed package does
+  (`add` resolves the entry again and keeps its constraint), with its preview read again. The footer
+  says what the last add added, worded and styled as its toast, and from the second add on the count
+  (`· 3 skills added`), which is never truncated; VoiceOver reads them as one element and hears them
+  after each add. Cancel reads Done, except while a run is in flight, when it reads Cancel and stops
+  that run only. No toast shows over the open sheet. When it closes (Done, Esc, or its scope going
+  away): one add leaves its own toast, several leave one summary (`Added 3 skills to api`, each
+  skill counted once), and the skills list selects the last add's first skill, also when a refresh
+  from before that add lands afterwards. A failed add stays in the preview pane with the CLI's hint;
+  what was added before it stays counted. A skill that skills.toml renames is known to `status` only
+  by its new name: its result does not read Installed, and an add that leaves the scope without the
+  skill it named is neither worded, counted nor selected as that skill.
 - Add Skill's source filter is client-side over one `search` document: All, then one chip per
   allowed repository, skills.sh when searched and any other source the results name, each with its
   count. Single select; clicking the active chip goes back to All. The filter persists across

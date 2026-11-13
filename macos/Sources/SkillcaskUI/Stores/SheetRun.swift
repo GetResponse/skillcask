@@ -3,8 +3,9 @@ import Observation
 import SkillcaskCore
 
 /// The mutation of one sheet (S7 Update, S8 Add, S9 Adopt): S11 keeps a sheet's progress inside the sheet, Cancel
-/// stops the run while it is in flight, success closes the sheet with the runner's toast, and a failure leaves the
-/// sheet open with its message. One per sheet presentation, held by the sheet as `@State`.
+/// stops the run while it is in flight, success runs the sheet's `onSuccess`, and a failure leaves the sheet open
+/// with its message. Update and Adopt close in `onSuccess`, with the runner's toast; Add Skill stays open and
+/// starts without a toast (`AddSkillVisit`). One per sheet presentation, held by the sheet as `@State`.
 ///
 /// Every command goes through `ActionRunner.run(_:title:outcome:in:from:announce:)` with `.sheet`, so the
 /// one-run-at-a-time rule, `MutationQueue`, the Activity entries and the scope's refresh stay the runner's; this
@@ -12,9 +13,9 @@ import SkillcaskCore
 ///
 /// Two shapes:
 /// - `start`: one command (Update, Add, Adopt one skill). Cancel terminates it. The phase ends as soon as the run is
-///   recorded (`ActionRunner.run`'s `onEnd`), before the scope's refresh: at exit 0 the sheet closes at once, so the
-///   toast shows while the list header carries the refresh (S11), and the progress never outlives the runner's
-///   `current` (no frame shows the progress block without its transcript).
+///   recorded (`ActionRunner.run`'s `onEnd`), before the scope's refresh: at exit 0 a sheet that closes does so at
+///   once, so the toast shows while the list header carries the refresh (S11), and the progress never outlives the
+///   runner's `current` (no frame shows the progress block without its transcript).
 /// - `startBatch`: one command per item, in order (Adopt-States "Adopting 9 skills · 4 of 9"): each item gets its
 ///   own result and duration, a failure stops the rest, Cancel stops after the current item (finished items stay),
 ///   one summary toast at the end instead of one per item, and the sheet can close only once the batch ended.
@@ -105,6 +106,13 @@ import SkillcaskCore
         return runner?.activity.first { $0.id == runID }
     }
 
+    /// What the last single command's run said, as its toast words it (the `ActivityEntry`'s headline): for a sheet
+    /// that started without a toast and stays open. Nil before a run ended, and once Activity no longer keeps it.
+    public var headline: String? {
+        guard let runID else { return nil }
+        return runner?.activity.first { $0.id == runID }?.headline
+    }
+
     /// Batch items that ended at exit 0, for "4 of 9" and the summary.
     public var doneCount: Int {
         items.filter { if case .done = $0.state { true } else { false } }.count
@@ -112,18 +120,18 @@ import SkillcaskCore
 
     // MARK: - One command
 
-    /// Runs `command` in `store`'s scope through `runner`, from the sheet. On exit 0 `onSuccess` runs (the sheet
-    /// closes itself there; the runner has set the toast); on a failure the phase holds the message. Returns the
-    /// task, or nil when this sheet or the app already runs something (for the app, the phase holds `refusal`).
-    /// `failure` is the failure's title from Copy ("Couldn’t adopt caveman."); nil falls back to
-    /// `OutcomeCopy.couldNot(title)`. `report` builds the toast from the transcript
-    /// instead of `outcome` (Adopt: "Adopted caveman (4.0.1)" from the CLI's `added` line); `emphasis` are its
-    /// semibold parts; `tone` the toast's tone from the transcript.
+    /// Runs `command` in `store`'s scope through `runner`, from the sheet. On exit 0 `onSuccess` runs (a sheet
+    /// that closes does so there; the runner has set the toast, unless `announce` is false: a sheet that stays open
+    /// shows the outcome itself); on a failure the phase holds the message. Returns the task, or nil when this
+    /// sheet or the app already runs something (for the app, the phase holds `refusal`). `failure` is the failure's
+    /// title from Copy ("Couldn’t adopt caveman."); nil falls back to `OutcomeCopy.couldNot(title)`. `report` builds
+    /// the toast from the transcript instead of `outcome` (Adopt: "Adopted caveman (4.0.1)" from the CLI's `added`
+    /// line); `emphasis` are its semibold parts; `tone` the toast's tone from the transcript.
     @discardableResult public func start(
         _ command: Invocation.Command, title: String, failure: String? = nil,
         outcome: @escaping @Sendable (String) -> String,
         report: (@Sendable (_ scope: String, _ transcript: [OutputLine]) -> String)? = nil, emphasis: [String] = [],
-        tone: ActionRunner.Tone? = nil, in store: ScopeStore, runner: ActionRunner,
+        tone: ActionRunner.Tone? = nil, announce: Bool = true, in store: ScopeStore, runner: ActionRunner,
         onSuccess: @escaping @MainActor () -> Void
     ) -> Task<Void, Never>? {
         let failureTitle = failure ?? OutcomeCopy.couldNot(title)
@@ -136,7 +144,7 @@ import SkillcaskCore
         let task = Task {
             let end = await runner.run(
                 command, title: title, failure: failureTitle, outcome: outcome, report: report, emphasis: emphasis,
-                tone: tone, in: store, from: .sheet,
+                tone: tone, in: store, from: .sheet, announce: announce,
                 onEnd: { end, id in self.end(end, runID: id, token: token, onSuccess: onSuccess) })
             // The end normally arrived through `onEnd`, before the refresh; this covers a run that ended without it.
             if let end {

@@ -4,6 +4,11 @@ public struct InfoDocument: Decodable, Hashable, Sendable {
     public struct Skill: Decodable, Hashable, Sendable {
         public let name: String
         public let description: String?
+
+        public init(name: String, description: String? = nil) {
+            self.name = name
+            self.description = description
+        }
     }
 
     public enum Abandoned: Hashable, Sendable {

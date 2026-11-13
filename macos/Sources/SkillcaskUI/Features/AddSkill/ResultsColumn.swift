@@ -8,6 +8,8 @@ import SwiftUI
 /// from <source>" with Show All, or the note that a typed source skips search (AddSkill-States).
 struct ResultsColumn: View {
     @Bindable var search: SearchStore
+    /// The sheet's keyboard focus: the list takes it back after an add (`AddSkillVisit.focusAfterRun`).
+    @FocusState.Binding var focus: AddSkillVisit.Focus?
 
     /// The board's results column width, and the column's width up to a sheet `width / widthShare` (1100 pt) wide.
     nonisolated static let width: CGFloat = 440
@@ -86,7 +88,8 @@ struct ResultsColumn: View {
             ForEach(search.filteredResults, id: \.name) { result in
                 ResultRow(
                     result: result, installedAs: search.installedSkills(of: result),
-                    isBlocked: search.isBlocked(result), isSelected: result.name == search.selection,
+                    otherSkills: search.otherInstalledSkills(of: result), isBlocked: search.isBlocked(result),
+                    isSelected: result.name == search.selection,
                     isPersonal: search.store.scope.isPersonal
                 )
                 .tag(Optional(result.name))
@@ -95,6 +98,7 @@ struct ResultsColumn: View {
         }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
+        .focused($focus, equals: .results)
         .accessibilityLabel(AddSkillCopy.fieldLabel)
     }
 

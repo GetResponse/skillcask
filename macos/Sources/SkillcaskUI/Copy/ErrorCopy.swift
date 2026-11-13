@@ -76,6 +76,20 @@ public enum ErrorCopy {
             severity: .warning)
     }
 
+    /// Invented: over the Add Skill preview of a `github:` source whose package this scope has from another source
+    /// (`composer`, `git`, as `info` names them): `add` replaces that skills.toml entry (`src/commands.rs`
+    /// `add_vcs`). `removed` are the skills known to go with it. A warning: Add still works.
+    public static func entryReplaced(package: String, source: String, removed: [String], personal: Bool) -> UserMessage
+    {
+        let scope = personal ? ShellCopy.personalScope : "this project"
+        let from = source == "git" ? "a git URL" : source == "composer" ? "a Composer repository" : source
+        let replaces = "Add replaces that entry with the GitHub repository"
+        return UserMessage(
+            title: "\(package) is already in \(scope) from \(from).",
+            reason: removed.isEmpty ? "\(replaces)." : "\(replaces) and removes \(AddSkillCopy.some(removed)).",
+            severity: .warning)
+    }
+
     // MARK: - Sentences
 
     /// The integrity sentence the board insists on (Running, Components): appended when the CLI did not say it.

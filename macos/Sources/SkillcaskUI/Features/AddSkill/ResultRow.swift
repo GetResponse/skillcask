@@ -3,13 +3,18 @@ import SkillcaskDomain
 import SwiftUI
 
 /// One search result (AddSkill board `.res`): the name in mono, its source pill, the Installed marker when the
-/// package is already in this scope's lock, the install count trailing, and the description under it. A result
+/// package (or the one skill the result names) is already in this scope's lock, the install count trailing, and
+/// the description under it, which also says when only other skills of the result's package are there. A result
 /// from a repository the policy blocks is dimmed with "Blocked by policy" in place of the count. Selected, the row
 /// takes the system accent and white text, as `SkillRow` does.
 struct ResultRow: View {
     let result: SearchDocument.Result
-    /// The skills the result's package already installs here; empty when it is not installed.
+    /// The skills the result already installs here (`SearchStore.installedSkills(of:)`); empty when it is not
+    /// installed.
     let installedAs: [String]
+    /// The other skills of the result's package here, when the result names one skill that is not
+    /// (`SearchStore.otherInstalledSkills(of:)`).
+    let otherSkills: [String]
     let isBlocked: Bool
     /// The row is the list's selection (the list's own prominence does not reach an offscreen render).
     var isSelected = false
@@ -80,10 +85,22 @@ struct ResultRow: View {
             return AddSkillCopy.blockedDescription(SourceCopy.label(source))
         }
         let parts = [
-            result.description, installedAs.isEmpty ? nil : AddSkillCopy.alreadyIn(installedAs, personal: isPersonal),
+            result.description,
+            Self.note(for: result.name, installedAs: installedAs, otherSkills: otherSkills, isPersonal: isPersonal),
         ]
         .compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+
+    /// What the description of the result `name` says about the scope: the skills the result installs there, else
+    /// the other skills there of the package of its name; nil when the scope has neither.
+    static func note(for name: String, installedAs: [String], otherSkills: [String], isPersonal: Bool) -> String? {
+        if !installedAs.isEmpty {
+            return AddSkillCopy.alreadyIn(installedAs, personal: isPersonal)
+        }
+        guard !otherSkills.isEmpty else { return nil }
+        return AddSkillCopy.otherSkillsIn(
+            otherSkills, package: PackageSpec.packageName(of: name), personal: isPersonal)
     }
 
     private var emphasized: Bool {
