@@ -153,8 +153,8 @@ import SkillcaskCore
 
     /// The scope's refresh after an add landed: the add keeps the skills it named that the scope has under its
     /// package. When some are missing (skills.toml renames the skill, so `status` knows another name and the add
-    /// changed nothing), its words fall back to the package's, and with none left it counts for nothing. A refresh
-    /// that failed says nothing, and the add's words stand.
+    /// changed nothing), its words fall back to the source as it was typed, and with none left it counts for
+    /// nothing. A refresh that failed says nothing, and the add's words stand.
     private func settle(_ ticket: UUID, package: String) {
         let store = search.store
         guard let index = unsettled.removeValue(forKey: ticket), store.refreshError == nil,
@@ -165,7 +165,7 @@ import SkillcaskCore
         let found = named.filter(present.contains)
         guard found != named else { return }
         added[index].skills = found
-        added[index].text = AddSkillCopy.added(package: package)
+        added[index].text = AddSkillCopy.added(package: added[index].package)
         added[index].addedNothing = found.isEmpty
     }
 

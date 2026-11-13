@@ -779,10 +779,10 @@ import Testing
         await load([Self.renamed], in: visit)
         await selectTools(Self.alphaRow, in: visit, locked: ["acme-alpha"])
         try await addTools(in: visit, installed: [Self.renamed])
-        #expect(visit.status == "Added acme/tools" && visit.skillCount == 0)
-        #expect(visit.footer == .added(text: "Added acme/tools", emphasis: [], count: nil))
+        #expect(visit.status == "Added github:acme/tools/alpha" && visit.skillCount == 0)
+        #expect(visit.footer == .added(text: "Added github:acme/tools/alpha", emphasis: [], count: nil))
         #expect(visit.cancelOrClose(runner: runner) == nil, "no skill to select")
-        #expect(runner.toast?.text == "Added acme/tools" && visit.search.store.selection == nil)
+        #expect(runner.toast?.text == "Added github:acme/tools/alpha" && visit.search.store.selection == nil)
     }
 
     @Test(.timeLimit(.minutes(1))) func anAddOfNothingNewIsNotCounted() async throws {
@@ -792,7 +792,7 @@ import Testing
         try await addTools(in: visit, installed: [Self.renamed, Self.beta])
         await selectTools(Self.alphaRow, in: visit, locked: ["acme-alpha", "beta"])
         try await addTools(in: visit, installed: [Self.renamed, Self.beta])
-        #expect(visit.status == "Added acme/tools · 1 skill added" && visit.skillCount == 1)
+        #expect(visit.status == "Added github:acme/tools/alpha · 1 skill added" && visit.skillCount == 1)
         await visit.cancelOrClose(runner: runner)?.value
         #expect(runner.toast?.text == "Added 1 skill to add-visit-tests")
         #expect(visit.search.store.selection == nil, "the last add named no skill of the scope")
