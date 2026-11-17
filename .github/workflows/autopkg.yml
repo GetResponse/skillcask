@@ -1,0 +1,87 @@
+name: AutoPkg recipes
+
+# The recipes in autopkg/ change rarely: an edit invalidates every administrator's override trust.
+on:
+  pull_request:
+    paths: [autopkg/**, .github/workflows/autopkg.yml]
+  workflow_dispatch:
+    inputs:
+      prerelease:
+        description: Consider pre-releases (PRERELEASE=yes)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  recipes:
+    runs-on: macos-26
+    timeout-minutes: 15
+    # Named, so a step runs with pipefail.
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Asset regex
+        run: python3 -I autopkg/test_recipes.py
+      # Overrides and child recipes refer to these, so they never change.
+      - name: Identifiers
+        run: |
+          grep -Fxq 'Identifier: com.github.getresponse.download.Skillcask' autopkg/Skillcask.download.recipe.yaml
+          grep -Fxq 'Identifier: com.github.getresponse.pkg.Skillcask' autopkg/Skillcask.pkg.recipe.yaml
+          grep -Fxq 'ParentRecipe: com.github.getresponse.download.Skillcask' autopkg/Skillcask.pkg.recipe.yaml
+      - name: Install AutoPkg
+        # The release package is not signed, so the pinned sha256 is the whole check. No token is in
+        # the environment while it installs.
+        env:
+          GH_TOKEN: ""
+        run: |
+          pkg="$RUNNER_TEMP/autopkg-3.0.0.pkg"
+          curl --proto '=https' --tlsv1.2 -LsSf -o "$pkg" https://github.com/autopkg/autopkg/releases/download/v3.0.0/autopkg-3.0.0.pkg
+          echo "cd554cc4b807dec7fb0aee73fe9ab0cddf764e215fb6f10c1b7f7d263c52f8cf  $pkg" | shasum -a 256 -c -
+          sudo installer -pkg "$pkg" -target /
+          [ "$(autopkg version)" = 3.0.0 ]
+      # The parser AutoPkg uses must read the regex as test_recipes.py does.
+      - name: Asset regex, read by AutoPkg's YAML parser
+        run: /usr/local/autopkg/python -I autopkg/test_recipes.py | tee "$RUNNER_TEMP/regex.txt" && grep -Fxq 'PyYAML reads the same value' "$RUNNER_TEMP/regex.txt"
+      # `audit` skips a recipe it cannot load and still exits 0, so both must be in its report: that
+      # shows each one parses and the pkg recipe finds its parent. No finding of any severity.
+      - name: Audit
+        run: |
+          autopkg audit --json --search-dir "$PWD/autopkg" \
+            "$PWD/autopkg/Skillcask.download.recipe.yaml" "$PWD/autopkg/Skillcask.pkg.recipe.yaml" | tee "$RUNNER_TEMP/audit.json"
+          python3 -I -c 'import json, sys; report = json.load(open(sys.argv[1])); assert len(report) == 2 and all(r["findings"] == [] for r in report), report' "$RUNNER_TEMP/audit.json"
+      # Until the signer's name replaces the placeholder the run cannot pass, so a pull request
+      # skips it; a manual run still does it and prints the chain AutoPkg found.
+      - name: Is the signer set?
+        id: signer
+        run: |
+          if grep -q REPLACE_WITH_SIGNER_NAME autopkg/Skillcask.download.recipe.yaml; then
+            echo "::warning::expected_authority_names still has the placeholder: the recipes were not run"
+            echo "set=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "set=true" >> "$GITHUB_OUTPUT"
+          fi
+      # For the API rate limit. AutoPkg reads the token from this file and sends it only to
+      # api.github.com; -vv does not print it (-vvv prints the whole environment, token included).
+      - name: Give AutoPkg the job's read-only token
+        if: github.event_name == 'workflow_dispatch' || steps.signer.outputs.set == 'true'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: (umask 077 && printf '%s' "$TOKEN" > "$HOME/.autopkg_gh_token")
+      - name: Run the pkg recipe
+        if: github.event_name == 'workflow_dispatch' || steps.signer.outputs.set == 'true'
+        env:
+          PRERELEASE: ${{ (github.event_name != 'workflow_dispatch' || inputs.prerelease) && 'yes' || '' }}
+        # --quiet: never ask to search GitHub for a recipe. --search-dir: find the parent in the
+        # checkout, whatever the runner has elsewhere.
+        run: |
+          autopkg run -vv --quiet --search-dir "$PWD/autopkg" -k "PRERELEASE=$PRERELEASE" "$PWD/autopkg/Skillcask.pkg.recipe.yaml"
+          ls -l "$HOME"/Library/AutoPkg/Cache/com.github.getresponse.pkg.Skillcask/Skillcask-*.pkg
+      - name: Remove the token
+        if: always()
+        run: rm -f "$HOME/.autopkg_gh_token"

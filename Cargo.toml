@@ -10,7 +10,7 @@ homepage = "https://github.com/GetResponse/skillcask"
 readme = "README.md"
 keywords = ["skills", "agents", "claude", "lockfile", "package-manager"]
 categories = ["command-line-utilities", "development-tools"]
-exclude = ["/.github", "/tests", "/docs", "/macos"]
+exclude = ["/.github", "/tests", "/docs", "/macos", "/autopkg"]
 
 [dependencies]
 base64 = "0.23.1"
