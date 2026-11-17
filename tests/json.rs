@@ -12,19 +12,30 @@ fn doc(p: &Project, args: &[&str], code: i32) -> Value {
     serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}: {out}"))
 }
 
+/// The `released` time skills.lock holds for its only package.
+fn released(p: &Project) -> Value {
+    let lock = p.read("skills.lock");
+    json!(lock.lines().find_map(|l| l.strip_prefix("released = ")).unwrap_or_else(|| panic!("{lock}")))
+}
+
 #[test]
 fn status_outdated_info_and_doctor() {
     let s = Server::start();
     s.simple("acme/one", "1.0.0", "one");
     let p = Project::new(&s);
     p.manifest(&s, "\"acme/one\" = \"^1.0\"\n");
+    p.write(".skills/mine/SKILL.md", &skill_md("mine"));
     p.ok(&["install"]);
+    let one = released(&p);
 
     let st = doc(&p, &["status", "--json"], 0);
     assert_eq!(st["ok"], true);
     assert_eq!(
-        st["entries"][0],
-        json!({ "package": "acme/one", "version": "1.0.0", "skill": "one", "state": "ok", "ok": true, "adopt": null, "via": null })
+        st["entries"],
+        json!([
+            { "package": "acme/one", "version": "1.0.0", "skill": "one", "state": "ok", "ok": true, "adopt": null, "via": null, "released": one },
+            { "package": null, "version": null, "skill": "mine", "state": "project", "ok": true, "adopt": null, "via": null, "released": null },
+        ])
     );
     assert_eq!(st["policy"]["packagist"], json!({ "value": false, "from": "skills.toml" }));
     assert_eq!(
@@ -42,26 +53,39 @@ fn status_outdated_info_and_doctor() {
     p.ok(&["install"]);
 
     let zip = zipball(&[("SKILL.md", &skill_md("one")), ("scripts/run.sh", "#!/bin/sh\necho hi\n")]);
+    // 1.0.0 republished with another time: the lock keeps the one it locked.
+    let (major, fresh, old) = (ago(2), ago(1), ago(250));
+    assert_ne!(json!(old), one);
     s.package(
         "acme/one",
         vec![
-            Ver { version: "1.1.0", time: Some(ago(1)), zip: zip.clone(), extra: None },
-            Ver { version: "1.0.0", time: Some(ago(240)), zip, extra: None },
+            Ver { version: "2.0.0", time: Some(major.clone()), zip: zip.clone(), extra: None },
+            Ver { version: "1.1.0", time: Some(fresh.clone()), zip: zip.clone(), extra: None },
+            Ver { version: "1.0.0", time: Some(old.clone()), zip, extra: None },
         ],
     );
     let out = doc(&p, &["outdated", "--json"], 0);
     let row = &out["packages"][0];
-    assert_eq!((row["locked"].clone(), row["within"].clone(), row["latest"].clone()), (json!("1.0.0"), json!("1.1.0"), json!("1.1.0")));
+    assert_eq!((row["locked"].clone(), row["within"].clone(), row["latest"].clone()), (json!("1.0.0"), json!("1.1.0"), json!("2.0.0")));
     assert!(row["note"].as_str().unwrap().starts_with("1.1.0 eligible "), "{row}");
+    assert_eq!(row["locked-released"], one);
+    assert_eq!(row["within-released"], json!(fresh));
+    assert_eq!(row["latest-released"], json!(major));
+    assert_ne!(fresh, major);
+    assert_eq!(row["note"], json!(format!("1.1.0 eligible {}", row["eligible"].as_str().unwrap())));
 
     let info = doc(&p, &["info", "acme/one", "--json"], 0);
     assert_eq!(info["source"], "composer");
     assert_eq!(info["locked"], true);
     assert_eq!(info["skills"][0], json!({ "name": "one", "description": "test skill one" }));
     assert_eq!(info["why"], json!(["acme/one: in skills.toml as \"^1.0\""]));
+    // From the registry, as `versions`, while the skill document's `released` is the lock's.
+    assert_eq!(info["versions-released"], json!({ "2.0.0": major, "1.1.0": fresh, "1.0.0": old }));
     let sk = doc(&p, &["info", "one", "--json"], 0);
     assert_eq!((sk["kind"].clone(), sk["package"].clone()), (json!("package"), json!("acme/one")));
     assert_eq!(sk["path"], ".agents/skills/one");
+    assert_eq!(sk["released"], one);
+    assert_eq!(doc(&p, &["info", "mine", "--json"], 0)["released"], Value::Null);
 
     let d = doc(&p, &["doctor", "--json"], 0);
     assert_eq!(d["ok"], true);
@@ -69,6 +93,27 @@ fn status_outdated_info_and_doctor() {
     std::fs::remove_dir_all(p.path().join(".agents/skills/one")).unwrap();
     let d = doc(&p, &["doctor", "--json"], 1);
     assert!(d["problems"].as_array().unwrap().iter().any(|x| x.as_str().unwrap().contains("not installed")), "{d}");
+}
+
+#[test]
+fn info_dates_only_the_versions_composer_dates() {
+    let s = Server::start();
+    let zip = zipball(&[("SKILL.md", &skill_md("three"))]);
+    let (new, old) = (ago(300), ago(400));
+    s.package(
+        "acme/three",
+        vec![
+            Ver { version: "1.2.0", time: Some(new.clone()), zip: zip.clone(), extra: None },
+            // Minified metadata inherits an absent key; `__unset` drops it.
+            Ver { version: "1.1.0", time: Some("__unset".into()), zip: zip.clone(), extra: None },
+            Ver { version: "1.0.0", time: Some(old.clone()), zip, extra: None },
+        ],
+    );
+    let p = Project::new(&s);
+    p.manifest(&s, "");
+    let info = doc(&p, &["info", "acme/three", "--json"], 0);
+    assert_eq!(info["versions"], json!(["1.2.0", "1.1.0", "1.0.0"]));
+    assert_eq!(info["versions-released"], json!({ "1.2.0": new, "1.0.0": old }));
 }
 
 #[test]

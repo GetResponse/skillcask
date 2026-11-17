@@ -122,4 +122,31 @@ fn info_lists_the_skills_of_a_github_repository() {
     let out = p.ok(&["info", "github:acme/tools"]);
     assert!(out.contains(&format!("github:acme/tools {}\n", &sha[..12])), "{out}");
     assert!(out.contains("  one: first\n") && out.contains("  two: second\n"), "{out}");
+    let v: serde_json::Value = serde_json::from_slice(&p.run(&["info", "github:acme/tools", "--json"]).stdout).unwrap();
+    assert_eq!(v["versions-released"], json!({}), "a ref is not a version");
+}
+
+#[test]
+fn info_dates_a_locked_tag_without_a_request() {
+    let s = Server::start();
+    let (c1, c2) = ("1".repeat(40), "2".repeat(40));
+    s.put(
+        "/repos/acme/tagged/tags",
+        json!([{ "name": "v1.1.0", "commit": { "sha": c2 } }, { "name": "v1.0.0", "commit": { "sha": c1 } }]).to_string(),
+    );
+    let time = ago(240);
+    s.put(&format!("/repos/acme/tagged/commits/{c1}"), json!({ "sha": c1, "commit": { "committer": { "date": ago(300) } } }).to_string());
+    s.put(&format!("/repos/acme/tagged/commits/{c2}"), json!({ "sha": c2, "commit": { "committer": { "date": time } } }).to_string());
+    s.put("/repos/acme/tagged/releases", "[]");
+    s.put(&format!("/repos/acme/tagged/zipball/{c2}"), zipball(&[("SKILL.md", &md("tagged", "t", ""))]));
+    let mut p = Project::new(&s);
+    p.env.push(("SKILLCASK_GITHUB_API".into(), s.base.clone()));
+    p.manifest(&s, "");
+    p.ok(&["add", "github:acme/tagged"]);
+    let commits = || s.log().iter().filter(|l| l.starts_with("/repos/acme/tagged/commits/")).count();
+    let before = commits();
+    let v: serde_json::Value = serde_json::from_slice(&p.run(&["info", "github:acme/tagged", "--json"]).stdout).unwrap();
+    assert_eq!(v["versions"], json!(["v1.1.0", "v1.0.0"]));
+    assert_eq!(v["versions-released"], json!({ "v1.1.0": time }), "only the locked tag");
+    assert_eq!(commits(), before, "no /commits request: the time is the lock's");
 }
