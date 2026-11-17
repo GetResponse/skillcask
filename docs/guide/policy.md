@@ -52,7 +52,9 @@ prefix, e.g. `"https://ghe.example.com/api/v3/repos/"`.
 
 An enforced `min-release-age` also applies to a repository's own `min-release-age`: a project
 may only make it longer. Exceptions, by URL prefix, stay in `config.toml`; they also cover GitHub
-(`https://api.github.com/repos/<owner>/`) and plain git entries (`git = "https://…"`) under them:
+(`https://api.github.com/repos/<owner>/`) and plain git entries (`git = "https://…"`) under them.
+List only owners and hosts you trust: an exception applies to every repository under its prefix,
+public ones included.
 
 ```toml
 [policy]

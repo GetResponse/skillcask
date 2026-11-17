@@ -405,8 +405,9 @@ impl Ctx {
         {
             let now = Timestamp::now();
             for p in &lock.packages {
-                let other = Repository { url: p.repository.clone(), ..Default::default() };
-                let age = m.min_release_age(m.repositories.iter().find(|r| r.url == p.repository).unwrap_or(&other));
+                let repo = m.repositories.iter().find(|r| r.url == p.repository).cloned();
+                let repo = repo.unwrap_or_else(|| Repository { url: p.repository.clone(), ..Default::default() });
+                let age = m.min_release_age(&repo);
                 let Some(t) = p.released.filter(|t| now.checked_sub(age).is_ok_and(|cutoff| *t > cutoff)) else { continue };
                 let eligible = t.checked_add(age).unwrap_or(Timestamp::MAX);
                 return Err(Error::new(
