@@ -51,7 +51,8 @@ nor others may write it; on Windows its owner must be Administrators or SYSTEM.
 prefix, e.g. `"https://ghe.example.com/api/v3/repos/"`.
 
 An enforced `min-release-age` also applies to a repository's own `min-release-age`: a project
-may only make it longer. Exceptions, by URL prefix, stay in `config.toml`:
+may only make it longer. Exceptions, by URL prefix, stay in `config.toml`; they also cover GitHub
+(`https://api.github.com/repos/<owner>/`) and plain git entries (`git = "https://…"`) under them:
 
 ```toml
 [policy]
