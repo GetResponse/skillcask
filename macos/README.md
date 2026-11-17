@@ -47,6 +47,35 @@ The version is the one in `Cargo.toml`. `SKILLCASK_CLI=<path>` bundles a prebuil
 installed (`rustup target add aarch64-apple-darwin x86_64-apple-darwin`) unless `SKILLCASK_CLI` is
 set.
 
+## Build the installer package
+
+```sh
+macos/pkg.sh                       # wraps macos/.build/Skillcask.app, unsigned
+macos/Scripts/check-pkg.sh macos/.build/Skillcask-*-macos-universal.pkg
+```
+
+`pkg.sh` wraps an app `bundle.sh` built (`SKILLCASK_APP=<path>` names another one) into
+`macos/.build/Skillcask-<version>-macos-universal.pkg`, for Macs that get their software from device
+management (Jamf and similar). The package installs `/Applications/Skillcask.app` and
+`/usr/local/bin/skillcask`, a byte-for-byte copy of the CLI inside the app, and runs no scripts;
+`check-pkg.sh --install` asserts that an install leaves the owner and mode of an existing
+`/usr/local/bin` as they were. It is unsigned unless
+`INSTALLER_IDENTITY="Developer ID Installer: Name (TEAMID)"` is set: the certificate's full common
+name, ending in the team id in parentheses (a SHA-1 hash is refused); `INSTALLER_KEYCHAIN=<path>`
+names the keychain. The app must then be signed with a Developer ID of the same team, notarized and
+stapled.
+The identifiers `com.getresponse.skillcask.pkg`, `.pkg.app` and `.pkg.cli` (the organisation's
+reverse-domain namespace, not the app's bundle identifier `io.github.puniserv.skillcask`), the file
+name and the two install paths stay as they are: receipts and deployment recipes name them.
+
+`check-pkg.sh <pkg>` reads a package without installing it: payload, install locations,
+identifiers and versions, no scripts, no relocatable bundle, ownership and modes, and, on the
+extracted payload, extended attributes and signatures. With `--install` it also installs the
+package with `sudo installer` and checks the result (`CHECK_PKG_ABSENT=<path>` adds a path that
+must be gone afterwards); that is for a throwaway runner (the `macos-pkg` job in
+`.github/workflows/macos-pkg.yml`, which runs on pull requests that touch `macos/`, a workflow or
+`Cargo.toml`, and on every push to `master`, or the release job), never for a personal Mac.
+
 ## Signing and Gatekeeper
 
 A local build is signed ad hoc with the hardened runtime, inside-out (the helper, then the app),
