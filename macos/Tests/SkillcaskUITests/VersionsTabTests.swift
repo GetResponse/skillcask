@@ -14,7 +14,10 @@ import Testing
         _ entry: SkillEntry, info: InfoDocument?, snapshot: ScopeSnapshot = DesignFixtures.api, loaded: Bool = false
     ) -> VersionsContent {
         let range = info.flatMap { DetailOverviewCopy.allowedRange(why: $0.why) }
-        let model = VersionsModel(entry: entry, policy: snapshot.policy, allowedRange: range)
+        // As the tab: `versions-released` dates the rows once the package `info` is in the session cache.
+        let model = VersionsModel(
+            entry: entry, policy: snapshot.policy, allowedRange: range,
+            released: VersionsModel.released(in: loaded ? info : nil))
         return VersionsContent(
             model: model, versions: loaded ? info?.versions : nil, agents: ["Claude Code", "Cursor"],
             checkedAt: now.addingTimeInterval(-240), now: now, timeZone: .gmt)
@@ -44,7 +47,8 @@ import Testing
         #expect(waiting.tone == .warning)
         #expect(waiting.detail == "Released 28 Oct 2026 · eligible 30 Oct 2026 (3 d)")
         #expect(waiting.trailing == .quiet("Waiting"))
-        #expect(Self.row(content, "Installed")?.detail == "Release date unknown · in skills.lock")
+        // `status`'s `released` (D67): the lock's time of 4.2.0.
+        #expect(Self.row(content, "Installed")?.detail == "Released 6 Oct 2026 · in skills.lock")
         #expect(Self.row(content, "Installed")?.trailing == .quiet("Linked into Claude Code, Cursor"))
         #expect(Self.row(content, "Allowed range")?.detail == "From skills.toml · up to the next major")
         #expect(Self.row(content, "Allowed range")?.trailing == .reveal("Reveal skills.toml"))
@@ -77,14 +81,34 @@ import Testing
         let available = try #require(Self.row(content, "Available in range"))
         #expect(available.version == "1.4.0")
         #expect(available.tone == .update)
-        #expect(available.detail == "Released 24 Oct 2026 · skipped 1.3.0")
+        // GitHub (D67): `info` dates only the locked tag, so the offered 1.4.0 is unknown.
+        #expect(available.detail == "Release date unknown · skipped 1.3.0")
         #expect(available.trailing == nil)
         #expect(content.footnote == VersionsCopy.reviewFootnote)
     }
 
     @Test func withinRangeWithoutTheListNamesNoSkippedVersion() {
         let content = Self.content(DesignFixtures.pdf, info: DesignFixtures.pdfInfo)
-        #expect(Self.row(content, "Available in range")?.detail == "Released 24 Oct 2026")
+        #expect(Self.row(content, "Available in range")?.detail == "Release date unknown")
+    }
+
+    /// A GitHub package: the lock dates the installed tag, nothing dates the newer one, loaded list or not.
+    @Test func aGitHubPackageDatesOnlyTheLockedTag() throws {
+        let content = Self.content(DesignFixtures.pdf, info: DesignFixtures.pdfInfo, loaded: true)
+        let locked = try Date("2026-09-20T12:00:00Z", strategy: .iso8601)
+        let installed = "Released \(VersionsCopy.date(locked, timeZone: .gmt))"
+        #expect(Self.row(content, "Installed")?.detail.hasPrefix(installed) == true)
+        #expect(Self.row(content, "Available in range")?.detail.hasPrefix("Release date unknown") == true)
+        let listed = content.model.listed(DesignFixtures.pdfInfo.versions)
+        #expect(listed.map { VersionsCopy.date($0.released, timeZone: .gmt) }.filter { $0 != "unknown" }.count == 1)
+        #expect(listed.first { $0.version == "1.4.0" }?.released == nil)
+    }
+
+    /// A CLI before D67 (`apiNoteOnly`: 0.9.4 `outdated`, `status` without `released`): every date is unknown.
+    @Test func anOldCLIDatesNothing() {
+        let entry = DesignFixtures.entry("jira-communication", in: DesignFixtures.apiNoteOnly)
+        let content = Self.content(entry, info: DesignFixtures.jiraPackageInfo, snapshot: DesignFixtures.apiNoteOnly)
+        #expect(Self.row(content, "Installed")?.detail == "Release date unknown · in skills.lock")
     }
 
     @Test func majorOutsideIsTextNeverAButton() throws {
@@ -126,14 +150,19 @@ import Testing
     }
 
     @Test func listLabelsAndDates() {
-        let model = Self.content(DesignFixtures.jiraCommunication, info: DesignFixtures.jiraPackageInfo).model
+        let model = Self.content(DesignFixtures.jiraCommunication, info: DesignFixtures.jiraPackageInfo, loaded: true)
+            .model
         let listed = model.listed(DesignFixtures.jiraPackageInfo.versions)
         #expect(listed.count == 9)
         #expect(VersionsCopy.standing(listed[0].standing, timeZone: .gmt) == "Too new for your policy until 30 Oct")
         #expect(VersionsCopy.date(listed[0].released, timeZone: .gmt) == "28 Oct 2026")
         #expect(VersionsCopy.standing(listed[1].standing) == "Installed")
-        #expect(VersionsCopy.date(listed[1].released) == "unknown")
+        #expect(VersionsCopy.date(listed[1].released, timeZone: .gmt) == "6 Oct 2026")
         #expect(VersionsCopy.standing(listed[2].standing) == "Below your range")
+        // Composer dates every version (D67 `versions-released`).
+        #expect(listed.allSatisfy { $0.released != nil })
+        #expect(VersionsCopy.date(listed[4].released, timeZone: .gmt) == "20 Aug 2026")
+        #expect(VersionsCopy.date(listed[8].released, timeZone: .gmt) == "11 Jun 2026")
         #expect(VersionsCopy.allVersions(count: 9) == "All known versions · 9")
         #expect(VersionsCopy.hidden(4) == "4 older versions hidden")
     }

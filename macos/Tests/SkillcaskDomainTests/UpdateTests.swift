@@ -60,6 +60,28 @@ import Testing
         #expect(tagged.settled(installed: "v1.4.0").available == nil)
     }
 
+    /// D67's three dates decode, and a settled row's new `locked` (`within`) keeps `within`'s time.
+    @Test func settledCarriesTheReleaseDates() throws {
+        let json = #"""
+            {"package":"a/b","locked":"v1.2.0","within":"v1.4.0","latest":"v2.0.0","note":null,
+            "locked-released":"2026-10-01T12:00:00Z","within-released":"2026-10-24T12:00:00Z",
+            "latest-released":"2026-11-02T12:00:00Z"}
+            """#
+        let row = Update(try JSONDecoder().decode(OutdatedDocument.Package.self, from: Data(json.utf8)))
+        let locked = try Date("2026-10-01T12:00:00Z", strategy: .iso8601)
+        let within = try Date("2026-10-24T12:00:00Z", strategy: .iso8601)
+        let latest = try Date("2026-11-02T12:00:00Z", strategy: .iso8601)
+        #expect(row.lockedReleased == locked && row.withinReleased == within && row.latestReleased == latest)
+        #expect(row.released == nil, "the old planned key is not D67's latest-released")
+        let settled = row.settled(installed: "v1.4.0")
+        #expect(settled.locked == "v1.4.0")
+        #expect(settled.lockedReleased == within && settled.withinReleased == within)
+        #expect(settled.latestReleased == latest)
+        #expect(row.settled(installed: "v1.3.0").lockedReleased == locked, "another version leaves the dates")
+        let old = try update(locked: "1.2.0", within: "1.4.0", latest: "1.4.0")
+        #expect(old.lockedReleased == nil && old.withinReleased == nil && old.latestReleased == nil)
+    }
+
     @Test func aFreshStatusTurnsTheRowGreenBeforeTheNextCheck() throws {
         let status = #"""
             {"ok":true,"entries":[{"package":"acme/pdf","skill":"pdf","version":"1.4.0","state":"ok","ok":true},

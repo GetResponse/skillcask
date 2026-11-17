@@ -1,3 +1,4 @@
+import Foundation
 import SkillcaskCore
 
 /// One row of the skill list: a `status` entry joined with what `outdated` and `audit` say about it, reduced to
@@ -34,11 +35,14 @@ public struct SkillEntry: Identifiable, Hashable, Sendable {
     /// `status`'s `via` list as printed, kept for every kind: a package-only row of a drifted dependency carries it
     /// here, since its `Kind` has no room for it.
     public let via: [String]
+    /// When the locked version was released, from `status`'s `released` key (D67, read from skills.lock); nil for a
+    /// row without a lock entry, a lock without the time, or a CLI before D67.
+    public let released: Date?
 
     public init(
         id: String, name: String, kind: Kind, source: String?, version: String?, state: SkillState, health: Health,
         update: Update?, findings: [AuditDocument.Finding], path: String?, description: String?, reach: Reach? = nil,
-        via: [String] = []
+        via: [String] = [], released: Date? = nil
     ) {
         self.id = id
         self.name = name
@@ -53,6 +57,7 @@ public struct SkillEntry: Identifiable, Hashable, Sendable {
         self.description = description
         self.reach = reach
         self.via = via
+        self.released = released
     }
 
     public var package: String? {

@@ -15,7 +15,7 @@ public struct Update: Hashable, Sendable {
         /// (`src/github.rs` `newest`, `src/commands.rs` `outdated`), so such a row shows `available` even when
         /// `update` would not lock it yet; the Review sheet says so when `diff` finds nothing (`ReviewStore`).
         public let version: String
-        /// When it becomes eligible; nil when neither the note nor the planned `eligible` key names a date.
+        /// When it becomes eligible; nil when neither the note nor the `eligible` key (D67) names a date.
         public let eligible: Date?
     }
 
@@ -23,22 +23,35 @@ public struct Update: Hashable, Sendable {
     public let locked: String?
     public let within: String?
     public let latest: String?
-    /// When the cooldown on a newer version ends, from the planned `eligible` key or the `note` text.
+    /// When the cooldown on a newer version ends, from the `eligible` key (D67) or, from an older CLI, the `note` text.
     public let eligible: Date?
-    /// When `latest` was published, from the planned `released` key; nil until the CLI prints it.
+    /// When `latest` was published, from an earlier plan's `released` key that no released CLI prints (design
+    /// fixtures written to it carry it); read `latestReleased` first.
     public let released: Date?
+    /// D67's `locked-released`: when `locked` was published, from skills.lock; nil when not known or from an older
+    /// CLI.
+    public let lockedReleased: Date?
+    /// D67's `within-released`: when `within` was published; nil for GitHub and git sources, when not known or from
+    /// an older CLI.
+    public let withinReleased: Date?
+    /// D67's `latest-released`: when `latest` was published; nil for GitHub and git sources, when not known or from
+    /// an older CLI.
+    public let latestReleased: Date?
     public let note: String?
 
     public init(_ row: OutdatedDocument.Package) {
         self.init(
             package: row.package, locked: row.locked, within: row.within, latest: row.latest,
             eligible: row.eligible.flatMap(Self.date) ?? row.note.flatMap(Self.eligibleDate),
-            released: row.released.flatMap(Self.date), note: row.note)
+            released: row.released.flatMap(Self.date), lockedReleased: row.lockedReleased.flatMap(Self.date),
+            withinReleased: row.withinReleased.flatMap(Self.date),
+            latestReleased: row.latestReleased.flatMap(Self.date),
+            note: row.note)
     }
 
     private init(
         package: String, locked: String?, within: String?, latest: String?, eligible: Date?, released: Date?,
-        note: String?
+        lockedReleased: Date?, withinReleased: Date?, latestReleased: Date?, note: String?
     ) {
         self.package = package
         self.locked = locked
@@ -46,14 +59,17 @@ public struct Update: Hashable, Sendable {
         self.latest = latest
         self.eligible = eligible
         self.released = released
+        self.lockedReleased = lockedReleased
+        self.withinReleased = withinReleased
+        self.latestReleased = latestReleased
         self.note = note
     }
 
     /// The newer version that waits for the minimum release age: the one the note names (`<version> eligible
-    /// <date>`), or `within` when only the planned `eligible` key is present; nil when that version is the
+    /// <date>`), or `within` when only the `eligible` key (D67) is present; nil when that version is the
     /// locked one (nothing newer waits) or nothing waits.
     public var cooldown: Cooldown? {
-        // A date without a noted version can only come from the planned `eligible` key, which dates `within`.
+        // A date without a noted version can only come from the `eligible` key (D67), which dates `within`.
         guard let waiting = note.flatMap(Self.notedVersion) ?? (eligible != nil ? within : nil),
             !Self.same(waiting, locked)
         else { return nil }
@@ -78,12 +94,14 @@ public struct Update: Hashable, Sendable {
 
     /// This update after a fresh `status` showed `installed` for the package: when that is the version `outdated`
     /// offered (`within`), the update has been applied and the row is current without waiting for the next
-    /// network check. Any other version leaves the update as `outdated` printed it.
+    /// network check. Any other version leaves the update as `outdated` printed it. The new `locked` is `within`, so
+    /// its release time is `within`'s.
     public func settled(installed: String?) -> Update {
         guard let installed, let within, Self.same(installed, within), !Self.same(locked, within) else { return self }
         return Update(
             package: package, locked: installed, within: within, latest: latest, eligible: eligible,
-            released: released, note: note)
+            released: released, lockedReleased: withinReleased, withinReleased: withinReleased,
+            latestReleased: latestReleased, note: note)
     }
 
     // MARK: - Parsing

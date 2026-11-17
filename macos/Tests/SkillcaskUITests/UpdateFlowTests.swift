@@ -259,11 +259,12 @@ import Testing
     }
 
     @Test func aNoteOnlyOutdatedParsesEndToEnd() throws {
-        // The 0.9.4 shape: no `eligible`/`released` keys, the cooldown only in the note.
+        // The 0.9.4 shape: no `eligible` or release-time keys, the cooldown only in the note.
         let snapshot = DesignFixtures.apiNoteOnly
         let jira = try #require(snapshot.entry(id: "jira-communication"))
         #expect(jira.health == .cooldown(until: "4.3.0 eligible 2026-10-30T09:14:00Z"))
         #expect(jira.update?.eligible == DesignFixtures.date("2026-10-30T09:14:00Z") && jira.update?.released == nil)
+        #expect(jira.released == nil && jira.update?.withinReleased == nil && jira.update?.lockedReleased == nil)
         #expect(snapshot.availableUpdates.map(\.package) == ["acme/review-pr", "anthropics/skills"])
     }
 }

@@ -7,7 +7,10 @@
       "within": "1.4.0",
       "latest": "1.4.0",
       "note": null,
-      "released": "2026-10-24T00:00:00Z"
+      "eligible": null,
+      "locked-released": "2026-09-20T12:00:00Z",
+      "within-released": null,
+      "latest-released": null
     },
     {
       "package": "netresearch/agent-jira-skill",
@@ -16,28 +19,42 @@
       "latest": "4.3.0",
       "note": "4.3.0 eligible 2026-10-30T09:14:00Z",
       "eligible": "2026-10-30T09:14:00Z",
-      "released": "2026-10-28T09:14:00Z"
+      "locked-released": "2026-10-06T12:00:00Z",
+      "within-released": "2026-10-28T09:14:00Z",
+      "latest-released": "2026-10-28T09:14:00Z"
     },
     {
       "package": "acme/sql-review",
       "locked": "0.9.2",
       "within": "0.9.2",
       "latest": "0.9.2",
-      "note": null
+      "note": null,
+      "eligible": null,
+      "locked-released": "2026-09-02T12:00:00Z",
+      "within-released": null,
+      "latest-released": null
     },
     {
       "package": "juliusbrussee/caveman",
       "locked": "4.0.1",
       "within": "4.1.0",
       "latest": "4.1.0",
-      "note": "tag 4.0.1 moved from a81f2c0d4e9b to 3fd09e1c7a52"
+      "note": "tag 4.0.1 moved from a81f2c0d4e9b to 3fd09e1c7a52",
+      "eligible": null,
+      "locked-released": "2026-10-08T12:00:00Z",
+      "within-released": null,
+      "latest-released": null
     },
     {
       "package": "juliusbrussee/safe-refactor",
       "locked": "4.0.1",
       "within": "4.0.1",
       "latest": "4.0.1",
-      "note": null
+      "note": null,
+      "eligible": null,
+      "locked-released": "2026-10-08T12:00:00Z",
+      "within-released": null,
+      "latest-released": null
     },
     {
       "package": "acme/lint",
@@ -45,14 +62,21 @@
       "within": "2.3.1",
       "latest": "3.0.0",
       "note": null,
-      "released": "2026-10-15T00:00:00Z"
+      "eligible": null,
+      "locked-released": "2026-09-15T12:00:00Z",
+      "within-released": "2026-09-15T12:00:00Z",
+      "latest-released": "2026-10-15T12:00:00Z"
     },
     {
       "package": "acme/review-pr",
       "locked": "2.1.0",
       "within": "2.2.0",
       "latest": "2.2.0",
-      "note": null
+      "note": null,
+      "eligible": null,
+      "locked-released": "2026-09-25T12:00:00Z",
+      "within-released": "2026-10-20T12:00:00Z",
+      "latest-released": "2026-10-20T12:00:00Z"
     },
     {
       "package": "acme/commit",
@@ -60,21 +84,32 @@
       "within": "3.1.0",
       "latest": "3.1.0",
       "note": null,
-      "released": "2026-10-01T00:00:00Z"
+      "eligible": null,
+      "locked-released": "2026-10-01T12:00:00Z",
+      "within-released": "2026-10-01T12:00:00Z",
+      "latest-released": "2026-10-01T12:00:00Z"
     },
     {
       "package": "acme/api-docs",
       "locked": "1.8.0",
       "within": "1.8.0",
       "latest": "1.8.0",
-      "note": null
+      "note": null,
+      "eligible": null,
+      "locked-released": "2026-09-10T12:00:00Z",
+      "within-released": "2026-09-10T12:00:00Z",
+      "latest-released": "2026-09-10T12:00:00Z"
     },
     {
       "package": "acme/changelog",
       "locked": "0.4.0",
       "within": "0.4.0",
       "latest": "0.4.0",
-      "note": null
+      "note": null,
+      "eligible": null,
+      "locked-released": "2026-08-28T12:00:00Z",
+      "within-released": "2026-08-28T12:00:00Z",
+      "latest-released": "2026-08-28T12:00:00Z"
     }
   ]
 }

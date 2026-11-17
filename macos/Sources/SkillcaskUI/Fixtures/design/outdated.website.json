@@ -7,15 +7,32 @@
       "within": "3.1.0",
       "latest": "3.1.0",
       "note": null,
-      "released": "2026-10-01T00:00:00Z"
+      "eligible": null,
+      "locked-released": "2026-10-01T12:00:00Z",
+      "within-released": "2026-10-01T12:00:00Z",
+      "latest-released": "2026-10-01T12:00:00Z"
     },
-    { "package": "acme/changelog", "locked": "0.4.0", "within": "0.4.0", "latest": "0.4.0", "note": null },
+    {
+      "package": "acme/changelog",
+      "locked": "0.4.0",
+      "within": "0.4.0",
+      "latest": "0.4.0",
+      "note": null,
+      "eligible": null,
+      "locked-released": "2026-08-28T12:00:00Z",
+      "within-released": "2026-08-28T12:00:00Z",
+      "latest-released": "2026-08-28T12:00:00Z"
+    },
     {
       "package": "netresearch/german-technical-writing-skill",
       "locked": "1.0.0",
       "within": "1.0.0",
       "latest": "1.0.0",
-      "note": null
+      "note": null,
+      "eligible": null,
+      "locked-released": "2026-06-30T12:00:00Z",
+      "within-released": "2026-06-30T12:00:00Z",
+      "latest-released": "2026-06-30T12:00:00Z"
     }
   ]
 }

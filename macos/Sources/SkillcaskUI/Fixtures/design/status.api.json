@@ -7,6 +7,7 @@
       "package": "anthropics/skills",
       "skill": "pdf",
       "state": "ok",
+      "released": "2026-09-20T12:00:00Z",
       "version": "1.2.0",
       "source": "github",
       "description": "Reads, fills and creates PDF files: extracts text and tables, merges and splits documents, fills forms and runs OCR on scans."
@@ -17,6 +18,7 @@
       "package": "netresearch/agent-jira-skill",
       "skill": "jira-syntax",
       "state": "not installed",
+      "released": "2026-10-06T12:00:00Z",
       "version": "4.2.0",
       "source": "packagist",
       "description": "Jira field and markup syntax, with examples."
@@ -27,6 +29,7 @@
       "package": "netresearch/agent-jira-skill",
       "skill": "jira-communication",
       "state": "ok",
+      "released": "2026-10-06T12:00:00Z",
       "version": "4.2.0",
       "source": "packagist",
       "description": "How to write comments, status updates and hand-offs."
@@ -37,6 +40,7 @@
       "package": null,
       "skill": "deploy-checklist",
       "state": "hand-written",
+      "released": null,
       "version": null,
       "source": null
     },
@@ -46,6 +50,7 @@
       "package": "acme/sql-review",
       "skill": "sql-review",
       "state": "not installed",
+      "released": "2026-09-02T12:00:00Z",
       "version": "0.9.2",
       "source": "git",
       "description": "Review SQL and Postgres migrations before they run."
@@ -56,6 +61,7 @@
       "package": null,
       "skill": "my-notes",
       "state": "project",
+      "released": null,
       "version": null,
       "source": null,
       "description": "Team conventions for meeting notes and decision records."
@@ -66,6 +72,7 @@
       "package": null,
       "skill": "caveman",
       "state": "not managed",
+      "released": null,
       "version": null,
       "source": "github",
       "description": "Terse, low-token answers for routine coding tasks."
@@ -77,6 +84,7 @@
       "via": ["juliusbrussee/caveman"],
       "skill": "safe-refactor",
       "state": "ok",
+      "released": "2026-10-08T12:00:00Z",
       "version": "4.0.1",
       "source": "github",
       "description": "Refactors in small, verified steps and never touches behaviour."
@@ -87,6 +95,7 @@
       "package": "acme/lint",
       "skill": "legacy-lint",
       "state": "abandoned",
+      "released": "2026-09-15T12:00:00Z",
       "version": "2.3.1",
       "source": "acme"
     },
@@ -96,6 +105,7 @@
       "package": "anthropics/skills",
       "skill": "test-writer",
       "state": "blocked by policy",
+      "released": "2026-08-12T12:00:00Z",
       "version": "1.0.3",
       "source": "github"
     },
@@ -105,6 +115,7 @@
       "package": "acme/review-pr",
       "skill": "review-pr",
       "state": "ok",
+      "released": "2026-09-25T12:00:00Z",
       "version": "2.1.0",
       "source": "acme"
     },
@@ -114,6 +125,7 @@
       "package": "acme/commit",
       "skill": "commit-message",
       "state": "ok",
+      "released": "2026-10-01T12:00:00Z",
       "version": "3.1.0",
       "source": "packagist"
     },
@@ -123,6 +135,7 @@
       "package": "acme/api-docs",
       "skill": "api-docs",
       "state": "ok",
+      "released": "2026-09-10T12:00:00Z",
       "version": "1.8.0",
       "source": "acme"
     },
@@ -132,6 +145,7 @@
       "package": "acme/changelog",
       "skill": "changelog",
       "state": "ok",
+      "released": "2026-08-28T12:00:00Z",
       "version": "0.4.0",
       "source": "packagist"
     }
