@@ -58,8 +58,10 @@ fn same_or_older_is_up_to_date() {
     s.put(CASK, cask("0.0.1"));
     assert!(p.ok(&["self-check"]).contains("latest 0.0.1: up to date"));
     assert_eq!(json_of(&p.ok(&["self-check", "--json"]))["newer"], json!(false));
-    // A pre-release of the running version comes before it.
-    s.put(CASK, cask(&format!("{RUNNING}-rc.1")));
+    // A pre-release of the running version comes before it; `-0` is the lowest, so it also comes
+    // before a running release candidate.
+    let base = RUNNING.split('-').next().unwrap();
+    s.put(CASK, cask(&format!("{base}-0")));
     assert_eq!(json_of(&p.ok(&["self-check", "--json"]))["newer"], json!(false));
 }
 
