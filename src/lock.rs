@@ -215,6 +215,16 @@ fn package(t: &dyn TableLike) -> Result<Package> {
     if !dist.url.starts_with("https://") {
         return Err(bad(format!("invalid dist url in {name}: only https:// is allowed")));
     }
+    // D62: the lock is committed and its URLs reach error messages. skillcask never writes userinfo
+    // there, and a git dist is the repository URL, which the manifest already holds to `check_url`.
+    let repository = s(t, "repository").map_err(ctx)?;
+    let userinfo = |u: &str| url::Url::parse(u).is_ok_and(|u| !u.username().is_empty() || u.password().is_some());
+    if crate::manifest::carries_credentials(&repository) || userinfo(&dist.url) {
+        return Err(bad(format!("invalid url in {name}: it carries credentials")).hint("move them to auth.json"));
+    }
+    if dist.kind == crate::git::KIND {
+        crate::git::check_url(&dist.url).map_err(|e| bad(format!("invalid dist url in {name}: {e}")))?;
+    }
     let dist_sha256 = s(t, "dist-sha256").map_err(ctx)?;
     if !is_sha256(&dist_sha256) {
         return Err(bad(format!("invalid dist-sha256 in {name}")));
@@ -223,7 +233,7 @@ fn package(t: &dyn TableLike) -> Result<Package> {
         constraint: s(t, "constraint").map_err(ctx)?,
         git_ref,
         version: s(t, "version").map_err(ctx)?,
-        repository: s(t, "repository").map_err(ctx)?,
+        repository,
         dist,
         dist_sha256,
         released,
@@ -345,6 +355,25 @@ mod tests {
         }
         let twice = format!("{ok}{}", &ok[ok.find("\n[[package]]").unwrap()..]);
         assert!(parse(&twice).unwrap_err().msg.contains("invalid lock: package a/b appears twice"));
+    }
+
+    #[test]
+    fn credentials_in_lock_urls_are_refused_unshown() {
+        // Regression (D62): only the https:// prefix was checked, and git printed the URL in errors.
+        let git = sample().replace("type = \"zip\", url = \"https://r/a.zip\"", "type = \"git\", url = \"https://r/a/b\"");
+        assert!(parse(&git).is_ok());
+        for (from, to) in [
+            ("url = \"https://r/a/b\"", "url = \"https://u:SECRET@r/a/b\""),
+            ("url = \"https://r/a/b\"", "url = \"https://r/a/b?private_token=SECRET\""),
+            ("repository = \"https://r/", "repository = \"https://u:SECRET@r/"),
+        ] {
+            let text = git.replace(from, to);
+            assert_ne!(text, git, "{from}");
+            let e = parse(&text).unwrap_err();
+            assert!(e.code == MANIFEST && e.msg.contains("invalid") && !e.msg.contains("SECRET"), "{to}: {}", e.msg);
+        }
+        let zip = sample().replace("url = \"https://r/a.zip\"", "url = \"https://u:SECRET@r/a.zip\"");
+        assert!(!parse(&zip).unwrap_err().msg.contains("SECRET"));
     }
 
     #[test]
