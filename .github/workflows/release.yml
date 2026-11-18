@@ -462,6 +462,269 @@ jobs:
           security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
           rm -f "$RUNNER_TEMP/key.p8" "$RUNNER_TEMP/cert.p12"
 
+  # Hand edit: the installer package for device-managed Macs (Jamf, AutoPkg): the app
+  # publish-macos-app released, for /Applications, and a link to its CLI for /usr/local/bin, signed
+  # with a Developer ID Installer certificate, notarized and attached to the release. A job of its
+  # own, so that it compiles nothing, never holds the Developer ID Application certificate, waits for
+  # its own review, and can fail or be rerun alone: nothing needs it, so the zip, the cask, the
+  # formula, npm and the announcement never wait for the package. Like the app job it runs for
+  # pre-releases too and is skipped on pull requests, where `host` and so publish-macos-app are.
+  publish-macos-pkg:
+    needs:
+      - plan
+      - publish-macos-app
+    runs-on: macos-26
+    timeout-minutes: 45
+    environment: release
+    permissions:
+      "contents": "write"
+    # GH_TOKEN only on the steps that call gh: it is not in the environment while code from the tag
+    # runs (pkg.sh runs the released CLI's --version, check-pkg.sh --install the installed CLI).
+    env:
+      TAG: ${{ needs.plan.outputs.tag }}
+    # The default shell, `bash -e` without pipefail, on purpose: `has` below pipes into `grep -q`,
+    # which may exit before its writer does.
+    steps:
+      # Temporary: `secrets` cannot be read in a job-level `if`, so this step decides and every later
+      # step asks it. Remove the gate once the first signed package is released: from then on a
+      # missing package must fail loudly, because AutoPkg silently falls back to an older release
+      # when the newest one has no matching asset.
+      - name: Check for the installer certificate
+        id: gate
+        env:
+          P12: ${{ secrets.MACOS_INSTALLER_CERTIFICATE_P12 }}
+        run: |
+          if [ -z "$P12" ]; then
+            echo "::warning::installer package skipped: no Developer ID Installer certificate in the release environment"
+            echo "installer package skipped: no Developer ID Installer certificate in the release environment" >> "$GITHUB_STEP_SUMMARY"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      # A published package is never replaced: administrators may already have fetched it, and its
+      # checksum may be pinned. `state` is one of:
+      #   complete  package and checksum are on the release and agree: nothing left to do
+      #   sidecar   only the package is there (a run stopped between the two uploads): the
+      #             package is verified below and only its checksum is written and attached
+      #   build     neither is there: build, sign, notarize and attach both
+      # Anything else (an interrupted upload, a checksum that does not match, a checksum without a
+      # package) fails and is left for a maintainer. No upload in this job uses --clobber.
+      - name: Look for an already published package
+        id: state
+        if: steps.gate.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pkg="Skillcask-${TAG#v}-macos-universal.pkg"
+          release=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets)
+          # Only finished uploads count: an interrupted one stays on the release in another state.
+          assets=$(printf '%s\n' "$release" | jq -r '.assets[] | select(.state == "uploaded") | .name')
+          unfinished=$(printf '%s\n' "$release" | jq -r '.assets[] | select(.state != "uploaded") | .name')
+          has() { printf '%s\n' "$assets" | grep -Fxq "$1"; }
+          for name in "$pkg" "$pkg.sha256"; do
+            if printf '%s\n' "$unfinished" | grep -Fxq "$name"; then
+              echo "::error::the upload of $name did not finish; delete $name from the release, then rerun"
+              exit 1
+            fi
+          done
+          if ! has "$pkg"; then
+            if has "$pkg.sha256"; then
+              echo "::error::the release has $pkg.sha256 but no $pkg; delete $pkg.sha256 from the release, then rerun"
+              exit 1
+            fi
+            echo "state=build" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mkdir -p "$RUNNER_TEMP/published" && cd "$RUNNER_TEMP/published"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$pkg*"
+          if [ -f "$pkg.sha256" ]; then
+            if ! shasum -a 256 -c "$pkg.sha256"; then
+              echo "::error::the released $pkg does not match $pkg.sha256; nothing was replaced. Delete $pkg.sha256 (and $pkg too if the package is the wrong one) from the release, then rerun"
+              exit 1
+            fi
+            echo "installer package already published: $pkg" >> "$GITHUB_STEP_SUMMARY"
+            echo "state=complete" >> "$GITHUB_OUTPUT"
+          else
+            echo "PKG_DIR=$RUNNER_TEMP/published" >> "$GITHUB_ENV"
+            echo "state=sidecar" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.gate.outputs.run == 'true' && steps.state.outputs.state != 'complete'
+        with:
+          persist-credentials: false
+      # The Xcode publish-macos-app and CI's macos-pkg job use: stapler, notarytool and lipo come
+      # from it.
+      - run: sudo xcode-select -s /Applications/Xcode_26.6.app
+        if: steps.gate.outputs.run == 'true' && steps.state.outputs.state != 'complete'
+      # Also for a package found without its checksum: the installed app is compared with this one.
+      - name: Fetch the released app
+        if: steps.gate.outputs.run == 'true' && steps.state.outputs.state != 'complete'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${TAG#v}"
+          zip="Skillcask-$version-macos-universal.zip"
+          mkdir -p "$RUNNER_TEMP/app" && cd "$RUNNER_TEMP/app"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$zip*"
+          shasum -a 256 -c "$zip.sha256"
+          ditto -x -k "$zip" .
+          xcrun stapler validate Skillcask.app
+          spctl -a -vv Skillcask.app 2>&1 | tee "$RUNNER_TEMP/spctl.txt"
+          grep -qxF 'Skillcask.app: accepted' "$RUNNER_TEMP/spctl.txt"
+          grep -qx 'source=Notarized Developer ID' "$RUNNER_TEMP/spctl.txt"
+          app_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Skillcask.app/Contents/Info.plist)
+          if [ "$app_version" != "$version" ]; then
+            echo "::error::the released app is $app_version, the tag is $TAG"
+            exit 1
+          fi
+      - name: Import the installer certificate
+        if: steps.gate.outputs.run == 'true' && steps.state.outputs.state == 'build'
+        env:
+          P12: ${{ secrets.MACOS_INSTALLER_CERTIFICATE_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_INSTALLER_CERTIFICATE_PASSWORD }}
+        # The same sequence as in publish-macos-app, for productbuild (pkg.sh signs with
+        # `productbuild --sign`), with the private key imported non-extractable (-x).
+        run: |
+          kc="$RUNNER_TEMP/installer.keychain-db"
+          kp=$(openssl rand -hex 16)
+          (umask 077 && echo "$P12" | base64 --decode > "$RUNNER_TEMP/installer.p12")
+          security create-keychain -p "$kp" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$kp" "$kc"
+          security import "$RUNNER_TEMP/installer.p12" -k "$kc" -f pkcs12 -P "$P12_PASSWORD" -x -T /usr/bin/productbuild
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$kp" "$kc" > /dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/installer.p12"
+          # Counted, not printed.
+          found=$(security find-identity -v -p basic "$kc" | grep -c 'Developer ID Installer' || true)
+          if [ "$found" != 1 ]; then
+            echo "::error::expected exactly one Developer ID Installer identity in the keychain, found $found"
+            exit 1
+          fi
+          # This job never holds the certificate that signs apps. find-certificate exits 0 when
+          # nothing matches, so its output decides.
+          if [ -n "$(security find-certificate -a -c 'Developer ID Application' "$kc")" ]; then
+            echo "::error::MACOS_INSTALLER_CERTIFICATE_P12 holds a Developer ID Application certificate; export the Developer ID Installer certificate alone"
+            exit 1
+          fi
+      - name: Build and sign the package
+        if: steps.gate.outputs.run == 'true' && steps.state.outputs.state == 'build'
+        env:
+          IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+        # The keychain goes when this step ends, failed or not: signing is done, and notarization
+        # uses only the API key. delete-keychain also takes it off the search list.
+        run: |
+          trap 'security delete-keychain "$RUNNER_TEMP/installer.keychain-db" || true' EXIT
+          # pkg.sh leaves the package unsigned when the identity is empty.
+          if [ -z "$IDENTITY" ]; then
+            echo "::error::MACOS_INSTALLER_SIGN_IDENTITY is not set in the release environment"
+            exit 1
+          fi
+          SKILLCASK_APP="$RUNNER_TEMP/app/Skillcask.app" INSTALLER_IDENTITY="$IDENTITY" \
+            INSTALLER_KEYCHAIN="$RUNNER_TEMP/installer.keychain-db" macos/pkg.sh
+          # The version pkg.sh put in the file name is the tag's.
+          pkg="Skillcask-${TAG#v}-macos-universal.pkg"
+          if [ ! -f "macos/.build/$pkg" ]; then
+            ls macos/.build
+            echo "::error::pkg.sh did not write $pkg: its version is not the tag's"
+            exit 1
+          fi
+          echo "PKG_DIR=$GITHUB_WORKSPACE/macos/.build" >> "$GITHUB_ENV"
+      - name: Notarize and staple
+        if: steps.gate.outputs.run == 'true' && steps.state.outputs.state == 'build'
+        env:
+          P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          key="$RUNNER_TEMP/key.p8"
+          trap 'rm -f "$key"' EXIT
+          (umask 077 && echo "$P8" | base64 --decode > "$key")
+          cd "$PKG_DIR"
+          pkg="Skillcask-${TAG#v}-macos-universal.pkg"
+          # --wait exits 0 on an Invalid submission too, and non-zero on a timeout or a network
+          # error, so the status decides either way.
+          xcrun notarytool submit "$pkg" --key "$key" --key-id "$KEY_ID" --issuer "$ISSUER" \
+            --wait --timeout 30m --output-format json > "$RUNNER_TEMP/notary.json" || true
+          cat "$RUNNER_TEMP/notary.json"
+          status=$(jq -r '.status // empty' "$RUNNER_TEMP/notary.json" || true)
+          id=$(jq -r '.id // empty' "$RUNNER_TEMP/notary.json" || true)
+          if [ "$status" != Accepted ]; then
+            if [ -n "$id" ]; then
+              xcrun notarytool log "$id" --key "$key" --key-id "$KEY_ID" --issuer "$ISSUER" || true
+            fi
+            echo "::error::notarization did not succeed (status: ${status:-none}, submission: ${id:-none})"
+            exit 1
+          fi
+          rm -f "$key"
+          xcrun stapler staple "$pkg"
+      # Also for a package found on the release without its checksum (state `sidecar`): it gets a
+      # checksum only when this release's installer identity signed it.
+      - name: Verify the package and write the checksum
+        if: steps.gate.outputs.run == 'true' && steps.state.outputs.state != 'complete'
+        env:
+          IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+        run: |
+          if [ -z "$IDENTITY" ]; then
+            echo "::error::MACOS_INSTALLER_SIGN_IDENTITY is not set in the release environment"
+            exit 1
+          fi
+          cd "$PKG_DIR"
+          pkg="Skillcask-${TAG#v}-macos-universal.pkg"
+          xcrun stapler validate "$pkg"
+          # The leaf's name is the secret MACOS_INSTALLER_SIGN_IDENTITY, so the log shows it (here, in
+          # spctl's origin= and in pkg.sh's output) as ***. To read the chain's names, run
+          # `pkgutil --check-signature` on the released asset.
+          pkgutil --check-signature "$pkg" | tee "$RUNNER_TEMP/pkg-signature.txt"
+          certificates=$(grep -cE '^ +[0-9]+\. ' "$RUNNER_TEMP/pkg-signature.txt" || true)
+          leaf=$(sed -n 's/^ *1\. //p' "$RUNNER_TEMP/pkg-signature.txt")
+          if [ "$certificates" != 3 ] || [ "$leaf" != "$IDENTITY" ]; then
+            echo "::error::$pkg is not signed by MACOS_INSTALLER_SIGN_IDENTITY with a chain of three certificates (found $certificates)"
+            exit 1
+          fi
+          spctl --assess --type install -vv "$pkg" 2>&1 | tee "$RUNNER_TEMP/pkg-spctl.txt"
+          grep -qxF "$pkg: accepted" "$RUNNER_TEMP/pkg-spctl.txt"
+          grep -qx 'source=Notarized Developer ID' "$RUNNER_TEMP/pkg-spctl.txt"
+          # After the staple, which changes the file. A relative name, like the zip's checksum.
+          shasum -a 256 -b "$pkg" > "$pkg.sha256"
+      # The runner is thrown away afterwards, so the package is really installed. The installed app
+      # must then be the released one: the same code directory hash for each slice. That hash
+      # covers the sealed resources and the helper, check-pkg.sh verified the app with --strict and
+      # found /usr/local/bin/skillcask to be a link to that helper, so the command is the released
+      # CLI too.
+      - name: Check and install the package
+        if: steps.gate.outputs.run == 'true' && steps.state.outputs.state != 'complete'
+        run: |
+          macos/Scripts/check-pkg.sh "$PKG_DIR/Skillcask-${TAG#v}-macos-universal.pkg" --install
+          for arch in arm64 x86_64; do
+            installed=$(codesign -dvvv --arch "$arch" /Applications/Skillcask.app 2>&1 | sed -n 's/^CDHash=//p')
+            released=$(codesign -dvvv --arch "$arch" "$RUNNER_TEMP/app/Skillcask.app" 2>&1 | sed -n 's/^CDHash=//p')
+            if [ -z "$installed" ] || [ "$installed" != "$released" ]; then
+              echo "::error::the installed Skillcask.app ($arch: ${installed:-no CDHash}) is not the released app (${released:-no CDHash})"
+              exit 1
+            fi
+          done
+          echo "installed app is the released app (CDHash per slice)"
+      # The package first, the checksum in a second upload: both on the release means complete.
+      # Without --clobber an upload fails when the release already has an asset of that name.
+      - name: Attach to the release
+        if: steps.gate.outputs.run == 'true' && steps.state.outputs.state != 'complete'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STATE: ${{ steps.state.outputs.state }}
+        run: |
+          cd "$PKG_DIR"
+          pkg="Skillcask-${TAG#v}-macos-universal.pkg"
+          if [ "$STATE" = build ]; then
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "$pkg"
+          fi
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "$pkg.sha256"
+      - name: Remove the keychain and the API key
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/installer.keychain-db" || true
+          rm -f "$RUNNER_TEMP/key.p8" "$RUNNER_TEMP/installer.p12"
+
   # Hand edit: the cask skillcask-app in the tap, for the zip publish-macos-app attached. No signing
   # secrets here. It waits for the formula job because both push to the tap.
   publish-homebrew-cask:
