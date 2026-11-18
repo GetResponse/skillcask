@@ -1,4 +1,5 @@
 import Foundation
+import SkillcaskCore
 import SkillcaskDomain
 import Testing
 
@@ -133,10 +134,43 @@ import Testing
         #expect(DetailCopy.available("1.4.0") == "1.4.0 is available")
         #expect(DetailCopy.insideRange(nil) == "inside your allowed range.")
         #expect(DetailCopy.insideRange("^1.2") == "inside your allowed range ^1.2.")
-        let released = try #require(DesignFixtures.pdfUpdate.released)
+        let released = try Date("2026-10-24T12:00:00Z", strategy: .iso8601)
         let now = try Date("2026-10-27T12:00:00Z", strategy: .iso8601)
         #expect(DetailCopy.released(released, now: now, timeZone: .gmt) == "Released 24 Oct 2026, 3 days ago.")
         #expect(Formatters.daysAgo(released, now: released, timeZone: .gmt) == "today")
         #expect(Formatters.daysAgo(released, now: released.addingTimeInterval(86_400), timeZone: .gmt) == "1 day ago")
+    }
+
+    static func update(_ json: String) throws -> Update {
+        Update(try JSONDecoder().decode(OutdatedDocument.Package.self, from: Data(json.utf8)))
+    }
+
+    /// The strip offers `within`; `latest`'s time must not stand next to it when the two differ (D67).
+    @Test func theStripDatesWithinNotLatest() throws {
+        let update = try Self.update(
+            #"{"package":"acme/s","locked":"1.2.0","within":"1.4.0","latest":"2.0.0","note":null,"#
+                + #""within-released":"2026-10-24T12:00:00Z","latest-released":"2026-11-02T12:00:00Z","#
+                + #""released":"2026-11-02T12:00:00Z"}"#)
+        let released = try #require(DetailHeader.targetReleased(update))
+        let now = try Date("2026-10-27T12:00:00Z", strategy: .iso8601)
+        #expect(DetailCopy.released(released, now: now, timeZone: .gmt) == "Released 24 Oct 2026, 3 days ago.")
+    }
+
+    /// pdf is a GitHub package (D67): nothing dates the offered 1.4.0, so the strip names no date.
+    @Test func aGitHubTargetIsUndated() {
+        #expect(DetailHeader.targetReleased(DesignFixtures.pdfUpdate) == nil)
+    }
+
+    @Test func withoutWithinReleasedTheStripDatesOnlyAWithinThatIsLatest() throws {
+        let beyond = try Self.update(
+            #"{"package":"acme/s","locked":"1.2.0","within":"1.4.0","latest":"2.0.0","note":null,"#
+                + #""released":"2026-11-02T12:00:00Z"}"#)
+        #expect(DetailHeader.targetReleased(beyond) == nil)
+        let same = try Self.update(
+            #"{"package":"acme/s","locked":"1.2.0","within":"1.4.0","latest":"1.4.0","note":null,"#
+                + #""released":"2026-10-24T12:00:00Z"}"#)
+        #expect(DetailHeader.targetReleased(same) == (try Date("2026-10-24T12:00:00Z", strategy: .iso8601)))
+        let old = try Self.update(#"{"package":"acme/s","locked":"1.2.0","within":"1.4.0","latest":"1.4.0"}"#)
+        #expect(DetailHeader.targetReleased(old) == nil)
     }
 }

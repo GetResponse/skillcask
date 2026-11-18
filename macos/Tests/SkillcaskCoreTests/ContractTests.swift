@@ -55,6 +55,40 @@ struct ContractTests {
         #expect(projects.projects.count == 1)
     }
 
+    /// D67's release-time keys, printed as `null` when not in hand: required on a CLI after 0.13.0; a 0.13.0 dev
+    /// build may print them too, and any value printed is checked. Offline, so only the keys a project skill reaches:
+    /// `status` entries and `info <skill>` carry `released`. `info <package>` (`versions-released`) and `outdated`
+    /// (`locked-released`, `within-released`, `latest-released`) need a registry and are not checked here.
+    @Test(.timeLimit(.minutes(1))) func releaseKeysArePrintedAsNull() async throws {
+        let scope = try freshProject()
+        defer { try? FileManager.default.removeItem(at: scope.root) }
+        let caps = try await runner.capabilities(
+            via: Invocation(.version, in: scope, capabilities: Fixture.capabilities))
+        let initialised = try await runner.run(invocation(.initialize, in: scope, caps))
+        #expect(initialised.status == .exited(0), Comment(rawValue: initialised.stderr))
+        let skill = scope.root.appending(path: ".skills/notes")
+        try FileManager.default.createDirectory(at: skill, withIntermediateDirectories: true)
+        try Data("---\nname: notes\n---\n# Notes\n".utf8).write(to: skill.appending(path: "SKILL.md"))
+        let installed = try await runner.run(invocation(.install(frozen: false), in: scope, caps))
+        #expect(installed.status == .exited(0), Comment(rawValue: installed.stderr))
+
+        let status = try await runner.run(invocation(.status, in: scope, caps))
+        let statusObject = try #require(try JSONSerialization.jsonObject(with: status.stdout) as? [String: Any])
+        let entries = try #require(statusObject["entries"] as? [[String: Any]])
+        let info = try await runner.run(invocation(.info(.skill("notes")), in: scope, caps))
+        let infoObject = try #require(try JSONSerialization.jsonObject(with: info.stdout) as? [String: Any])
+        #expect(!entries.isEmpty)
+        // Whenever printed, a project skill's time is `null`; a CLI after 0.13.0 must print it.
+        let required = caps.version > Version(0, 13, 0)
+        for object in entries + [infoObject] {
+            if let value = object["released"] {
+                #expect(value is NSNull)
+            } else {
+                #expect(!required, "`released` missing on \(caps.version)")
+            }
+        }
+    }
+
     @Test func outsideAProjectIsExitOneWithAHint() async throws {
         let scope = try freshProject()
         defer { try? FileManager.default.removeItem(at: scope.root) }

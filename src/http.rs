@@ -334,8 +334,7 @@ impl Http {
             let status = resp.status().as_u16();
             match status {
                 200..=299 => {
-                    // ureq fails a body that reaches its limit; `max_bytes` itself is allowed.
-                    return match resp.body_mut().with_config().limit(max_bytes.saturating_add(1)).read_to_vec() {
+                    return match resp.body_mut().with_config().limit(max_bytes).read_to_vec() {
                         Ok(b) => Ok(Some(b)),
                         Err(ureq::Error::BodyExceedsLimit(_)) => {
                             Err(Error::new(IO, format!("{shown}: response exceeds the limit of {max_bytes} bytes")))

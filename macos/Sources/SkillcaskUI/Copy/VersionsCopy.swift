@@ -3,8 +3,9 @@ import SkillcaskDomain
 
 /// The words of the detail's Versions tab (Versions and Versions-States boards): the row labels and their detail
 /// sentences, the callouts of each state, the full list's header and standings, and the footnote. Dates come from
-/// `Formatters`; a date no document carries reads "unknown" (Q2, Q6). Versions never carry a `v` (as `Labels`);
-/// a tag name keeps its own spelling (`v4.1.0`).
+/// `Formatters`, over the release times the CLI prints since D67; a version none dates (a GitHub or git tag other
+/// than the locked or shown one, any version from an older CLI) reads "unknown" (Q2, Q6). Versions never carry a
+/// `v` (as `Labels`); a tag name keeps its own spelling (`v4.1.0`).
 ///
 /// Tag moved deviates from Versions-States on purpose: the board says "The tag v4.1.0 now points at different
 /// content than when it was published." on the "Available in range" row, but `outdated` reports only the tag of

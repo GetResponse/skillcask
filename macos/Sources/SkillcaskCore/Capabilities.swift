@@ -12,8 +12,10 @@ public struct Capabilities: Hashable, Sendable {
         /// `status --json` entries carry `source`: the repository name (`packagist`, `github`, a custom name) or
         /// `git` for a git URL. Planned, not shipped: the list row's second line and the detail pill need it.
         case statusSource
-        /// `outdated --json` packages carry `released` (RFC 3339): when `latest` was published. Planned, not
-        /// shipped: the Versions tab's release dates need it.
+        /// An earlier plan's `released` key on `outdated --json` packages (when `latest` was published); never
+        /// shipped. D67 prints `locked-released`, `within-released`, `latest-released`, `info`'s
+        /// `versions-released` and `status`'s `released` instead, which the app reads by key presence, ungated:
+        /// absent from an older CLI, so the Versions tab says "unknown" as before.
         case outdatedReleased
         /// Planned: `audit --json` also lists not-managed skills with `kind: "not managed"`. At 0.9.4 `audit`
         /// builds its rows from the lock, the hand-written and the project skills only, so a not-managed skill

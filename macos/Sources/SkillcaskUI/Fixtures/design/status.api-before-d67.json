@@ -1,0 +1,186 @@
+{
+  "ok": false,
+  "entries": [
+    {
+      "adopt": null,
+      "ok": true,
+      "package": "anthropics/skills",
+      "skill": "pdf",
+      "state": "ok",
+      "version": "1.2.0",
+      "source": "github",
+      "description": "Reads, fills and creates PDF files: extracts text and tables, merges and splits documents, fills forms and runs OCR on scans."
+    },
+    {
+      "adopt": null,
+      "ok": false,
+      "package": "netresearch/agent-jira-skill",
+      "skill": "jira-syntax",
+      "state": "not installed",
+      "version": "4.2.0",
+      "source": "packagist",
+      "description": "Jira field and markup syntax, with examples."
+    },
+    {
+      "adopt": null,
+      "ok": true,
+      "package": "netresearch/agent-jira-skill",
+      "skill": "jira-communication",
+      "state": "ok",
+      "version": "4.2.0",
+      "source": "packagist",
+      "description": "How to write comments, status updates and hand-offs."
+    },
+    {
+      "adopt": null,
+      "ok": true,
+      "package": null,
+      "skill": "deploy-checklist",
+      "state": "hand-written",
+      "version": null,
+      "source": null
+    },
+    {
+      "adopt": null,
+      "ok": false,
+      "package": "acme/sql-review",
+      "skill": "sql-review",
+      "state": "not installed",
+      "version": "0.9.2",
+      "source": "git",
+      "description": "Review SQL and Postgres migrations before they run."
+    },
+    {
+      "adopt": null,
+      "ok": true,
+      "package": null,
+      "skill": "my-notes",
+      "state": "project",
+      "version": null,
+      "source": null,
+      "description": "Team conventions for meeting notes and decision records."
+    },
+    {
+      "adopt": "github:juliusbrussee/caveman",
+      "ok": true,
+      "package": null,
+      "skill": "caveman",
+      "state": "not managed",
+      "version": null,
+      "source": "github",
+      "description": "Terse, low-token answers for routine coding tasks."
+    },
+    {
+      "adopt": null,
+      "ok": true,
+      "package": "juliusbrussee/safe-refactor",
+      "via": ["juliusbrussee/caveman"],
+      "skill": "safe-refactor",
+      "state": "ok",
+      "version": "4.0.1",
+      "source": "github",
+      "description": "Refactors in small, verified steps and never touches behaviour."
+    },
+    {
+      "adopt": null,
+      "ok": false,
+      "package": "acme/lint",
+      "skill": "legacy-lint",
+      "state": "abandoned",
+      "version": "2.3.1",
+      "source": "acme"
+    },
+    {
+      "adopt": null,
+      "ok": false,
+      "package": "anthropics/skills",
+      "skill": "test-writer",
+      "state": "blocked by policy",
+      "version": "1.0.3",
+      "source": "github"
+    },
+    {
+      "adopt": null,
+      "ok": true,
+      "package": "acme/review-pr",
+      "skill": "review-pr",
+      "state": "ok",
+      "version": "2.1.0",
+      "source": "acme"
+    },
+    {
+      "adopt": null,
+      "ok": true,
+      "package": "acme/commit",
+      "skill": "commit-message",
+      "state": "ok",
+      "version": "3.1.0",
+      "source": "packagist"
+    },
+    {
+      "adopt": null,
+      "ok": true,
+      "package": "acme/api-docs",
+      "skill": "api-docs",
+      "state": "ok",
+      "version": "1.8.0",
+      "source": "acme"
+    },
+    {
+      "adopt": null,
+      "ok": true,
+      "package": "acme/changelog",
+      "skill": "changelog",
+      "state": "ok",
+      "version": "0.4.0",
+      "source": "packagist"
+    }
+  ],
+  "policy": {
+    "min-release-age": {
+      "value": "3d",
+      "from": "config.toml, enforced"
+    },
+    "allow-sources": {
+      "value": [
+        "packagist",
+        "acme"
+      ],
+      "from": "config.toml, enforced"
+    },
+    "allow-ranges": {
+      "value": true,
+      "from": "skills.toml"
+    }
+  },
+  "targets": {
+    "entries": [
+      "claude",
+      "cursor"
+    ],
+    "dirs": [
+      ".claude/skills"
+    ],
+    "from": "skills.toml"
+  },
+  "repositories": [
+    {
+      "allowed": true,
+      "name": "packagist",
+      "type": "composer",
+      "url": "https://repo.packagist.org/"
+    },
+    {
+      "allowed": false,
+      "name": "github",
+      "type": "github",
+      "url": "https://api.github.com/"
+    },
+    {
+      "allowed": true,
+      "name": "acme",
+      "type": "composer",
+      "url": "https://skills.acme.example/packages.json"
+    }
+  ]
+}

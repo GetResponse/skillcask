@@ -1824,7 +1824,15 @@ pub fn outdated(ctx: &Ctx, strict: bool, json: bool) -> Result<()> {
     let w = if strict { deps::wanted(&m, &lock)?.reqs } else { Vec::new() };
     let reg = Registry::new(ctx.http()?);
     let now = Timestamp::now();
-    let mut rows = vec![["package", "locked", "within constraint", "latest", "note"].map(String::from)];
+    /// Release times of a row's versions, and when a `within` still in its cooldown becomes eligible.
+    #[derive(Default)]
+    struct Times {
+        locked: Option<Timestamp>,
+        within: Option<Timestamp>,
+        latest: Option<Timestamp>,
+        eligible: Option<Timestamp>,
+    }
+    let mut rows: Vec<([String; 5], Times)> = Vec::new();
     let mut behind = Vec::new();
     for req in &m.skills {
         let p = lock.get(&req.name);
@@ -1842,7 +1850,10 @@ pub fn outdated(ctx: &Ctx, strict: bool, json: bool) -> Result<()> {
             if !note.is_empty() {
                 ui::warn(format!("{}: {note}", req.name));
             }
-            rows.push([req.name.clone(), locked, dash(within), dash(latest), note]);
+            rows.push((
+                [req.name.clone(), locked, dash(within), dash(latest), note],
+                Times { locked: p.and_then(|p| p.released), ..Default::default() },
+            ));
             if let Some(p) = p.filter(|_| strict) {
                 match ctx.candidate(&m, eff, Some(p)) {
                     Ok((_, c)) if newer(eff, p, &c) => behind.push(format!("{} {} -> {}", req.name, p.version, c.version)),
@@ -1863,25 +1874,37 @@ pub fn outdated(ctx: &Ctx, strict: bool, json: bool) -> Result<()> {
         }
         let c = Constraint::parse(&req.constraint).map_err(|e| Error::new(MANIFEST, e))?;
         let within = registry::newest(&cands, Some(&c));
-        let note = match within.and_then(|w| w.time.map(|t| (w, t))) {
+        let (note, eligible) = match within.and_then(|w| w.time.map(|t| (w, t))) {
             Some((w, t)) if now.checked_sub(age).ok().is_none_or(|c| t > c) => {
                 let eligible = t.checked_add(age).unwrap_or(Timestamp::MAX);
-                format!("{} eligible {}", w.version, eligible.round(jiff::Unit::Second).unwrap_or(eligible))
+                (format!("{} eligible {}", w.version, eligible.round(jiff::Unit::Second).unwrap_or(eligible)), Some(eligible))
             }
-            _ => String::new(),
+            _ => (String::new(), None),
         };
+        let latest = registry::newest(&cands, None);
         let v = |c: Option<&Candidate>| c.map_or("-".to_string(), |c| c.version.clone());
-        rows.push([req.name.clone(), locked, v(within), v(registry::newest(&cands, None)), note]);
+        let times = Times {
+            locked: p.and_then(|p| p.released),
+            within: within.and_then(|c| c.time),
+            latest: latest.and_then(|c| c.time),
+            eligible,
+        };
+        rows.push(([req.name.clone(), locked, v(within), v(latest), note], times));
     }
     if json {
         let opt = |s: &String| if s.is_empty() || s == "-" { Value::Null } else { Value::from(s.as_str()) };
-        let packages: Vec<Value> = rows[1..]
+        let packages: Vec<Value> = rows
             .iter()
-            .map(|r| json!({ "package": r[0], "locked": opt(&r[1]), "within": opt(&r[2]), "latest": opt(&r[3]), "note": opt(&r[4]) }))
+            .map(|(r, t)| {
+                json!({ "package": r[0], "locked": opt(&r[1]), "within": opt(&r[2]), "latest": opt(&r[3]), "note": opt(&r[4]),
+                    "locked-released": json_time(t.locked), "within-released": json_time(t.within), "latest-released": json_time(t.latest), "eligible": json_time(t.eligible) })
+            })
             .collect();
         print_json(&json!({ "packages": packages, "behind": behind }));
     } else {
-        ui::table(&rows, |_, _| None);
+        let head = ["package", "locked", "within constraint", "latest", "note"].map(String::from);
+        let table: Vec<[String; 5]> = std::iter::once(head).chain(rows.into_iter().map(|(r, _)| r)).collect();
+        ui::table(&table, |_, _| None);
     }
     if !behind.is_empty() {
         return Err(Error::new(
@@ -1979,7 +2002,7 @@ pub fn status(ctx: &Ctx, json: bool) -> Result<()> {
             .iter()
             .map(|r| {
                 let adopt = if r[3] == "not managed" { unmanaged.get(&r[2]).cloned().flatten() } else { None };
-                json!({ "package": opt(&r[0]), "version": opt(&r[1]), "skill": opt(&r[2]), "state": r[3], "ok": healthy(&r[3]), "adopt": adopt, "via": via.get(r[0].as_str()) })
+                json!({ "package": opt(&r[0]), "version": opt(&r[1]), "skill": opt(&r[2]), "state": r[3], "ok": healthy(&r[3]), "adopt": adopt, "via": via.get(r[0].as_str()), "released": json_time(lock.get(&r[0]).and_then(|p| p.released)) })
             })
             .collect();
         let policy: serde_json::Map<String, Value> =
@@ -2718,7 +2741,7 @@ pub fn info(ctx: &Ctx, target: &str, json: bool) -> Result<()> {
     let existing = m.skill(&name).filter(|e| url.as_ref().is_none_or(|(u, ..)| e.git.as_ref() == Some(u)));
     let gh = gh || url.is_some() || existing.is_some_and(|e| e.github.is_some());
     let locked = lock.get(&name).filter(|_| at.is_none() && (url.is_none() || existing.is_some()));
-    let (repo, c, versions, abandoned) = if gh {
+    let (repo, c, versions, released, abandoned) = if gh {
         let git = url.as_ref().map(|(u, ..)| u.clone()).or_else(|| existing.and_then(|e| e.git.clone()));
         let probe = SkillReq { name: name.clone(), git: git.clone(), ..Default::default() };
         m.check_source(&probe)?;
@@ -2741,7 +2764,9 @@ pub fn info(ctx: &Ctx, target: &str, json: bool) -> Result<()> {
             (None, Some(p)) => (github::repository_of(&req), locked_candidate(p)),
             (None, None) => ctx.candidate(&m, &req, None)?,
         };
-        (repo, c, versions, None)
+        // Dating any other tag costs a request (D67); a ref resolves to a sha, not in `versions`.
+        let released = c.time.filter(|_| versions.contains(&c.version)).map(|t| (c.version.clone(), json_time(Some(t))));
+        (repo, c, versions, released.into_iter().collect(), None)
     } else {
         let probe = existing.cloned().unwrap_or_else(|| SkillReq { name: name.clone(), ..Default::default() });
         let (repo, cands) = find(&Registry::new(ctx.http()?), &m, &probe, locked)?;
@@ -2755,7 +2780,8 @@ pub fn info(ctx: &Ctx, target: &str, json: bool) -> Result<()> {
             (None, None) => registry::select(&cands, &name, existing.map_or("*", |e| &e.constraint), m.min_release_age(&repo), now)?,
         };
         let versions = cands.iter().map(|c| c.version.clone()).collect();
-        (repo, c, versions, cands.first().and_then(|c| c.abandoned.clone()))
+        let released = cands.iter().filter_map(|c| c.time.map(|t| (c.version.clone(), json_time(Some(t))))).collect();
+        (repo, c, versions, released, cands.first().and_then(|c| c.abandoned.clone()))
     };
     let req = SkillReq { name: name.clone(), github: gh.then_some(GitHub::Tags), ..Default::default() };
     // The locked version's skills are the lock's, whatever its metadata says now.
@@ -2800,6 +2826,7 @@ pub fn info(ctx: &Ctx, target: &str, json: bool) -> Result<()> {
             "license": c.license,
             "abandoned": abandoned,
             "versions": versions,
+            "versions-released": Value::Object(released),
             "requires": pkg.requires,
             "skills": skills,
             "why": why(&m, &deps::wanted(&m, &lock)?, &lock, &name),
@@ -2847,11 +2874,11 @@ fn why_skill(ctx: &Ctx, m: &Manifest, lock: &Lock, name: &str, json: bool) -> Re
     if json {
         let locals = project::local_names(&ctx.s, &m.local)?;
         let doc = if let Some((p, sk)) = lock.skills().find(|(_, sk)| sk.name == name) {
-            json!({ "skill": name, "kind": "package", "package": p.name, "version": p.version, "from": sk.from, "path": format!("{STORE}/{name}"), "why": why(m, &deps::wanted(m, lock)?, lock, &p.name) })
+            json!({ "skill": name, "kind": "package", "package": p.name, "version": p.version, "released": json_time(p.released), "from": sk.from, "path": format!("{STORE}/{name}"), "why": why(m, &deps::wanted(m, lock)?, lock, &p.name) })
         } else if locals.contains(name) {
-            json!({ "skill": name, "kind": "project", "path": format!("{}/{name}", m.local) })
+            json!({ "skill": name, "kind": "project", "path": format!("{}/{name}", m.local), "released": null })
         } else if hand_written(&ctx.s, lock, &project::block_managed(&ctx.s)?, &locals)?.contains(name) {
-            json!({ "skill": name, "kind": "hand-written", "path": format!("{STORE}/{name}") })
+            json!({ "skill": name, "kind": "hand-written", "path": format!("{STORE}/{name}"), "released": null })
         } else {
             bail!(MANIFEST, "no installed skill {name:?}; info takes an installed skill name, vendor/name or github:owner/repo");
         };
@@ -2937,6 +2964,11 @@ fn print_json(v: &Value) {
     println!("{v}");
 }
 
+/// A release time as `--json` prints it (D67): RFC 3339 UTC to the second, `null` when unknown.
+fn json_time(t: Option<Timestamp>) -> Value {
+    t.map_or(Value::Null, |t| Value::from(t.round(jiff::Unit::Second).unwrap_or(t).to_string()))
+}
+
 pub fn policy_value(v: &crate::policy::Value) -> Value {
     match v {
         crate::policy::Value::Age(a) => Value::from(crate::manifest::Age(*a).to_string()),
@@ -2965,6 +2997,13 @@ mod tests {
         assert_eq!(first_sentence("Upgrade React (e.g. 18 to 19). Then more."), "Upgrade React (e.g. 18 to 19).");
         assert_eq!(first_sentence("No period"), "No period");
         assert_eq!(first_sentence(&"x".repeat(150)).chars().count(), 100);
+    }
+
+    #[test]
+    fn json_time_rounds_to_the_second() {
+        let t: Timestamp = "2026-11-05T11:48:50.6Z".parse().unwrap();
+        assert_eq!(json_time(Some(t)), json!("2026-11-05T11:48:51Z"));
+        assert_eq!(json_time(None), Value::Null);
     }
 
     #[test]

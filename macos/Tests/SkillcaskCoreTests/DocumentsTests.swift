@@ -69,6 +69,17 @@ import Testing
         #expect(doc.entries.map(\.source) == ["packagist", nil])
     }
 
+    /// D67: `released` from skills.lock; `null` for a row without a lock entry, absent before D67.
+    @Test func releasedIsReadWhenPrintedAndNilOtherwise() throws {
+        let synthetic = #"""
+            {"entries":[{"ok":true,"package":"acme/one","skill":"a","state":"ok","version":"1.0.0","released":"2026-11-05T11:48:50Z"},{"ok":true,"package":null,"skill":"b","state":"project","version":null,"released":null},{"ok":true,"package":"acme/two","skill":"c","state":"ok","version":"1.0.0"}],"ok":true}
+            """#
+        let doc = try JSONDecoder().decode(StatusDocument.self, from: Data(synthetic.utf8))
+        #expect(doc.entries.map(\.released) == ["2026-11-05T11:48:50Z", nil, nil])
+        let old = try Fixture.decode(StatusDocument.self, "0.9.4", "status")
+        #expect(old.entries.allSatisfy { $0.released == nil })
+    }
+
     @Test func notManagedEntryCarriesTheAdoptSource() throws {
         let synthetic = #"""
             {"entries":[{"adopt":"github:JuliusBrussee/caveman/cavecrew","ok":true,"package":null,"skill":"cavecrew","state":"not managed","version":null},{"adopt":null,"ok":true,"package":null,"skill":"mine","state":"not managed","version":null}],"ok":true}
@@ -111,6 +122,29 @@ import Testing
         let doc = try JSONDecoder().decode(OutdatedDocument.self, from: Data(synthetic.utf8))
         #expect(doc.packages.map(\.released) == ["2026-10-24T00:00:00Z", nil])
     }
+
+    /// D67's three dates, `null` for a GitHub or git row, absent before D67.
+    @Test func releaseKeysAreReadWhenPrinted() throws {
+        let synthetic = #"""
+            {"behind":[],"packages":[{"package":"acme/one","locked":"v4.1.0","within":"v4.3.3","latest":"v5.0.0","note":"v4.3.3 eligible 2026-11-13T15:07:45Z","locked-released":"2026-10-01T12:00:00Z","within-released":"2026-11-10T15:07:45Z","latest-released":"2026-11-12T12:00:00Z","eligible":"2026-11-13T15:07:45Z"},{"package":"acme/two","locked":"v1.0.0","within":"v1.1.0","latest":"v1.1.0","note":null,"locked-released":"2026-10-02T12:00:00Z","within-released":null,"latest-released":null,"eligible":null},{"package":"acme/three","locked":"1.0.0","within":"1.0.0","latest":"1.0.0","note":null}]}
+            """#
+        let doc = try JSONDecoder().decode(OutdatedDocument.self, from: Data(synthetic.utf8))
+        #expect(doc.packages.map(\.lockedReleased) == ["2026-10-01T12:00:00Z", "2026-10-02T12:00:00Z", nil])
+        #expect(doc.packages.map(\.withinReleased) == ["2026-11-10T15:07:45Z", nil, nil])
+        #expect(doc.packages.map(\.latestReleased) == ["2026-11-12T12:00:00Z", nil, nil])
+        #expect(doc.packages.map(\.eligible) == ["2026-11-13T15:07:45Z", nil, nil])
+        #expect(doc.packages.allSatisfy { $0.released == nil })
+    }
+
+    @Test func aReleaseTimeOfAnotherShapeIsUnknownNotAFailure() throws {
+        let synthetic = #"""
+            {"behind":[],"packages":[{"package":"acme/one","locked":"1.0.0","within":"1.0.0","latest":"1.0.0","note":null,"locked-released":42,"within-released":{"x":1},"latest-released":["2026-10-01T12:00:00Z"]}]}
+            """#
+        let doc = try JSONDecoder().decode(OutdatedDocument.self, from: Data(synthetic.utf8))
+        #expect(doc.packages[0].locked == "1.0.0")
+        #expect(doc.packages[0].lockedReleased == nil && doc.packages[0].withinReleased == nil)
+        #expect(doc.packages[0].latestReleased == nil)
+    }
 }
 
 @Suite struct InfoDocumentTests {
@@ -124,6 +158,35 @@ import Testing
         #expect(doc.versions.first == "v4.3.0" && doc.requires.isEmpty)
         #expect(doc.why == [#"netresearch/agent-jira-skill: in skills.toml as "^4.3""#])
         #expect(doc.kind == nil && doc.skill == nil)
+        if version == "0.9.4" {
+            #expect(doc.versionsReleased.isEmpty && doc.released == nil)
+        }
+    }
+
+    /// D67: keys spelled as in `versions`; a `null` value, a version left out or a key of another shape is unknown.
+    @Test(arguments: [
+        (
+            #"{"package":"a/b","versions":["v1.1.0","v1.0.0"],"versions-released":{"v1.0.0":"2026-10-01T12:00:00Z"}}"#,
+            ["v1.0.0": "2026-10-01T12:00:00Z"]
+        ),
+        (#"{"package":"a/b","versions":["1.0.0"],"versions-released":{"1.0.0":null}}"#, [:]),
+        (#"{"package":"a/b","versions":["1.0.0"],"versions-released":{}}"#, [:]),
+        (#"{"package":"a/b","versions":["1.0.0"],"versions-released":["1.0.0"]}"#, [:]),
+        (#"{"package":"a/b","versions":["1.0.0"]}"#, [:]),
+    ])
+    func versionsReleased(json: String, expected: [String: String]) throws {
+        let doc = try JSONDecoder().decode(InfoDocument.self, from: Data(json.utf8))
+        #expect(doc.versionsReleased == expected)
+        #expect(doc.versions.isEmpty == false)
+    }
+
+    @Test func skillDocumentCarriesReleased() throws {
+        let json =
+            #"{"skill":"s","kind":"package","package":"a/b","version":"1.6.1","released":"2026-11-05T11:48:50Z"}"#
+        let doc = try JSONDecoder().decode(InfoDocument.self, from: Data(json.utf8))
+        #expect(doc.released == "2026-11-05T11:48:50Z")
+        let none = try JSONDecoder().decode(InfoDocument.self, from: Data(#"{"skill":"s","released":null}"#.utf8))
+        #expect(none.released == nil)
     }
 
     @Test(arguments: Fixture.versions) func skillOfAPackage(version: String) throws {

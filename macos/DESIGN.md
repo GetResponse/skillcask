@@ -182,10 +182,13 @@ Gaps between the boards and what the CLI prints, with the interim the app ships.
 them by number; the numbers have gaps.
 
 - **Q1** `status --json` has no `source`: decoded when a later CLI prints it, "unknown" otherwise.
-- **Q2** No document prints a release date: a planned `outdated` key, "unknown" without it.
+- **Q2** Release dates come from the CLI's `--json` documents (D67): `outdated`'s `locked-released`,
+  `within-released` and `latest-released`, `status`'s `released` and `info`'s `versions-released`.
+  "Unknown" stays for GitHub and git tags other than the locked one, and for every version
+  from a CLI up to 0.13.0, which prints none of these keys.
 - **Q3** "Tag moved" is free text in `outdated`'s `note`: matched by its `tag … moved` wording.
-- **Q6** Several board values exist in no CLI document (dates, hashes, link targets): file
-  attributes where the app can read them, else "unknown" or left out.
+- **Q6** Several board values exist in no CLI document (hashes, link targets): file attributes
+  where the app can read them, else "unknown" or left out. Release dates come from D67 (Q2).
 - **Q7** `audit` does not list not-managed skills: their Security tab says "not audited" until the
   planned `auditNotManaged` ships.
 - **Q9** A segmented picker cannot carry the board's count badge on Versions: plain titles, and the

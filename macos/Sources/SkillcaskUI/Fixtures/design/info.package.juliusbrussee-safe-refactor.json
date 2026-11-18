@@ -10,6 +10,9 @@
   "versions": [
     "4.0.1"
   ],
+  "versions-released": {
+    "4.0.1": "2026-10-08T12:00:00Z"
+  },
   "requires": {},
   "skills": [
     {

@@ -56,8 +56,9 @@ struct VersionsTab: View {
     }
 
     /// The tab over a `ScopeStore`: the model from the selected entry, the scope's policy and targets, and the
-    /// package's cached `info`; the allowed range from the cached package `info`, else the detail's. "Reveal
-    /// skills.toml" reveals `manifest` (`AppStore.manifest(of:)`: the personal one is in the config directory).
+    /// package's cached `info` (its `versions-released` dates the rows); the allowed range from the cached package
+    /// `info`, else the detail's. "Reveal skills.toml" reveals `manifest` (`AppStore.manifest(of:)`: the personal one
+    /// is in the config directory).
     init(
         entry: SkillEntry, store: ScopeStore, manifest: URL, onReview: @escaping () -> Void,
         onEmptyClick: @escaping () -> Void
@@ -66,7 +67,9 @@ struct VersionsTab: View {
         let cached = store.packageInfo[package]
         let range = [cached, store.detail?.info].compactMap { $0 }
             .lazy.compactMap { DetailOverviewCopy.allowedRange(why: $0.why) }.first
-        let model = VersionsModel(entry: entry, policy: store.snapshot?.policy ?? [], allowedRange: range)
+        let model = VersionsModel(
+            entry: entry, policy: store.snapshot?.policy ?? [], allowedRange: range,
+            released: VersionsModel.released(in: cached))
         let agents = store.snapshot?.targets?.entries.map(ShellCopy.agentName) ?? []
         self.init(
             content: VersionsContent(

@@ -21,7 +21,7 @@ import Testing
 
     @Test func everyJSONFileDecodesThroughItsDocumentType() throws {
         let names = try Self.files(withExtension: "json")
-        #expect(names.count == 37)
+        #expect(names.count == 38)
         for name in names {
             let data = try Data(contentsOf: Self.designDirectory.appending(path: name))
             let decoder = JSONDecoder()
@@ -256,17 +256,20 @@ import Testing
     @Test func versionsStates() throws {
         let upToDate = DesignFixtures.commitMessageUpdate
         #expect(upToDate.available == nil && upToDate.outsideRange == nil && upToDate.latest == "3.1.0")
-        #expect(upToDate.released == DesignFixtures.date("2026-10-01T00:00:00Z"))
+        #expect(upToDate.latestReleased == DesignFixtures.date("2026-10-01T12:00:00Z") && upToDate.released == nil)
         #expect(DesignFixtures.commitMessageInfo.versions.count == 12)
         let within = DesignFixtures.pdfUpdate
         #expect(within.available?.from == "1.2.0" && within.available?.to == "1.4.0")
-        #expect(within.released == DesignFixtures.date("2026-10-24T00:00:00Z"))
+        // GitHub (D67): only the lock's time; `within-released` and `latest-released` are null.
+        #expect(within.lockedReleased == DesignFixtures.date("2026-09-20T12:00:00Z"))
+        #expect(within.withinReleased == nil && within.latestReleased == nil && within.released == nil)
         let cooldown = DesignFixtures.jiraCommunicationUpdate
         // As the CLI prints it: `within` is the waiting 4.3.0 (outdated ignores the cooldown), named in the note.
         #expect(cooldown.available == nil && cooldown.latest == "4.3.0" && cooldown.within == "4.3.0")
         #expect(cooldown.cooldown?.version == "4.3.0")
         #expect(cooldown.eligible == DesignFixtures.date("2026-10-30T09:14:00Z"))
-        #expect(cooldown.released == DesignFixtures.date("2026-10-28T09:14:00Z"))
+        #expect(cooldown.withinReleased == DesignFixtures.date("2026-10-28T09:14:00Z"))
+        #expect(cooldown.lockedReleased == DesignFixtures.date("2026-10-06T12:00:00Z"))
         #expect(DesignFixtures.jiraPackageInfo.versions.count == 9)
         let major = DesignFixtures.legacyLintUpdate
         #expect(major.available == nil && major.outsideRange == "3.0.0")
