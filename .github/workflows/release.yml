@@ -485,22 +485,28 @@ jobs:
     # The default shell, `bash -e` without pipefail, on purpose: `has` below pipes into `grep -q`,
     # which may exit before its writer does.
     steps:
-      # Temporary: `secrets` cannot be read in a job-level `if`, so this step decides and every later
-      # step asks it. Remove the gate once the first signed package is released: from then on a
-      # missing package must fail loudly, because AutoPkg silently falls back to an older release
-      # when the newest one has no matching asset.
-      - name: Check for the installer certificate
-        id: gate
+      # A missing package must fail loudly, never be skipped: AutoPkg silently falls back to an
+      # older release when the newest one has no matching asset. So every secret this job reads
+      # must be set before it starts.
+      - name: Check the signing secrets
         env:
-          P12: ${{ secrets.MACOS_INSTALLER_CERTIFICATE_P12 }}
+          MACOS_INSTALLER_CERTIFICATE_P12: ${{ secrets.MACOS_INSTALLER_CERTIFICATE_P12 }}
+          MACOS_INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_INSTALLER_CERTIFICATE_PASSWORD }}
+          MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+          APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
-          if [ -z "$P12" ]; then
-            echo "::warning::installer package skipped: no Developer ID Installer certificate in the release environment"
-            echo "installer package skipped: no Developer ID Installer certificate in the release environment" >> "$GITHUB_STEP_SUMMARY"
-            echo "run=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          fi
+          missing=0
+          for name in MACOS_INSTALLER_CERTIFICATE_P12 MACOS_INSTALLER_CERTIFICATE_PASSWORD \
+            MACOS_INSTALLER_SIGN_IDENTITY APP_STORE_CONNECT_API_KEY_P8 APP_STORE_CONNECT_KEY_ID \
+            APP_STORE_CONNECT_ISSUER_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::the secret $name is not set in the GitHub environment 'release'; set it there, then rerun this job"
+              missing=1
+            fi
+          done
+          [ "$missing" = 0 ]
       # A published package is never replaced: administrators may already have fetched it, and its
       # checksum may be pinned. `state` is one of:
       #   complete  package and checksum are on the release and agree: nothing left to do
@@ -511,7 +517,6 @@ jobs:
       # package) fails and is left for a maintainer. No upload in this job uses --clobber.
       - name: Look for an already published package
         id: state
-        if: steps.gate.outputs.run == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -549,16 +554,16 @@ jobs:
             echo "state=sidecar" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: steps.gate.outputs.run == 'true' && steps.state.outputs.state != 'complete'
+        if: steps.state.outputs.state != 'complete'
         with:
           persist-credentials: false
       # The Xcode publish-macos-app and CI's macos-pkg job use: stapler, notarytool and lipo come
       # from it.
       - run: sudo xcode-select -s /Applications/Xcode_26.6.app
-        if: steps.gate.outputs.run == 'true' && steps.state.outputs.state != 'complete'
+        if: steps.state.outputs.state != 'complete'
       # Also for a package found without its checksum: the installed app is compared with this one.
       - name: Fetch the released app
-        if: steps.gate.outputs.run == 'true' && steps.state.outputs.state != 'complete'
+        if: steps.state.outputs.state != 'complete'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -578,7 +583,7 @@ jobs:
             exit 1
           fi
       - name: Import the installer certificate
-        if: steps.gate.outputs.run == 'true' && steps.state.outputs.state == 'build'
+        if: steps.state.outputs.state == 'build'
         env:
           P12: ${{ secrets.MACOS_INSTALLER_CERTIFICATE_P12 }}
           P12_PASSWORD: ${{ secrets.MACOS_INSTALLER_CERTIFICATE_PASSWORD }}
@@ -608,7 +613,7 @@ jobs:
             exit 1
           fi
       - name: Build and sign the package
-        if: steps.gate.outputs.run == 'true' && steps.state.outputs.state == 'build'
+        if: steps.state.outputs.state == 'build'
         env:
           IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
         # The keychain goes when this step ends, failed or not: signing is done, and notarization
@@ -631,7 +636,7 @@ jobs:
           fi
           echo "PKG_DIR=$GITHUB_WORKSPACE/macos/.build" >> "$GITHUB_ENV"
       - name: Notarize and staple
-        if: steps.gate.outputs.run == 'true' && steps.state.outputs.state == 'build'
+        if: steps.state.outputs.state == 'build'
         env:
           P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
           KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
@@ -661,7 +666,7 @@ jobs:
       # Also for a package found on the release without its checksum (state `sidecar`): it gets a
       # checksum only when this release's installer identity signed it.
       - name: Verify the package and write the checksum
-        if: steps.gate.outputs.run == 'true' && steps.state.outputs.state != 'complete'
+        if: steps.state.outputs.state != 'complete'
         env:
           IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
         run: |
@@ -693,7 +698,7 @@ jobs:
       # found /usr/local/bin/skillcask to be a link to that helper, so the command is the released
       # CLI too.
       - name: Check and install the package
-        if: steps.gate.outputs.run == 'true' && steps.state.outputs.state != 'complete'
+        if: steps.state.outputs.state != 'complete'
         run: |
           macos/Scripts/check-pkg.sh "$PKG_DIR/Skillcask-${TAG#v}-macos-universal.pkg" --install
           for arch in arm64 x86_64; do
@@ -708,7 +713,7 @@ jobs:
       # The package first, the checksum in a second upload: both on the release means complete.
       # Without --clobber an upload fails when the release already has an asset of that name.
       - name: Attach to the release
-        if: steps.gate.outputs.run == 'true' && steps.state.outputs.state != 'complete'
+        if: steps.state.outputs.state != 'complete'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           STATE: ${{ steps.state.outputs.state }}
