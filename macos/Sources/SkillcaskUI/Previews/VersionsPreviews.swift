@@ -82,7 +82,9 @@ private struct VersionsSample: View {
     }
 
     private var model: VersionsModel {
-        VersionsModel(entry: entry, policy: snapshot.policy, allowedRange: range)
+        VersionsModel(
+            entry: entry, policy: snapshot.policy, allowedRange: range,
+            released: VersionsModel.released(in: loaded ? info : nil))
     }
 
     private var versions: [String]? {

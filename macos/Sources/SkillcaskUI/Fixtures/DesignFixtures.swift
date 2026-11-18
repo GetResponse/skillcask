@@ -63,10 +63,11 @@ public enum DesignFixtures {
         status: "status.api-synced", audit: "audit.api", doctor: "doctor.api", outdated: "outdated.api",
         checkedSecondsAgo: 0)
     /// `Activity` and the `Running` integrity state: pdf updated to 1.4.0, everything synced.
-    /// `api` with `outdated` exactly as 0.9.4 prints it: no planned `eligible`/`released` keys, the cooldown only in
-    /// the note (`4.3.0 eligible 2026-10-30T09:14:00Z`), so the parse is proven end to end.
+    /// `api` as a CLI before D67 prints it: `outdated` exactly as 0.9.4 (no `eligible` or release-time keys, the
+    /// cooldown only in the note `4.3.0 eligible 2026-10-30T09:14:00Z`, so the parse is proven end to end) and
+    /// `status.api-before-d67` (`api`'s status without D67's `released`). No version is dated: "unknown" (Q2).
     public static let apiNoteOnly = snapshot(
-        status: "status.api", audit: "audit.api", doctor: "doctor.api", outdated: "outdated.api-note-only",
+        status: "status.api-before-d67", audit: "audit.api", doctor: "doctor.api", outdated: "outdated.api-note-only",
         checkedSecondsAgo: 4 * 60)
     public static let apiUpdated = snapshot(
         status: "status.api-updated", audit: "audit.api", doctor: "doctor.api-repaired",
@@ -161,18 +162,20 @@ public enum DesignFixtures {
 
     // MARK: - Updates (`Versions`, `Versions-States`, `ReviewUpdate`)
 
-    /// Update within range: 1.2.0 → 1.4.0, released 24 Oct 2026.
+    /// Update within range: 1.2.0 → 1.4.0. A GitHub source, so `within-released` and `latest-released` are null and
+    /// `info`'s `versions-released` dates only the locked 1.2.0 (D67): 1.4.0 reads "Release date unknown".
     public static let pdfUpdate = update("anthropics/skills", in: api)
     public static let reviewPrUpdate = update("acme/review-pr", in: api)
-    /// Waiting for the minimum release age: 4.3.0 released 28 Oct 2026, eligible 30 Oct 2026. The board's own
+    /// Waiting for the minimum release age: 4.3.0 released 28 Oct 2026 (`within-released`), eligible 30 Oct 2026; the
+    /// installed 4.2.0 released 6 Oct 2026 (`status`'s `released`, `locked-released`). The board's own
     /// arithmetic is off: released 28 Oct 09:14 plus the 72 h policy is 31 Oct, but every board says "30 Oct"
     /// (48 h); both dates are kept verbatim, the app derives nothing from them. `within` is 4.3.0, as the CLI
     /// prints it: `outdated` computes `within` without the cooldown and names that version in the note
     /// (`src/commands.rs` 1741–1747), so the row is a cooldown, not an update (`Update.cooldown`).
     public static let jiraCommunicationUpdate = update("netresearch/agent-jira-skill", in: api)
-    /// Major release outside the range: 3.0.0 exists, ^2.0 stops at 2.3.1.
+    /// Major release outside the range: 3.0.0 exists (`latest-released` 15 Oct 2026, noon UTC), ^2.0 stops at 2.3.1.
     public static let legacyLintUpdate = update("acme/lint", in: api)
-    /// Up to date: 3.1.0 is the newest version.
+    /// Up to date: 3.1.0 is the newest version, released 1 Oct 2026 (every D67 key).
     public static let commitMessageUpdate = update("acme/commit", in: api)
     /// Tag moved: `tag 4.0.1 moved from a81f2c0d4e9b to 3fd09e1c7a52`, beside the update 4.0.1 → 4.1.0. The CLI
     /// names the LOCKED version's tag (`moved_tag` in `src/commands.rs` 1775–1779; the board says v4.1.0) and

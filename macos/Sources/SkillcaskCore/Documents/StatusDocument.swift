@@ -21,6 +21,9 @@ public struct StatusDocument: Decodable, Hashable, Sendable {
         /// repository name) or `git` for a git URL; nil for project and hand-written skills. A not managed skill
         /// carries the source `adopt` was recorded from when known, nil otherwise.
         public let source: String?
+        /// Since D67: when the locked version was released, from skills.lock (RFC 3339); nil for a row without a
+        /// package or lock entry, a lock without the time, or an older CLI.
+        public let released: String?
 
         enum CodingKeys: String, CodingKey {
             case package
@@ -32,6 +35,7 @@ public struct StatusDocument: Decodable, Hashable, Sendable {
             case adopt
             case description
             case source
+            case released
         }
 
         public init(from decoder: any Decoder) throws {
@@ -45,6 +49,7 @@ public struct StatusDocument: Decodable, Hashable, Sendable {
             adopt = try c.decodeIfPresent(String.self, forKey: .adopt)
             description = try c.decodeIfPresent(String.self, forKey: .description)
             source = try c.decodeIfPresent(String.self, forKey: .source)
+            released = try? c.decodeIfPresent(String.self, forKey: .released)
         }
     }
 

@@ -7,6 +7,7 @@
       "package": "acme/commit",
       "skill": "commit-message",
       "state": "ok",
+      "released": "2026-10-01T12:00:00Z",
       "version": "3.1.0",
       "source": "packagist"
     },
@@ -16,6 +17,7 @@
       "package": "acme/changelog",
       "skill": "changelog",
       "state": "ok",
+      "released": "2026-08-28T12:00:00Z",
       "version": "0.4.0",
       "source": "packagist"
     },
@@ -25,6 +27,7 @@
       "package": "netresearch/german-technical-writing-skill",
       "skill": "german-technical-writing",
       "state": "ok",
+      "released": "2026-06-30T12:00:00Z",
       "version": "1.0.0",
       "source": "packagist"
     }

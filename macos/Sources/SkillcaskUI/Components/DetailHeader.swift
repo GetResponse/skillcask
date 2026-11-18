@@ -236,10 +236,20 @@ public struct DetailHeader: View {
         var text =
             Text(DetailCopy.available(target)).fontWeight(.semibold) + Text(verbatim: " ")
             + FailureBanner.styled(DetailCopy.insideRange(allowedRange), fragment: allowedRange, font: Font.Token.body)
-        if let released = entry.update?.released {
+        if let released = Self.targetReleased(entry.update) {
             text = text + Text(verbatim: " ") + Text(DetailCopy.released(released, now: now))
         }
         return text
+    }
+
+    /// When the strip's target (`DetailActions.updateTarget`, which is `within`) was released: `within-released`
+    /// (D67), else the old `released` key, which dates `latest`, only when `within` is `latest`; nil otherwise.
+    nonisolated static func targetReleased(_ update: Update?) -> Date? {
+        guard let update else { return nil }
+        if let date = update.withinReleased {
+            return date
+        }
+        return update.within != nil && update.within == update.latest ? update.released : nil
     }
 }
 

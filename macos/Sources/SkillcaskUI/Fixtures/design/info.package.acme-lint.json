@@ -8,6 +8,12 @@
   "license": ["MIT"],
   "abandoned": "acme/lint2",
   "versions": ["3.0.0", "2.3.1", "2.3.0", "2.2.0"],
+  "versions-released": {
+    "3.0.0": "2026-10-15T12:00:00Z",
+    "2.3.1": "2026-09-15T12:00:00Z",
+    "2.3.0": "2026-08-14T12:00:00Z",
+    "2.2.0": "2026-07-03T12:00:00Z"
+  },
   "requires": {},
   "skills": [{ "name": "legacy-lint", "description": null }],
   "why": ["acme/lint: in skills.toml as \"^2.0\""]

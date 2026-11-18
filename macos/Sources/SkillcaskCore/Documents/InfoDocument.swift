@@ -26,6 +26,10 @@ public struct InfoDocument: Decodable, Hashable, Sendable {
     /// `true`, a replacement package name, or absent/`false`/`null` when the package is maintained.
     public let abandoned: Abandoned?
     public let versions: [String]
+    /// Since D67: when entries of `versions` were released, keyed as `versions` spells them (RFC 3339). A version
+    /// missing here is not known: Composer dates every version, GitHub and git only the shown or locked one. Empty
+    /// from an older CLI or when the key does not decode.
+    public let versionsReleased: [String: String]
     public let requires: [String: String]
     public let skills: [Skill]
     /// Why the package is in the lock: `acme/one: in skills.toml as "^1.0"`.
@@ -37,6 +41,9 @@ public struct InfoDocument: Decodable, Hashable, Sendable {
     /// Relative to the scope root.
     public let path: String?
     public let from: String?
+    /// Since D67: when the installed version was released, from skills.lock (RFC 3339); nil when the lock has no
+    /// time, for a project or hand-written skill, or from an older CLI.
+    public let released: String?
 
     enum CodingKeys: String, CodingKey {
         case package
@@ -48,6 +55,7 @@ public struct InfoDocument: Decodable, Hashable, Sendable {
         case license
         case abandoned
         case versions
+        case versionsReleased = "versions-released"
         case requires
         case skills
         case why
@@ -55,6 +63,7 @@ public struct InfoDocument: Decodable, Hashable, Sendable {
         case kind
         case path
         case from
+        case released
     }
 
     public init(from decoder: any Decoder) throws {
@@ -68,6 +77,9 @@ public struct InfoDocument: Decodable, Hashable, Sendable {
         license = try c.decodeIfPresent([String].self, forKey: .license) ?? []
         abandoned = try Self.abandoned(in: c)
         versions = try c.decodeIfPresent([String].self, forKey: .versions) ?? []
+        // Tolerant: a value that is `null` means "not known"; a key of another shape leaves the map empty.
+        versionsReleased =
+            (try? c.decodeIfPresent([String: String?].self, forKey: .versionsReleased))?.compactMapValues { $0 } ?? [:]
         requires = try c.decodeIfPresent([String: String].self, forKey: .requires) ?? [:]
         skills = try c.decodeIfPresent([Skill].self, forKey: .skills) ?? []
         why = try c.decodeIfPresent([String].self, forKey: .why) ?? []
@@ -75,6 +87,7 @@ public struct InfoDocument: Decodable, Hashable, Sendable {
         kind = try c.decodeIfPresent(String.self, forKey: .kind)
         path = try c.decodeIfPresent(String.self, forKey: .path)
         from = try c.decodeIfPresent(String.self, forKey: .from)
+        released = try? c.decodeIfPresent(String.self, forKey: .released)
     }
 
     private static func abandoned(in c: KeyedDecodingContainer<CodingKeys>) throws -> Abandoned? {

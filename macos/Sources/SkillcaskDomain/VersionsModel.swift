@@ -7,9 +7,15 @@ import SkillcaskCore
 /// from the `SkillEntry`, its `Update`, the scope's policy rows and the allowed range; the full version list comes
 /// later from a network `info <package>` and is classified by `listed(_:)`.
 ///
-/// Release dates: only `outdated`'s planned `released` key exists, and it dates `latest` (Q2). A row of another
-/// version gets that date only when it is the same version; otherwise the date is nil and the view says "unknown"
-/// (Q6).
+/// Release dates (D67, Q2), first source that dates the version wins:
+/// - newest overall: `outdated`'s `latest-released`, `info`'s `versions-released` map, an earlier plan's `released`;
+/// - installed: `status`'s `released` (skills.lock), `locked-released` when it is the locked version, the map, then
+///   the old `released` when it is `latest`;
+/// - in range: `within-released`, the map; a cooldown's version: `within-released` when it is `within`, the map, the
+///   old `released` when it is `latest`;
+/// - a row of the full list: the named row it is (newest, installed, in range), else the map.
+/// Composer dates every version; GitHub and git only the locked tag; a CLI before D67 prints none of these keys. A
+/// version no source dates has a nil date and the view says "unknown" (Q6).
 public struct VersionsModel: Hashable, Sendable {
     /// `tag 4.0.1 moved from a81f2c0d4e9b to 3fd09e1c7a52`: the CLI's free-text note on a GitHub tag source whose
     /// LOCKED version's tag now points at another commit than skills.lock recorded (Q3; `moved_tag`,
@@ -48,7 +54,8 @@ public struct VersionsModel: Hashable, Sendable {
         public let version: String
         /// When it becomes eligible; nil when neither `eligible` nor the note names a date.
         public let eligible: Date?
-        /// When it was published; nil unless it is `latest` and `released` is known.
+        /// When it was published: `within-released` (the waiting version is `within`), else the `versions-released`
+        /// map, else the old `released` key when it is `latest`; nil when none dates it.
         public let released: Date?
     }
 
@@ -101,8 +108,11 @@ public struct VersionsModel: Hashable, Sendable {
     public let installedReleased: Date?
     /// The constraint in skills.toml (`^4.2`), when `info` named it.
     public let allowedRange: String?
-    /// `outdated.within`: what `update` would lock.
+    /// `outdated.within`: the newest version the range allows, the minimum release age not applied; `update` locks
+    /// it unless it still waits (`cooldown`).
     public let within: String?
+    /// When `within` was published: `within-released`, else the `versions-released` map; nil when neither dates it.
+    public let withinReleased: Date?
     public let latest: String?
     public let latestReleased: Date?
     /// The `min-release-age` policy row, nil when unset or zero (`0`; `0h` before 0.12.1).
@@ -111,20 +121,39 @@ public struct VersionsModel: Hashable, Sendable {
     /// The waiting version; also set when the status is `available` and a newer version still cools down.
     public let cooldown: Cooldown?
     public let tagMove: TagMove?
+    /// `info`'s `versions-released`, keyed by `Update.bare` so `v4.3.0` and `4.3.0` find one date.
+    private let releasedByVersion: [String: Date]
 
-    public init(entry: SkillEntry, policy: [ScopeSnapshot.PolicyRow], allowedRange: String?) {
+    /// `released` is the package `info`'s `versions-released` (`InfoDocument.versionsReleased`, parsed), empty until
+    /// that document is loaded or from a CLI before D67.
+    public init(
+        entry: SkillEntry, policy: [ScopeSnapshot.PolicyRow], allowedRange: String?, released: [String: Date] = [:]
+    ) {
         let update = entry.update
+        let map = Dictionary(released.map { (Update.bare($0.key), $0.value) }, uniquingKeysWith: { first, _ in first })
+        let dated = { (version: String?) in version.flatMap { map[Update.bare($0)] } }
+        releasedByVersion = map
         package = entry.package
-        installed = entry.version ?? update?.locked
+        let installed = entry.version ?? update?.locked
+        self.installed = installed
         self.allowedRange = allowedRange
         within = update?.within
         latest = update?.latest
-        latestReleased = update?.released
-        installedReleased = installed != nil && installed == update?.latest ? update?.released : nil
+        withinReleased = update?.withinReleased ?? dated(update?.within)
+        latestReleased = update?.latestReleased ?? dated(update?.latest) ?? update?.released
+        installedReleased =
+            entry.released
+            ?? (installed != nil && Update.same(installed, update?.locked) ? update?.lockedReleased : nil)
+            ?? dated(installed) ?? (installed != nil && installed == update?.latest ? update?.released : nil)
         minimumAge = policy.first { $0.kind == .minReleaseAge && !ScopeSnapshot.PolicyRow.isZeroAge($0.value) }
         tagMove = update?.note.flatMap(TagMove.init(note:))
-        cooldown = update.flatMap(Self.cooldown)
+        cooldown = update.flatMap { Self.cooldown($0, dated: dated) }
         status = Self.status(update: update, tagMove: tagMove, cooldown: cooldown)
+    }
+
+    /// `info`'s `versions-released` as dates for `init(…, released:)`; a value that is not RFC 3339 is left out.
+    public static func released(in info: InfoDocument?) -> [String: Date] {
+        (info?.versionsReleased ?? [:]).compactMapValues(Update.date)
     }
 
     // MARK: - Derived
@@ -142,12 +171,12 @@ public struct VersionsModel: Hashable, Sendable {
         if case .cooldown(let cooldown) = status {
             return cooldown.released
         }
-        return released(within)
+        return withinReleased ?? released(within)
     }
 
     /// Whether the newest version overall is the one the "in range" row shows.
     public var latestIsInRange: Bool {
-        latest != nil && latest == inRangeVersion
+        latest != nil && Update.same(latest, inRangeVersion)
     }
 
     /// The "in range" row is drawn unless the lock already is the newest of everything.
@@ -181,22 +210,22 @@ public struct VersionsModel: Hashable, Sendable {
 
     // MARK: - Classification
 
+    /// The date of the named row the version is (newest, installed, in range), so the list agrees with the rows
+    /// above it, else the `versions-released` map. A named row without a date does not stop the lookup.
     private func released(_ version: String?) -> Date? {
         guard let version else { return nil }
-        if version == latest {
-            return latestReleased
-        }
-        if version == installed {
-            return installedReleased
-        }
-        return nil
+        return (Update.same(version, latest) ? latestReleased : nil)
+            ?? (Update.same(version, installed) ? installedReleased : nil)
+            ?? (Update.same(version, within) ? withinReleased : nil)
+            ?? releasedByVersion[Update.bare(version)]
     }
 
     private func standing(of text: String) -> Standing {
         if text == installed {
             return .installed
         }
-        if let cooldown, text == cooldown.version {
+        // `cooldown.version` is bare; a registry may list `v4.3.0`.
+        if let cooldown, Update.same(text, cooldown.version) {
             return .waiting(eligible: cooldown.eligible)
         }
         if text == within, within != installed {
@@ -243,11 +272,14 @@ public struct VersionsModel: Hashable, Sendable {
     }
 
     /// The waiting version of `update` (`Update.cooldown`: the note's version, which the CLI takes from `within`),
-    /// without a leading `v`; nil when nothing newer than the lock waits.
-    private static func cooldown(_ update: Update) -> Cooldown? {
+    /// without a leading `v`; nil when nothing newer than the lock waits. Dated by `within-released` when it is
+    /// `within`, else by the `versions-released` map (`dated`), else by the old `released` key when it is `latest`.
+    private static func cooldown(_ update: Update, dated: (String?) -> Date?) -> Cooldown? {
         guard let waiting = update.cooldown else { return nil }
         let version = Update.bare(waiting.version)
-        let released = update.latest.map(Update.bare) == version ? update.released : nil
+        let released =
+            (Update.same(version, update.within) ? update.withinReleased : nil) ?? dated(version)
+            ?? (update.latest.map(Update.bare) == version ? update.released : nil)
         return Cooldown(version: version, eligible: waiting.eligible, released: released)
     }
 

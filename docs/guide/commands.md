@@ -33,7 +33,11 @@ Every command except `publish`, `validate`, `projects`, `auth`, `app` and plugin
 `status`, `outdated`, `info`, `search`, `doctor`, `audit`, `projects`, `config` and
 `self-check` take `--json`: one JSON document on one line of stdout, with the same exit code;
 warnings and errors stay on stderr. Package text in it is escaped as in the terminal
-(`<U+202E>`). `status --json` has `repositories`
+(`<U+202E>`). Release times are RFC 3339 UTC strings: `outdated` packages have `locked-released`,
+`within-released`, `latest-released` and `eligible`, `info` has `versions-released` (version to time) for a package
+and `released` for a skill, and `status` entries have `released`. A time is `null` (a version absent from
+`versions-released`) when skillcask does not hold one; no request is made to find it, so a GitHub or git tag other
+than the locked or shown one has none. `status --json` has `repositories`
 (`[{"name", "type", "url", "allowed"}]`) and `skills-sh`; `search --json` results carry `source` (the repository
 name, or `skills.sh`) and `installs`, and the document has `"skills-sh": true|false|null` (`null`:
 never decided). `self-check --json` is `{"version", "latest", "newer", "managed"}` (`latest` is `null` when

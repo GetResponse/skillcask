@@ -240,6 +240,9 @@ fn requires_and_info_take_a_git_target() {
     assert!(out.contains("acme/skills") && out.contains("1.2.0") && out.contains("two"), "{out}");
     let v: serde_json::Value = serde_json::from_slice(&q.run(&["info", &format!("git:{url}@^1"), "--json"]).stdout).unwrap();
     assert_eq!((v["source"].as_str(), v["version"].as_str()), (Some("git"), Some("v1.2.0")));
+    let dated: Vec<&String> = v["versions-released"].as_object().unwrap().keys().collect();
+    assert_eq!(dated, ["v1.2.0"], "only the resolved tag: {v}");
+    assert!(v["versions-released"]["v1.2.0"].as_str().unwrap().parse::<jiff::Timestamp>().is_ok(), "{v}");
     assert!(q.expect(&["info", "git:http://example.com/a/b.git"], 1).contains("must start with https://"));
 }
 
@@ -259,7 +262,11 @@ fn a_moved_tag_is_reported() {
     let out = p.ok(&["outdated"]);
     assert!(out.contains("warning: acme/skills: tag v1.0.0 moved from "), "{out}");
     let v: serde_json::Value = serde_json::from_slice(&p.run(&["outdated", "--json"]).stdout).unwrap();
-    assert!(v["packages"][0]["note"].as_str().unwrap().starts_with("tag v1.0.0 moved from "), "{v}");
+    let row = &v["packages"][0];
+    assert!(row["note"].as_str().unwrap().starts_with("tag v1.0.0 moved from "), "{v}");
+    assert!(row["locked-released"].as_str().unwrap().parse::<jiff::Timestamp>().is_ok(), "{v}");
+    let undated = [&row["within-released"], &row["latest-released"], &row["eligible"]];
+    assert_eq!(undated, [&serde_json::Value::Null; 3], "{v}");
     let out = p.ok(&["update"]);
     assert!(out.contains("acme/skills v1.0.0: same version, other content (a moved tag or a republished version)"), "{out}");
 }
