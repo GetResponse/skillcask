@@ -1,6 +1,7 @@
 # Spec: release the macOS app
 
-Date: 2026-10-28. Status: accepted as D50 (2026-10-29), which amends D35.
+Date: 2026-10-28. Status: accepted as D50 (2026-10-29), which amends D35. The installer package
+(section 4) is D69, which amends D50 and D52.
 
 ## Problem
 
@@ -84,6 +85,103 @@ so it works wherever the app is installed. When none is found, it names the cask
 Elsewhere it fails with `MANIFEST` and a short message. No other behaviour: it passes no arguments
 and starts no process besides `open`.
 
+### 4. Installer package for managed Macs
+
+Device management (Jamf and others) installs packages, not zips or casks. From VNEXT on, every
+release tag therefore also gets `Skillcask-X.Y.Z-macos-universal.pkg` with its `.sha256` (D69): a product
+archive, identifier `com.getresponse.skillcask.pkg`, of two components.
+
+| Component | Payload | Installs to |
+|---|---|---|
+| `com.getresponse.skillcask.pkg.app` | `Skillcask.app` of the released zip | `/Applications` |
+| `com.getresponse.skillcask.pkg.cli` | `skillcask`, a symbolic link to `/Applications/Skillcask.app/Contents/Helpers/skillcask` | `/usr/local/bin` |
+
+System domain only, arm64 and x86_64, the app's minimum macOS (14), `root:wheel`, no install
+scripts, nothing in user homes. The app component is not relocatable, so the app lands in `/Applications` also when
+a copy lies elsewhere, and has no version check, so the older package takes the app back with its
+CLI. The link's target is absolute, which the fixed place of the app allows: the command on `PATH`
+is always the CLI of the app in `/Applications`, at one version with it, also after something else
+replaced the app. It dangles when the app is removed; an uninstall removes the app and the link,
+then forgets both receipts. The install replaces a file or a link of that name. `pkgbuild` archives
+the link as a link (mode `120755` in the bill of materials, `root:wheel`), and it is the only one
+in the package. `macos/pkg.sh` builds it from an app it is given (`SKILLCASK_APP`) and signs it when
+`INSTALLER_IDENTITY` is set; `macos/Scripts/check-pkg.sh` checks a built package and, with
+`--install`, installs it.
+
+Job `publish-macos-pkg` in `release.yml`, hand-written like `publish-macos-app`, which it needs;
+on `macos-26` with the same Xcode, in the `release` environment (its own review), for
+pre-releases too:
+
+1. Stops with a visible skip (a warning and a line in the job summary) while the environment has
+   no installer certificate. Temporary: once the first signed package is out, a missing package
+   must fail.
+2. Looks at the release. Package and `.sha256` both there and matching: nothing to do. Only the
+   package (a run stopped between the two uploads): it is checked like a fresh one (steps 3, 6
+   and 7) and only its `.sha256` is attached. An unfinished upload, a `.sha256` that does not
+   match, or a `.sha256` without a package: the job fails, replaces nothing and names the asset
+   to delete.
+3. Downloads the published zip, checks its `.sha256`, `stapler validate`, `spctl` (`accepted`,
+   `Notarized Developer ID`) and that the app's version is the tag's. It compiles nothing.
+4. Imports the Developer ID Installer certificate, and only that one, into a temporary keychain,
+   requires exactly one valid such identity there and refuses a `.p12` that also holds a
+   Developer ID Application certificate.
+5. Runs `macos/pkg.sh` and requires the tag's version in the file name, then
+   `notarytool submit … --wait --timeout 30m` (fails unless `Accepted`, printing `notarytool log`)
+   and `stapler staple`.
+6. `stapler validate`; `pkgutil --check-signature` must list three certificates, the first exactly
+   `MACOS_INSTALLER_SIGN_IDENTITY`; `spctl --assess --type install -vv` must say `accepted` and
+   `Notarized Developer ID`. Then writes the `.sha256`, after the staple, which changes the file.
+7. `macos/Scripts/check-pkg.sh <pkg> --install`: the runner is thrown away, so the package is
+   really installed once. The installed app's CDHash for arm64 and for x86_64 must then equal the
+   released app's.
+8. Uploads the package, then the `.sha256`, without `--clobber`: an upload fails when the release
+   already has that name, so a rerun never replaces a published package.
+9. Deletes the temporary keychain and the `.p8` file (`if: always()`).
+
+The private key is imported non-extractable. The keychain is deleted when the build and signing
+of step 5 ends, failed or not, before notarization, and again in step 9; the `.p8` file is removed
+when notarization ends. `GITHUB_TOKEN` goes only to the steps that call `gh`, so it is not in the
+environment while code from the tag runs.
+
+No job needs it. A failed or late package leaves the release, the zip, the cask, the formula, npm
+and the announcement as they are; rerun the job. The asset name, the three identifiers and the two
+paths are what device management, receipts and recipes key on, and do not change.
+
+`self-update` knows the package as an install method (D69, amending D52). Run through the link or
+as the app's helper, the resolved binary is the helper inside `Skillcask.app`; when
+`/var/db/receipts/com.getresponse.skillcask.pkg.app.plist` exists too and root owns the helper, a
+newer release makes it print
+`error: skillcask X -> Y: installed with the macOS installer package; your administrator deploys updates`
+with the hint `the package Skillcask-Y-macos-universal.pkg is on <release page of vY>` and exit 1
+(the page, not the asset's URL: the package job can lag or be skipped, and that URL would then be
+a 404). It downloads and installs nothing. This goes before the cask, and the owner decides: neither
+the receipt nor a Caskroom folder is removed when another method installs the app later, while
+Installer writes the app as root and the cask and the app's installer script write it as the
+user. A person who installed the package by hand gets "your administrator deploys updates" too.
+
+The app's update sheet (`InstallMethod.swift`) does not know the package. On a deployed Mac it
+says "Installed from a download" and shows the steps for the release zip, or, while a
+`Caskroom/skillcask-app` folder exists, "Installed with Homebrew" and the `brew` command.
+`[updates] managed` (D61) in the machine-wide `config.toml` (D60) comes first when set, in the CLI
+and in the app, and is recommended, not required: it is how an organisation says in its own words
+who updates and whom to ask, and the only way to replace those steps in the sheet. The package
+neither ships nor touches that file.
+
+The package and Homebrew's formula `skillcask` and cask `skillcask-app` exclude each other on one
+Mac. The cask installs the same `/Applications/Skillcask.app`. On Intel, Homebrew's prefix is
+`/usr/local`, so the formula's link `/usr/local/bin/skillcask` is the path the package writes: the
+install replaces Homebrew's link, and the next `brew upgrade` or `brew link` reports
+`Could not symlink bin/skillcask` (`Target /usr/local/bin/skillcask`, `already exists`) and leaves
+the formula unlinked, as long as the link resolves; a dangling one Homebrew replaces.
+`brew uninstall skillcask` and `brew uninstall --cask skillcask-app` come before the package.
+For administrators: `docs/guide/deploy-macos.md`.
+
+AutoPkg recipes follow once the first signed package exists, since they name its signer:
+`autopkg/Skillcask.download.recipe.yaml` (`com.github.getresponse.download.Skillcask`) and
+`autopkg/Skillcask.pkg.recipe.yaml` (`com.github.getresponse.pkg.Skillcask`). AutoPkg's GitHub
+provider takes the newest release that has a matching asset, so while a release lacks its package
+it silently stays on the one before: confirm the `.pkg` is attached before announcing.
+
 ### Rejected
 
 - **App inside the formula.** It works without an Apple account, but the app stays in the Cellar and
@@ -96,11 +194,24 @@ and starts no process besides `open`.
 - **Sparkle or another in-app updater**: Homebrew and the release zip cover updates; an updater adds
   network code to an app that has none (D35). A notice that a release exists is not an updater:
   D51 asks through the CLI and leaves the update to Homebrew or the zip.
+- **dist's own `pkg` installer** for the package: it makes one unsigned package per architecture.
+- **Install scripts in the package** (to quit the app, link the CLI or write a config): they run as
+  root on every Mac, and without them the payload is all there is to review.
+- **`/usr/local/bin/skillcask` as a copy of the helper** (the first design): the same binary on
+  the day of the install, but it stays at the package's version when anything else updates the
+  app in `/Applications`, and the command on `PATH` and the app then differ. The link breaks when
+  the app is removed, when a copy would be a leftover; and since the command on `PATH` resolves
+  to the app's helper, `self-update` there checks for the package (the receipt and the owner).
+  What the copy had and the link gives up: a root-owned file whatever happens to the app. The
+  link runs whatever app is in `/Applications`, so after a user-owned copy replaced it (cask,
+  zip, installer script) a root script that runs `/usr/local/bin/skillcask` runs a file that
+  user can write. Hence the rule in the guide: management scripts do not run the CLI as root,
+  and inventory reads the version without executing it.
 
 ## Secrets
 
 Environment secrets of the GitHub environment `release`, not repository secrets, so only the
-signing job (`environment: release`) gets them:
+signing jobs (`environment: release`) get them:
 
 | Secret | What |
 |---|---|
@@ -109,6 +220,18 @@ signing job (`environment: release`) gets them:
 | `MACOS_SIGN_IDENTITY` | `Developer ID Application: <name> (<team id>)` |
 | `APP_STORE_CONNECT_API_KEY_P8` | App Store Connect team key for `notarytool` (role Developer), base64 |
 | `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID` | its key id and issuer id |
+| `MACOS_INSTALLER_CERTIFICATE_P12` | Developer ID Installer certificate with its private key, base64 (`publish-macos-pkg`) |
+| `MACOS_INSTALLER_CERTIFICATE_PASSWORD` | password of that `.p12` |
+| `MACOS_INSTALLER_SIGN_IDENTITY` | `Developer ID Installer: <name> (<team id>)` |
+
+`publish-macos-pkg` reads the three installer secrets and the notary key; it never gets the
+Developer ID Application certificate.
+
+`MACOS_INSTALLER_SIGN_IDENTITY` is the certificate's full common name, ending in the team id in
+parentheses: `macos/pkg.sh` refuses any other form. Export the installer `.p12` together with its
+intermediate certificate (Developer ID Certification Authority, G2): the runner image may lack
+it, and the job requires a valid identity. The job refuses a `.p12` that also holds a Developer
+ID Application certificate.
 
 Set the file secrets with `base64 -i <file> | gh secret set <NAME> --env release`, so they never
 pass through the clipboard or shell history, and delete the local copies afterwards.
@@ -121,11 +244,22 @@ Repository settings that keep a signed build behind a review:
   Without it, anyone with push access could tag a commit with a changed `release.yml` and get a
   signed build.
 
-The certificate owner owns all seven secrets and rotates them yearly: a new App Store Connect key
-and a `.p12` exported with a new password, next by 2027-10-29. That also comes before the
-certificate expires on 2027-11-27. Builds already notarized keep working. On a leak, the owner revokes the
-API key in App Store Connect and, if needed, the certificate. Actions stay pinned to a commit sha;
-signing and notarizing use `security` and `xcrun` directly, with no third-party signing action.
+The certificate owner owns the nine secrets above and rotates them yearly: a new App Store Connect
+key and a `.p12` exported with a new password, next by 2027-10-29. That also comes before the
+Developer ID Application certificate expires on 2027-12-04. Builds already notarized keep working.
+On a leak, the owner revokes the API key in App Store Connect and, if needed, the certificate. No
+job reads an `APPLE_TEAM_ID` secret: one left in the environment from before can be deleted.
+Actions stay pinned to a commit sha; signing and notarizing use `security` and `xcrun` directly,
+with no third-party signing action.
+
+The Developer ID Installer certificate is a second certificate with its own expiry, created by
+the Apple account holder. The Developer ID Application certificate in use runs 13 months
+(2026-11-04 to 2027-12-04); expect about the same. A renewal is expected to keep the common name
+and the team, so that `MACOS_INSTALLER_SIGN_IDENTITY` and every signer check an administrator or
+a recipe pinned keep matching; confirm it on the first renewal. A change of the legal name or of the team breaks those checks: announce
+it one release ahead. Apple's pages disagree on whether a package still installs after its
+installer certificate has expired, so the guide tells administrators to deploy the latest release
+and promises nothing for old packages.
 
 ## Tasks
 
@@ -143,6 +277,19 @@ signing and notarizing use `security` and `xcrun` directly, with no third-party 
 - [x] README and `macos/README.md`: install via the cask; the quarantine instructions stay for
       local ad-hoc builds only.
 - [x] AGENTS.md release steps: the new jobs, and what to do when notarization is slow or rejected.
+- [ ] Developer ID Installer certificate issued; the three installer secrets in `release`.
+- [x] Job `publish-macos-pkg` in `release.yml`: section 4, steps 1–9.
+- [x] `macos/pkg.sh` and `macos/Scripts/check-pkg.sh`, which the job runs, with the CI job
+      `macos-pkg` in its own workflow `macos-pkg.yml`, which runs on pull requests that change
+      `macos/**`, `.github/workflows/**`, `src/**`, `build.rs`, `Cargo.toml` or `Cargo.lock` and
+      on every push to `master`.
+- [x] Decision D69 in `docs/specs/2026-10-19-skillcask-v1.md` (amends D50 and D52) and
+      `docs/guide/deploy-macos.md`.
+- [ ] First signed package on an `-rc` tag: notarized, `spctl` accepted, installed on the runner.
+- [ ] Manual acceptance through device management: a policy install on a Mac that never had
+      skillcask, the machine-wide `config.toml`, an update, a rollback, an uninstall.
+- [ ] AutoPkg recipes in `autopkg/`, with the signer the first signed package shows.
+- [ ] Remove the certificate gate (step 1) once the first signed package is released.
 - [ ] First stable release with the cask, on a Mac without the tap:
       `brew install getresponse/tap/skillcask getresponse/tap/skillcask-app`, then `skillcask app`; also
       the cask alone, to see whether Homebrew refuses the formula it depends on.
@@ -154,6 +301,17 @@ signing and notarizing use `security` and `xcrun` directly, with no third-party 
   skillcask, open it, expect the single "downloaded from the internet" prompt;
   `brew install getresponse/tap/skillcask getresponse/tap/skillcask-app`, then `skillcask app`.
 - `macos/Scripts/smoke-app.sh` against the notarized bundle.
+- Package, unsigned, in CI (`macos-pkg.yml`, on pull requests that change `macos/**`,
+  `.github/workflows/**`, `src/**`, `build.rs`, `Cargo.toml` or `Cargo.lock` and on every push to
+  `master`): `macos/pkg.sh` without an identity, then `macos/Scripts/check-pkg.sh --install` on
+  the runner, three times: with `/usr/local/bin` absent and a newer app in `/Applications`, over
+  the link Homebrew's formula leaves in a user-owned `/usr/local/bin` on Intel, and over a regular
+  file `/usr/local/bin/skillcask`.
+- Package, signed: an `-rc` tag runs `publish-macos-pkg` without touching Homebrew and npm; in the
+  job `stapler validate`, `pkgutil --check-signature`, `spctl --assess --type install` and one real
+  install.
+- Package, manual, once per change to the job or to `pkg.sh`: the device-management acceptance of
+  the task list. An install sent as a device-management command or during enrolment is not tested.
 
 ## Resolved questions
 
