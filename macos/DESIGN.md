@@ -221,7 +221,8 @@ them by number; the numbers have gaps.
   read runs in parallel.
 - Short runs (Check, Sync, Refresh) show progress in the list header; sheet runs keep it in the
   sheet. The outcome is a toast at the bottom of the list column; a failure is a banner with the
-  CLI's hint. Exit 4 (integrity) has its own variant and is never retried automatically.
+  CLI's hint. Exit 4 (integrity) has its own variant and is never retried automatically. The text
+  of a banner or message strip is selectable, so it can be copied; its buttons and links are not.
 - Activity (⌥⌘L) is a drawer in the list column with one row per run this session: title, command,
   exit word, duration and the full transcript. It opens by itself only from a failure's Details.
 - The Add Skill sheet stays open after an add, so several skills can be added in one visit. The

@@ -144,6 +144,7 @@ public struct MessageStrip: View {
             label
                 .foregroundStyle(Color.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if trailingTitle != nil, let trailing {
                 control(trailing)

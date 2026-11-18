@@ -146,6 +146,7 @@ public struct FailureBanner: View {
         (Text(message.title).font(Font.Token.bodyEmphasis) + Text(" ") + bodyLabel)
             .foregroundStyle(Color.textPrimary)
             .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
     }
 
     private var stackedText: some View {
@@ -154,10 +155,12 @@ public struct FailureBanner: View {
                 .font(Font.Token.bodyEmphasis)
                 .foregroundStyle(Color.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
             if !Self.bodyText(message).isEmpty {
                 bodyLabel
                     .foregroundStyle(Color.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
             }
             if hasActions {
                 actionRow
