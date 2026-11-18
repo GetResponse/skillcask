@@ -410,15 +410,16 @@ impl Ctx {
                 let age = m.min_release_age(&repo);
                 let Some(t) = p.released.filter(|t| now.checked_sub(age).is_ok_and(|cutoff| *t > cutoff)) else { continue };
                 let eligible = t.checked_add(age).unwrap_or(Timestamp::MAX);
+                // An exception or a project's longer value is not the enforced one: naming `from` there
+                // would send the reader to the wrong key.
+                let what = if age == m.policy.min_release_age {
+                    format!("policy.min-release-age ({}, {from})", crate::manifest::Age(age))
+                } else {
+                    format!("the min-release-age of its repository ({})", crate::manifest::Age(age))
+                };
                 return Err(Error::new(
                     MANIFEST,
-                    format!(
-                        "{} {} was released {} and is newer than policy.min-release-age ({age}, {from})",
-                        p.name,
-                        p.version,
-                        t.round(jiff::Unit::Second).unwrap_or(t),
-                        age = crate::manifest::Age(age)
-                    ),
+                    format!("{} {} was released {} and is newer than {what}", p.name, p.version, t.round(jiff::Unit::Second).unwrap_or(t)),
                 )
                 .hint(format!(
                     "it becomes eligible at {}; until then lock an older version",

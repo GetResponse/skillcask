@@ -281,13 +281,27 @@ fn a_repository_min_release_age_exception_covers_git_entries() {
     let other = s.url("/other/skills.git");
     let p = Project::new(&s);
     manifest(&p, "", "");
-    p.config(&format!(
-        "[policy]\nmin-release-age = \"3d\"\nenforce = [\"min-release-age\"]\n\n[policy.repository-min-release-age]\n\"{}\" = \"0\"\n",
-        s.url("/acme/")
-    ));
+    let config = |exempt: &str| {
+        p.config(&format!(
+            "[policy]\nmin-release-age = \"3d\"\nenforce = [\"min-release-age\"]\n\n[policy.repository-min-release-age]\n\"{}\" = \"{exempt}\"\n",
+            s.url("/acme/")
+        ))
+    };
+    config("0");
     p.ok(&["add", &format!("git:{url}")]);
     assert!(p.read("skills.lock").contains(&fresh), "{}", p.read("skills.lock"));
     p.ok(&["install", "--frozen"]);
+
+    // `update` resolves through another path than `add`; it must honour the exception too.
+    let newer = commit(r.path(), &[("SKILL.md", &format!("{}\nv2\n", skill_md("tool")))], 0, None);
+    p.ok(&["update"]);
+    assert!(p.read("skills.lock").contains(&newer), "{}", p.read("skills.lock"));
+
+    // A cooldown from an exception is not the enforced one, so the message must not point at it.
+    config("2d");
+    let out = p.expect(&["install", "--frozen"], 1);
+    assert!(out.contains("newer than the min-release-age of its repository (2d)"), "{out}");
+    config("0");
 
     // The same commit under a prefix without the exception keeps the enforced cooldown.
     assert!(p.expect(&["add", &format!("git:{other}")], 1).contains("newer than policy.min-release-age (3d"));
