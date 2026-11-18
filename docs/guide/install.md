@@ -50,6 +50,14 @@ to `/Applications`; an earlier copy goes to the Trash. It leaves a Homebrew inst
 
 Linux and Windows have the terminal UI, `skillcask ui`. More in [macOS app](macos-app.md).
 
+**Installer package (managed Macs)**
+
+For Macs that device management installs software on, every release from 0.14.0 on also has
+`Skillcask-X.Y.Z-macos-universal.pkg`, signed and notarized: the same app in `/Applications` and
+`/usr/local/bin/skillcask` as a link to the CLI inside it, with no install scripts. Do not combine
+it with a Homebrew install on the same Mac. Verifying it, the machine-wide `config.toml` that goes
+with it, updates and uninstall: [Deploy on managed Macs](deploy-macos.md).
+
 **npm, bun**
 
 ```sh
@@ -128,3 +136,12 @@ The installer scripts (`skillcask-installer.sh`, `skillcask-installer.ps1`,
 the earlier copy to the Trash. The app's own CLI updates with the app; Homebrew updates the app and
 the CLI on your `PATH` separately, which is why `brew upgrade` names both. For the GitHub Action,
 bump the pinned commit and `version`. `skillcask --version` prints what you have.
+
+The app that the installer package put in `/Applications`, and with it the CLI that
+`/usr/local/bin/skillcask` links to, is updated by deploying the newer package. `self-update`
+there says that an administrator deploys updates and names the package file and its release
+page; it installs nothing.
+The app's update sheet does not know the package and shows the steps for the release zip.
+Setting `[updates] managed` in the machine-wide `config.toml` is recommended: it puts the
+organisation's own words in both places
+([Deploy on managed Macs](deploy-macos.md#machine-wide-configtoml)).

@@ -15,7 +15,9 @@ brew install getresponse/tap/skillcask getresponse/tap/skillcask-app
 ```
 
 Every release also has `Skillcask-X.Y.Z-macos-universal.zip`, signed with a Developer ID and
-notarized (D50): unzip it into `/Applications`.
+notarized (D50): unzip it into `/Applications`. For Macs under device management, every release
+from 0.14.0 on also has an installer package with the same app and `/usr/local/bin/skillcask` as a
+link to its CLI (D69): [Deploy on managed Macs](deploy-macos.md).
 
 The app tells you about a newer release but installs nothing ([Update](install.md#update)). Its app menu
 has Check for Updates…, which runs `skillcask self-check`; it checks daily only after you say yes

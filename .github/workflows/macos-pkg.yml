@@ -1,16 +1,25 @@
 name: macOS package
 
-# The installer package: on pull requests that touch the app, a workflow or Cargo.toml (the version
-# comes from it), and on every push to master. GitHub Actions filters paths per workflow, not per
-# job, so it is not part of CI.
+# The installer package: on pull requests that touch the app, a workflow, Cargo.toml (the version
+# comes from it) or the CLI's sources (`src/**`, build.rs, Cargo.lock: the CLI built from them goes
+# into the app, and the package's version check runs it), and on every push to master. GitHub
+# Actions filters paths per workflow, not per job, so it is not part of CI.
 on:
   push:
     branches: [master]
   pull_request:
-    paths: ["macos/**", ".github/workflows/**", Cargo.toml]
+    paths: ["macos/**", ".github/workflows/**", Cargo.toml, Cargo.lock, build.rs, "src/**"]
 
 permissions:
   contents: read
+
+# One group per pull request: a newer push cancels the run of the one before. On master the group
+# is the commit, so no run waits for another or cancels one: within a group GitHub cancels a
+# pending run when a newer one is queued, also with cancel-in-progress off, and a group per branch
+# would lose merges that way. Every merge gets its own result.
+concurrency:
+  group: macos-pkg-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   macos-pkg:
@@ -27,8 +36,9 @@ jobs:
       - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - run: macos/bundle.sh
       - run: macos/pkg.sh
-      # Two installs on one runner, which is discarded afterwards. The build stays in macos/.build
-      # for both: a second copy of the app with the same bundle identifier, which a relocatable
+      # Three installs on one runner, which is discarded afterwards: with /usr/local/bin absent,
+      # over Homebrew's link on an Intel Mac, and over a regular file. The build stays in
+      # macos/.build for all of them: a second copy of the app with the same bundle identifier, which a relocatable
       # package could update instead of installing to /Applications. It is registered with Launch
       # Services so that a search by bundle identifier can find it, then recorded: the checksum of
       # every file and the owner, group, mode, inode and modification time of every entry (a write
@@ -73,12 +83,18 @@ jobs:
       # (the runner is discarded). Owner, group and mode all differ from the payload's root:wheel
       # 755, so the second install shows whichever of them it overwrites. rmdir fails if the first
       # install put anything but the CLI into the directory it created.
-      - name: Remove the install, restore /usr/local/bin and make it user-owned
+      #
+      # It also holds what the Homebrew formula leaves there on Intel: `skillcask`, a relative link
+      # into the Cellar, where a stand-in for brew's binary lies (the path is made for this test if
+      # the image has no such Cellar). The install must put the package's link in place of brew's,
+      # not write through it: the stand-in is recorded and compared afterwards.
+      - name: Remove the install, restore /usr/local/bin as Homebrew on Intel leaves it
         run: |
           set -o pipefail
           sudo pkgutil --forget com.getresponse.skillcask.pkg.app
           sudo pkgutil --forget com.getresponse.skillcask.pkg.cli
           sudo rm -rf /Applications/Skillcask.app
+          test -L /usr/local/bin/skillcask
           sudo rm /usr/local/bin/skillcask
           sudo rmdir /usr/local/bin
           if [ -e /usr/local/bin.aside ]; then sudo mv /usr/local/bin.aside /usr/local/bin; fi
@@ -87,12 +103,46 @@ jobs:
           sudo chmod 775 /usr/local/bin
           touch /usr/local/bin/.keep
           stat -f '%Su:%Sg %Mp%Lp %i %m' /usr/local/bin/.keep | tee "$RUNNER_TEMP/keep.stat"
+          cellar=/usr/local/Cellar/skillcask/0.0.1/bin
+          sudo mkdir -p "$cellar"
+          sudo chown -R "$(id -un)":admin /usr/local/Cellar/skillcask
+          printf '#!/bin/sh\necho "skillcask 0.0.1 (stand-in for the formula)"\n' > "$cellar/skillcask"
+          chmod 755 "$cellar/skillcask"
+          if [ -e /usr/local/bin/skillcask ] || [ -L /usr/local/bin/skillcask ]; then
+            echo "::error::the image has its own /usr/local/bin/skillcask"
+            exit 1
+          fi
+          ln -s ../Cellar/skillcask/0.0.1/bin/skillcask /usr/local/bin/skillcask
+          test "$(/usr/local/bin/skillcask --version)" = "skillcask 0.0.1 (stand-in for the formula)"
+          { shasum -a 256 "$cellar/skillcask"; stat -f '%Su:%Sg %Mp%Lp %i %m' "$cellar/skillcask"; } |
+            tee "$RUNNER_TEMP/cellar.stat"
           ls -ldO /Applications /usr/local /usr/local/bin
-      # Second install, as on a Mac that never had Skillcask: the only copy of the app is the build,
-      # outside /Applications. The file already in /usr/local/bin must stay as it was.
-      - name: Install into a user-owned /usr/local/bin
+          ls -l /usr/local/bin/skillcask
+      # Second install, as on a Mac that never had the package: the only copy of the app is the
+      # build, outside /Applications. check-pkg.sh asserts that /usr/local/bin/skillcask is now the
+      # package's link. The other file in /usr/local/bin and brew's binary in the Cellar must stay
+      # as they were.
+      - name: Install into a user-owned /usr/local/bin, over Homebrew's link
         run: |
           set -o pipefail
+          cellar=/usr/local/Cellar/skillcask/0.0.1/bin
+          macos/Scripts/check-pkg.sh macos/.build/Skillcask-*-macos-universal.pkg --install
+          stat -f '%Su:%Sg %Mp%Lp %i %m' /usr/local/bin/.keep | diff "$RUNNER_TEMP/keep.stat" -
+          { shasum -a 256 "$cellar/skillcask"; stat -f '%Su:%Sg %Mp%Lp %i %m' "$cellar/skillcask"; } |
+            diff "$RUNNER_TEMP/cellar.stat" -
+          bash "$RUNNER_TEMP/manifest.sh" | diff "$RUNNER_TEMP/build.manifest" -
+      # Third install, over an installed package: the app and both receipts are there, and
+      # /usr/local/bin/skillcask is a regular file, root:wheel 755, a copy of the app's CLI, as a
+      # package that installed a copy would have left it (or anything else that put a file there).
+      # The install must replace the file with the link.
+      - name: Install over a regular file /usr/local/bin/skillcask
+        run: |
+          set -o pipefail
+          sudo rm /usr/local/bin/skillcask
+          sudo install -o root -g wheel -m 755 /Applications/Skillcask.app/Contents/Helpers/skillcask \
+            /usr/local/bin/skillcask
+          test -f /usr/local/bin/skillcask
+          test ! -L /usr/local/bin/skillcask
           macos/Scripts/check-pkg.sh macos/.build/Skillcask-*-macos-universal.pkg --install
           stat -f '%Su:%Sg %Mp%Lp %i %m' /usr/local/bin/.keep | diff "$RUNNER_TEMP/keep.stat" -
           bash "$RUNNER_TEMP/manifest.sh" | diff "$RUNNER_TEMP/build.manifest" -
@@ -100,6 +150,6 @@ jobs:
         run: |
           set -o pipefail
           ls -ldO /Applications /usr/local /usr/local/bin /usr/local/bin.aside /Applications/Skillcask.app \
-            /usr/local/bin/skillcask /usr/local/bin/.keep || true
+            /usr/local/bin/skillcask /usr/local/bin/.keep /usr/local/Cellar/skillcask/0.0.1/bin/skillcask || true
           pkgutil --pkgs | grep skillcask || true
           tail -n 200 /var/log/install.log || true

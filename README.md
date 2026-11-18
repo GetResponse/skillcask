@@ -34,7 +34,8 @@ npm install -g skillcask                    # or: cargo install --locked skillca
 ```
 
 Windows, the desktop app, bun, release archives with attestations, the GitHub Action and updating:
-[Install guide](docs/guide/install.md).
+[Install guide](docs/guide/install.md). An installer package for Macs under device management:
+[Deploy on managed Macs](docs/guide/deploy-macos.md).
 
 ## Quickstart
 
@@ -126,6 +127,7 @@ More in [macOS app](docs/guide/macos-app.md).
 | [Security](docs/guide/security.md) | What is verified, warnings, `audit`, credentials |
 | [Publishing skills](docs/guide/publishing.md) | Packages, monorepos with `skillcask publish`, `validate` |
 | [macOS app](docs/guide/macos-app.md) | Installing and building the app |
+| [Deploy on managed Macs](docs/guide/deploy-macos.md) | The installer package for device management and its machine-wide config |
 | [Design](docs/specs/2026-10-19-skillcask-v1.md) | Goals, non-goals and numbered decisions |
 
 ## Security

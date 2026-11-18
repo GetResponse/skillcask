@@ -277,8 +277,9 @@ enum Cmd {
         json: bool,
     },
     /// Update skillcask: rerun the release's installer when it installed this binary (Unix), else
-    /// name the command for Homebrew, npm, bun, cargo or the app; with `[updates] managed` in
-    /// config.toml, print the organisation's text instead.
+    /// name the command for Homebrew, npm, bun, cargo or the app; for the macOS installer package,
+    /// say that an administrator deploys updates and name the package file; with `[updates]
+    /// managed` in config.toml, print the organisation's text instead.
     SelfUpdate {
         /// Print what would run, run nothing.
         #[arg(long)]

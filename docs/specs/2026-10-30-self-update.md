@@ -1,6 +1,6 @@
 # Spec: `skillcask self-update`
 
-Date: 2026-10-30. Status: accepted as D52 (2026-10-30), which amends D51; amended by D61.
+Date: 2026-10-30. Status: accepted as D52 (2026-10-30), which amends D51; amended by D61 and D69.
 
 ## Problem
 
@@ -53,6 +53,7 @@ From `std::env::current_exe()` with symlinks resolved, first match wins:
 
 | Detected | Action |
 | --- | --- |
+| path inside `*.app/Contents/Helpers/`, `/var/db/receipts/com.getresponse.skillcask.pkg.app.plist` exists and root owns the binary (macOS only, D69) | `installed with the macOS installer package; your administrator deploys updates`, the hint names `Skillcask-<latest>-macos-universal.pkg` and the release page, exit 1 |
 | path inside `*.app/Contents/Helpers/`, `<prefix>/Caskroom/skillcask-app` exists | `brew update && brew upgrade skillcask skillcask-app`, exit 1 |
 | path inside `*.app/Contents/Helpers/` otherwise | the tagged `skillcask-app-installer.sh … \| SKILLCASK_VERSION=<latest> sh`, exit 1 |
 | path contains `/Cellar/` | `brew update && brew upgrade skillcask`, exit 1 |
@@ -66,6 +67,20 @@ Printed as `skillcask X -> Y: installed with <method>; update with:` and the com
 `hint:` line, so it can be pasted. `.crates2.json` comes before the receipt because both live in
 `~/.cargo`. Exit 1 means "nothing was updated, run this", so a script does not mistake a printed
 hint for success.
+
+The installer package (D69) has no command its user can run, so its two lines differ:
+
+```
+error: skillcask X -> Y: installed with the macOS installer package; your administrator deploys updates
+  hint: the package Skillcask-Y-macos-universal.pkg is on https://github.com/GetResponse/skillcask/releases/tag/vY
+```
+
+It goes before the cask and asks for a root-owned binary because both traces go stale: neither
+the package's receipt nor a Caskroom folder is removed when another method installs the app
+later. Installer writes the app as root, the cask and the app's installer script as the user, so
+the owner says who wrote the helper that runs. What is left: a person who installed the package
+by hand is told the same, and so is anyone running an app that root copied into place on a Mac
+with a leftover receipt.
 
 ### 4. Running the installer (Unix)
 

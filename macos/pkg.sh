@@ -13,7 +13,8 @@
 # Output (git-ignored):
 #   .build/Skillcask-<version>-macos-universal.pkg
 #     /Applications/Skillcask.app   component com.getresponse.skillcask.pkg.app
-#     /usr/local/bin/skillcask      component com.getresponse.skillcask.pkg.cli
+#     /usr/local/bin/skillcask      component com.getresponse.skillcask.pkg.cli, a symbolic link to
+#                                   /Applications/Skillcask.app/Contents/Helpers/skillcask
 #
 # The product identifier com.getresponse.skillcask.pkg, the two component identifiers, the
 # file name pattern and the two install paths are a permanent contract with administrators:
@@ -23,12 +24,19 @@
 # checked here.
 #
 # The input is an app `bundle.sh` built (or the released one); nothing is built or signed here.
-# The version is the app's CFBundleShortVersionString. The CLI in /usr/local/bin is a plain copy of
-# the app's Contents/Helpers/skillcask, byte for byte, so it keeps the signature it has. The package
-# carries no scripts. Each component is rooted at its install location, so the payload has no
-# entries for /usr or /usr/local. It does have one for the install location itself (`.`, root:wheel
-# 755): that an install leaves the owner and mode of an existing /Applications and /usr/local/bin
-# as they were is what `Scripts/check-pkg.sh --install` asserts.
+# The version is the app's CFBundleShortVersionString. The package holds the CLI once, inside the
+# app. The CLI component is one symbolic link, `skillcask`, to that CLI in the installed app, by
+# its absolute path: the command in /usr/local/bin is then always the CLI of the app in
+# /Applications, also when something else than this package replaces the app. The link dangles when
+# the app is removed; nothing but the app component puts a file where it points. The app component
+# is not relocatable (step 2), so the app is always at that path. pkgbuild archives the link as a
+# link (mode 120755 in the bill of materials, root:wheel). That Installer writes it as one, in
+# place of a file or a link of that name, is not something Apple documents: it is what the installs
+# in CI check (`Scripts/check-pkg.sh --install`). The package carries no scripts. Each component is
+# rooted at its install location, so the payload has no entries for /usr or /usr/local. It does
+# have one for the install location itself (`.`, root:wheel 755): that an install leaves the owner
+# and mode of an existing /Applications and /usr/local/bin as they were is what
+# `Scripts/check-pkg.sh --install` asserts.
 #
 # Unsigned by default: such a package is for testing (Scripts/check-pkg.sh, CI's macos-pkg job).
 # With INSTALLER_IDENTITY the product is signed and timestamped, and the app must already be signed
@@ -51,6 +59,8 @@ app=${SKILLCASK_APP:-.build/Skillcask.app}
 identity=${INSTALLER_IDENTITY:-}
 bundle_id=io.github.puniserv.skillcask
 pkg_id=com.getresponse.skillcask.pkg
+# Where the app component puts the CLI: what the link in /usr/local/bin names.
+link_target=/Applications/Skillcask.app/Contents/Helpers/skillcask
 plistbuddy=/usr/libexec/PlistBuddy
 
 fail() {
@@ -122,17 +132,27 @@ stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 mkdir -m 755 "$stage/app-root" "$stage/cli-root" "$stage/packages"
 ditto "$app" "$stage/app-root/Skillcask.app"
-cp "$helper" "$stage/cli-root/skillcask"
-chmod 755 "$stage/cli-root/skillcask"
+# Nothing in the app may be a link: the tools below (xattr, find, codesign) are only ever pointed
+# at files inside the staging folder.
+linked=$(find "$stage/app-root" -type l -print | head -n 1)
+[ -z "$linked" ] || fail "${linked#"$stage"/app-root/} in the app is a symbolic link"
 # pkgbuild archives extended attributes: a quarantine flag (an app unzipped from a download has one)
 # would be installed with the app. The signatures live in the files, not in attributes. Only
 # com.apple.provenance may stay: the system sets it and does not let it be removed.
-xattr -cr "$stage/app-root" "$stage/cli-root"
-left=$(xattr -r "$stage/app-root" "$stage/cli-root" | grep -v ': com\.apple\.provenance$' | head -n 1 || true)
+xattr -cr "$stage/app-root"
+left=$(xattr -r "$stage/app-root" | grep -v ': com\.apple\.provenance$' | head -n 1 || true)
 [ -z "$left" ] || fail "could not clear an extended attribute from the staged copy: ${left#"$stage"/*/}"
-cmp -s "$helper" "$stage/cli-root/skillcask" || fail "the staged CLI differs from $helper"
+# The app component is rooted at /Applications, so this is the file the link will lead to: the CLI
+# inside the staged app, the same bytes as the input's. It is the only CLI in the package.
+cmp -s "$helper" "$stage/app-root/${link_target#/Applications/}" ||
+    fail "the CLI in the staged app, where the link leads, differs from $helper"
 codesign --verify --strict "$stage/app-root/Skillcask.app" || fail "the staged app does not verify"
-codesign --verify --strict "$stage/cli-root/skillcask" || fail "the staged CLI does not verify"
+# The CLI component: the link, made after the attributes were cleared (xattr follows links, and on
+# a Mac that has the app this one leads into /Applications). The link's own mode is archived:
+# 755 under the umask set above, and set again in case ln did not apply it.
+ln -s "$link_target" "$stage/cli-root/skillcask"
+chmod -h 755 "$stage/cli-root/skillcask"
+[ "$(readlink "$stage/cli-root/skillcask")" = "$link_target" ] || fail "the staged link does not name $link_target"
 # The modes are installed as they are (ownership becomes root:wheel): every user must be able to
 # read each file, only root to write it.
 loose=$(find "$stage/app-root" "$stage/cli-root" \( -perm +022 -o -type d ! -perm 755 \) -print | head -n 1)
@@ -184,7 +204,7 @@ pkgbuild --root "$stage/app-root" --install-location /Applications --component-p
     --identifier "$pkg_id.app" --version "$version" --ownership recommended \
     "$stage/packages/Skillcask-app.pkg"
 
-# 3. The CLI component.
+# 3. The CLI component: the one link. No bundle in it, so no component plist.
 pkgbuild --root "$stage/cli-root" --install-location /usr/local/bin \
     --identifier "$pkg_id.cli" --version "$version" --ownership recommended \
     "$stage/packages/skillcask-cli.pkg"
