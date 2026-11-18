@@ -29,6 +29,6 @@ Process:
     Arguments:
       input_path: '%pathname%'
       expected_authority_names:
-        - 'Developer ID Installer: REPLACE_WITH_SIGNER_NAME (TEAMID)'
+        - 'Developer ID Installer: GetResponse Sp. z o.o. (K9247ZCUJS)'
         - Developer ID Certification Authority
         - Apple Root CA

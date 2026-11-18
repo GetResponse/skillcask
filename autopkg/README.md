@@ -1,7 +1,7 @@
 # AutoPkg recipes
 
 Two [AutoPkg](https://github.com/autopkg/autopkg) recipes for the installer package every release
-from VNEXT on attaches, `Skillcask-X.Y.Z-macos-universal.pkg`. The package puts `Skillcask.app` in
+from 0.14.0 on attaches, `Skillcask-X.Y.Z-macos-universal.pkg`. The package puts `Skillcask.app` in
 `/Applications` and `skillcask` in `/usr/local/bin`; it is signed with a Developer ID Installer
 certificate, notarized and stapled.
 
@@ -28,21 +28,31 @@ Importing the package into your management system is your step: write a recipe w
 
 ## Pre-releases
 
-The recipes skip pre-releases. To pilot a release candidate:
+The recipes skip pre-releases. To pilot a release candidate on test Macs:
 
 ```sh
 autopkg run -v -k PRERELEASE=yes Skillcask.pkg
 ```
 
 or set `PRERELEASE` in the override. Any non-empty value turns it on, `no` and `false` too; leave
-it empty to turn it off. With it on, AutoPkg takes the newest release, stable or not.
+it empty to turn it off. With it on, AutoPkg takes the newest release, stable or not. The first
+package came with the pre-release 0.14.0-rc.1, so until 0.14.0 is released only a run with
+`PRERELEASE` set finds one.
 
 ## What the recipes verify
 
 Only the signer: `pkgutil --check-signature` must pass, and the certificate chain must be exactly
-the three names in `Skillcask.download.recipe.yaml`. They do not check notarization or the
-`.sha256` file next to the package, and `autopkg run --check` stops before the signature check.
-By hand:
+the three names in `Skillcask.download.recipe.yaml`:
+
+1. `Developer ID Installer: GetResponse Sp. z o.o. (K9247ZCUJS)`
+2. `Developer ID Certification Authority`
+3. `Apple Root CA`
+
+The release job compares every package's chain with these names before it attaches the package,
+so a renewed or renamed certificate stops that job, not your runs.
+
+The recipes do not check notarization or the `.sha256` file next to the package, and
+`autopkg run --check` stops before the signature check. By hand:
 
 ```sh
 pkg=~/Library/AutoPkg/Cache/local.pkg.Skillcask/Skillcask-X.Y.Z.pkg
@@ -54,9 +64,10 @@ curl -fsSL https://github.com/GetResponse/skillcask/releases/download/vX.Y.Z/Ski
 
 ## A release without its package
 
-A release is published first; the signing job attaches the package later. In between, AutoPkg
-returns the package of the previous release: it takes the newest release that has one. Run it
-again later.
+A release is published first; the signing job attaches the package later, after a maintainer
+approves it, and a failed job leaves the release without a package until it is rerun. In between,
+AutoPkg returns the package of the previous release, without a warning: it takes the newest
+release that has one. Run it again later.
 
 ## Changes to these files
 
@@ -64,6 +75,10 @@ An override stores a hash of both recipe files, so any edit, even to a comment, 
 `autopkg run` fail trust verification for every administrator until they review the change and
 run `autopkg update-trust-info Skillcask.pkg`. The identifiers and the input names `NAME` and
 `PRERELEASE` therefore stay as they are, and new behaviour comes as a new recipe, not as an edit.
+The one edit that cannot wait is a signer whose name changes (a new legal name or team): it is
+announced one release ahead, and the release that changes the recipe is the first one signed so.
 
-`python3 -I autopkg/test_recipes.py` checks which release assets the download recipe selects;
-`.github/workflows/autopkg.yml` runs it, audits both recipes and runs them with AutoPkg.
+`python3 -I autopkg/test_recipes.py` checks which release assets the download recipe selects and
+that the signer names read as a YAML parser reads them; `--authority-names` prints those names for
+the release job. `.github/workflows/autopkg.yml` runs it, audits both recipes and runs them with
+AutoPkg on every pull request that changes them.

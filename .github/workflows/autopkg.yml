@@ -45,8 +45,9 @@ jobs:
           echo "cd554cc4b807dec7fb0aee73fe9ab0cddf764e215fb6f10c1b7f7d263c52f8cf  $pkg" | shasum -a 256 -c -
           sudo installer -pkg "$pkg" -target /
           [ "$(autopkg version)" = 3.0.0 ]
-      # The parser AutoPkg uses must read the regex as test_recipes.py does.
-      - name: Asset regex, read by AutoPkg's YAML parser
+      # The parser AutoPkg uses must read the regex and the signer names as test_recipes.py does;
+      # release.yml reads the names with test_recipes.py too.
+      - name: Asset regex and signer, read by AutoPkg's YAML parser
         run: /usr/local/autopkg/python -I autopkg/test_recipes.py | tee "$RUNNER_TEMP/regex.txt" && grep -Fxq 'PyYAML reads the same value' "$RUNNER_TEMP/regex.txt"
       # `audit` skips a recipe it cannot load and still exits 0, so both must be in its report: that
       # shows each one parses and the pkg recipe finds its parent. No finding of any severity.
@@ -55,26 +56,15 @@ jobs:
           autopkg audit --json --search-dir "$PWD/autopkg" \
             "$PWD/autopkg/Skillcask.download.recipe.yaml" "$PWD/autopkg/Skillcask.pkg.recipe.yaml" | tee "$RUNNER_TEMP/audit.json"
           python3 -I -c 'import json, sys; report = json.load(open(sys.argv[1])); assert len(report) == 2 and all(r["findings"] == [] for r in report), report' "$RUNNER_TEMP/audit.json"
-      # Until the signer's name replaces the placeholder the run cannot pass, so a pull request
-      # skips it; a manual run still does it and prints the chain AutoPkg found.
-      - name: Is the signer set?
-        id: signer
-        run: |
-          if grep -q REPLACE_WITH_SIGNER_NAME autopkg/Skillcask.download.recipe.yaml; then
-            echo "::warning::expected_authority_names still has the placeholder: the recipes were not run"
-            echo "set=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "set=true" >> "$GITHUB_OUTPUT"
-          fi
       # For the API rate limit. AutoPkg reads the token from this file and sends it only to
       # api.github.com; -vv does not print it (-vvv prints the whole environment, token included).
       - name: Give AutoPkg the job's read-only token
-        if: github.event_name == 'workflow_dispatch' || steps.signer.outputs.set == 'true'
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: (umask 077 && printf '%s' "$TOKEN" > "$HOME/.autopkg_gh_token")
+      # Downloads the newest release with a package (a pre-release too, unless a manual run turns
+      # that off) and verifies its signer chain against expected_authority_names.
       - name: Run the pkg recipe
-        if: github.event_name == 'workflow_dispatch' || steps.signer.outputs.set == 'true'
         env:
           PRERELEASE: ${{ (github.event_name != 'workflow_dispatch' || inputs.prerelease) && 'yes' || '' }}
         # --quiet: never ask to search GitHub for a recipe. --search-dir: find the parent in the

@@ -687,6 +687,15 @@ jobs:
             echo "::error::$pkg is not signed by MACOS_INSTALLER_SIGN_IDENTITY with a chain of three certificates (found $certificates)"
             exit 1
           fi
+          # The AutoPkg recipe pins the chain by name, and administrators cannot take an edit to it
+          # without reviewing it, so a renewed or renamed certificate must stop here, not in their
+          # runs after the release.
+          python3 -I "$GITHUB_WORKSPACE/autopkg/test_recipes.py" --authority-names > "$RUNNER_TEMP/recipe-names.txt"
+          sed -nE 's/^ +[0-9]+\. //p' "$RUNNER_TEMP/pkg-signature.txt" > "$RUNNER_TEMP/pkg-names.txt"
+          if ! diff "$RUNNER_TEMP/recipe-names.txt" "$RUNNER_TEMP/pkg-names.txt"; then
+            echo "::error::the signer chain of $pkg is not expected_authority_names in autopkg/Skillcask.download.recipe.yaml; every administrator's recipe would refuse it. Nothing was attached"
+            exit 1
+          fi
           spctl --assess --type install -vv "$pkg" 2>&1 | tee "$RUNNER_TEMP/pkg-spctl.txt"
           grep -qxF "$pkg: accepted" "$RUNNER_TEMP/pkg-spctl.txt"
           grep -qx 'source=Notarized Developer ID' "$RUNNER_TEMP/pkg-spctl.txt"
