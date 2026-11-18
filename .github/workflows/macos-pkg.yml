@@ -1,0 +1,105 @@
+name: macOS package
+
+# The installer package: on pull requests that touch the app, a workflow or Cargo.toml (the version
+# comes from it), and on every push to master. GitHub Actions filters paths per workflow, not per
+# job, so it is not part of CI.
+on:
+  push:
+    branches: [master]
+  pull_request:
+    paths: ["macos/**", ".github/workflows/**", Cargo.toml]
+
+permissions:
+  contents: read
+
+jobs:
+  macos-pkg:
+    # The installer package for device-managed Macs: built unsigned from this checkout, inspected and
+    # installed on the runner. The same image and Xcode as the macos-app job in ci.yml. macOS 26
+    # is also the host where pkgbuild still marks bundles relocatable by default, which pkg.sh must
+    # turn off.
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sudo xcode-select -s /Applications/Xcode_26.6.app
+      - run: rustup toolchain install stable --profile minimal && rustup default stable
+      - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - run: macos/bundle.sh
+      - run: macos/pkg.sh
+      # Two installs on one runner, which is discarded afterwards. The build stays in macos/.build
+      # for both: a second copy of the app with the same bundle identifier, which a relocatable
+      # package could update instead of installing to /Applications. It is registered with Launch
+      # Services so that a search by bundle identifier can find it, then recorded: the checksum of
+      # every file and the owner, group, mode, inode and modification time of every entry (a write
+      # into it, even of identical bytes, changes these). Nothing between the recording and the
+      # comparisons writes to it: ditto reads it, check-pkg.sh and codesign read only the package
+      # and the installed copies, Spotlight indexes without writing into the files.
+      - name: Record the build
+        run: |
+          set -o pipefail
+          /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
+            -f macos/.build/Skillcask.app || echo "lsregister failed: Launch Services may not know the build"
+          cat > "$RUNNER_TEMP/manifest.sh" <<'EOF'
+          set -euo pipefail
+          find macos/.build/Skillcask.app -type f -exec shasum -a 256 {} + | sort -k 2
+          find macos/.build/Skillcask.app -exec stat -f '%N %Su:%Sg %Mp%Lp %i %m' {} + | sort
+          EOF
+          bash "$RUNNER_TEMP/manifest.sh" > "$RUNNER_TEMP/build.manifest"
+          test -s "$RUNNER_TEMP/build.manifest"
+          wc -l "$RUNNER_TEMP/build.manifest"
+      # First install. /usr/local/bin is absent, so the install must create it root:wheel 755: the
+      # image has one with other tools, which is moved aside, not removed, and put back in the next
+      # step (no step in between needs it). /Applications holds a newer Skillcask.app with a file
+      # the package does not have, so the install must downgrade the app and replace the bundle,
+      # not merge into it: check-pkg.sh asserts the file is gone (CHECK_PKG_ABSENT) before it
+      # verifies the signature. Editing Info.plist breaks that copy's signature, which this test
+      # does not need.
+      - name: Install with /usr/local/bin absent, over a newer app
+        run: |
+          set -o pipefail
+          ls -la /usr/local/bin || true
+          if [ -e /usr/local/bin ]; then sudo mv /usr/local/bin /usr/local/bin.aside; fi
+          sudo ditto macos/.build/Skillcask.app /Applications/Skillcask.app
+          sudo /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 99.0.0' \
+            -c 'Set :CFBundleVersion 99.0.0' /Applications/Skillcask.app/Contents/Info.plist
+          sudo touch /Applications/Skillcask.app/Contents/Resources/stray
+          CHECK_PKG_ABSENT=/Applications/Skillcask.app/Contents/Resources/stray \
+            macos/Scripts/check-pkg.sh macos/.build/Skillcask-*-macos-universal.pkg --install
+          bash "$RUNNER_TEMP/manifest.sh" | diff "$RUNNER_TEMP/build.manifest" -
+      # Back to a Mac without Skillcask, with /usr/local/bin as Homebrew leaves it on Intel Macs:
+      # owned by the user, group admin, mode 775, and not empty (Installer treats an empty existing
+      # directory differently): .keep makes it so whether or not the image had one, and is left there
+      # (the runner is discarded). Owner, group and mode all differ from the payload's root:wheel
+      # 755, so the second install shows whichever of them it overwrites. rmdir fails if the first
+      # install put anything but the CLI into the directory it created.
+      - name: Remove the install, restore /usr/local/bin and make it user-owned
+        run: |
+          set -o pipefail
+          sudo pkgutil --forget com.getresponse.skillcask.pkg.app
+          sudo pkgutil --forget com.getresponse.skillcask.pkg.cli
+          sudo rm -rf /Applications/Skillcask.app
+          sudo rm /usr/local/bin/skillcask
+          sudo rmdir /usr/local/bin
+          if [ -e /usr/local/bin.aside ]; then sudo mv /usr/local/bin.aside /usr/local/bin; fi
+          sudo mkdir -p /usr/local/bin
+          sudo chown "$(id -un)":admin /usr/local/bin
+          sudo chmod 775 /usr/local/bin
+          touch /usr/local/bin/.keep
+          stat -f '%Su:%Sg %Mp%Lp %i %m' /usr/local/bin/.keep | tee "$RUNNER_TEMP/keep.stat"
+          ls -ldO /Applications /usr/local /usr/local/bin
+      # Second install, as on a Mac that never had Skillcask: the only copy of the app is the build,
+      # outside /Applications. The file already in /usr/local/bin must stay as it was.
+      - name: Install into a user-owned /usr/local/bin
+        run: |
+          set -o pipefail
+          macos/Scripts/check-pkg.sh macos/.build/Skillcask-*-macos-universal.pkg --install
+          stat -f '%Su:%Sg %Mp%Lp %i %m' /usr/local/bin/.keep | diff "$RUNNER_TEMP/keep.stat" -
+          bash "$RUNNER_TEMP/manifest.sh" | diff "$RUNNER_TEMP/build.manifest" -
+      - if: always()
+        run: |
+          set -o pipefail
+          ls -ldO /Applications /usr/local /usr/local/bin /usr/local/bin.aside /Applications/Skillcask.app \
+            /usr/local/bin/skillcask /usr/local/bin/.keep || true
+          pkgutil --pkgs | grep skillcask || true
+          tail -n 200 /var/log/install.log || true
