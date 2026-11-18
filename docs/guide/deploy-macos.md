@@ -129,8 +129,9 @@ autopkg run -v Skillcask.pkg      # ~/Library/AutoPkg/Cache/local.pkg.Skillcask/
   `Developer ID Installer: GetResponse Sp. z o.o. (K9247ZCUJS)`,
   `Developer ID Certification Authority`, `Apple Root CA`. The release job checks every package
   against these names before it attaches it. The recipes check neither the notarization nor the
-  `.sha256` file, and `autopkg run --check` stops before the signer check: run the commands of
-  [Verify before you deploy](#verify-before-you-deploy) on the cached package for those.
+  `.sha256` file, and `autopkg run --check` stops before the signer check. The cached package has
+  another file name than the release asset, so `shasum -c` does not apply to it: use the commands
+  under "What the recipes verify" in [`autopkg/README.md`](../../autopkg/README.md).
 - **A release without its package.** The package is attached after the release, by a job that
   waits for a reviewer and may have to be rerun. Meanwhile the recipes return the previous
   release's package, without a warning, since they take the newest release that has one. Run

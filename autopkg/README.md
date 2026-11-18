@@ -49,7 +49,8 @@ the three names in `Skillcask.download.recipe.yaml`:
 3. `Apple Root CA`
 
 The release job compares every package's chain with these names before it attaches the package,
-so a renewed or renamed certificate stops that job, not your runs.
+so a certificate with another name stops that job, not your runs. A renewed certificate keeps
+its name.
 
 The recipes do not check notarization or the `.sha256` file next to the package, and
 `autopkg run --check` stops before the signature check. By hand:
@@ -76,7 +77,9 @@ An override stores a hash of both recipe files, so any edit, even to a comment, 
 run `autopkg update-trust-info Skillcask.pkg`. The identifiers and the input names `NAME` and
 `PRERELEASE` therefore stay as they are, and new behaviour comes as a new recipe, not as an edit.
 The one edit that cannot wait is a signer whose name changes (a new legal name or team): it is
-announced one release ahead, and the release that changes the recipe is the first one signed so.
+announced one release ahead, and the release that changes the recipe is the first one signed so. The
+edit is merged right before that release's tag; from then until its package is attached, a run
+with the new recipe refuses the newest package, still signed with the old name.
 
 `python3 -I autopkg/test_recipes.py` checks which release assets the download recipe selects and
 that the signer names read as a YAML parser reads them; `--authority-names` prints those names for

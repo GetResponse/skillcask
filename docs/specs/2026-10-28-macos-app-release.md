@@ -115,6 +115,8 @@ pre-releases too:
 1. Fails, naming each one, when a secret it reads (the three installer secrets and the notary
    key's three) is not set in the environment. It never skips: AutoPkg's GitHub provider silently
    takes the release before when the newest has no package, so a missing package must be loud.
+   Only a rerun that finds the package complete (step 2, which the job looks at first) reads no
+   secret and passes without them.
 2. Looks at the release. Package and `.sha256` both there and matching: nothing to do. Only the
    package (a run stopped between the two uploads): it is checked like a fresh one (steps 3, 6
    and 7) and only its `.sha256` is attached. An unfinished upload, a `.sha256` that does not

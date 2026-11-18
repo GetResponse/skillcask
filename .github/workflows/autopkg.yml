@@ -57,7 +57,7 @@ jobs:
             "$PWD/autopkg/Skillcask.download.recipe.yaml" "$PWD/autopkg/Skillcask.pkg.recipe.yaml" | tee "$RUNNER_TEMP/audit.json"
           python3 -I -c 'import json, sys; report = json.load(open(sys.argv[1])); assert len(report) == 2 and all(r["findings"] == [] for r in report), report' "$RUNNER_TEMP/audit.json"
       # For the API rate limit. AutoPkg reads the token from this file and sends it only to
-      # api.github.com; -vv does not print it (-vvv prints the whole environment, token included).
+      # api.github.com; -vv does not print it (-vvvv prints the request, token included).
       - name: Give AutoPkg the job's read-only token
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
