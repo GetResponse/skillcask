@@ -57,8 +57,10 @@ macos/Scripts/check-pkg.sh macos/.build/Skillcask-*-macos-universal.pkg
 `pkg.sh` wraps an app `bundle.sh` built (`SKILLCASK_APP=<path>` names another one) into
 `macos/.build/Skillcask-<version>-macos-universal.pkg`, for Macs that get their software from device
 management (Jamf and similar). The package installs `/Applications/Skillcask.app` and
-`/usr/local/bin/skillcask`, a byte-for-byte copy of the CLI inside the app, and runs no scripts;
-`check-pkg.sh --install` asserts that an install leaves the owner and mode of an existing
+`/usr/local/bin/skillcask`, a symbolic link to the CLI inside that app
+(`/Applications/Skillcask.app/Contents/Helpers/skillcask`), and runs no scripts; the link is the
+only one in the package. `check-pkg.sh --install` asserts that the link replaces what was there and
+leads to the installed app's CLI, and that an install leaves the owner and mode of an existing
 `/usr/local/bin` as they were. It is unsigned unless
 `INSTALLER_IDENTITY="Developer ID Installer: Name (TEAMID)"` is set: the certificate's full common
 name, ending in the team id in parentheses (a SHA-1 hash is refused); `INSTALLER_KEYCHAIN=<path>`
