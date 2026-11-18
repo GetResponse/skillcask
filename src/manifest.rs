@@ -178,6 +178,8 @@ pub struct Policy {
     pub github_public: bool,
     /// Keys set by a layer, with that layer, for `status`.
     pub effective: crate::policy::Effective,
+    /// `repository-min-release-age` while `min-release-age` is enforced, else empty (D28).
+    pub repository_ages: BTreeMap<String, SignedDuration>,
 }
 
 #[derive(Clone, Debug)]
@@ -373,9 +375,11 @@ impl Manifest {
         self.skills.iter().find(|s| s.name == name)
     }
 
-    /// The cooldown for packages from `repo`.
+    /// The cooldown for packages from `repo`; a GitHub or plain git one gets the D28 exception of
+    /// its URL too.
     pub fn min_release_age(&self, repo: &Repository) -> SignedDuration {
-        repo.min_release_age.unwrap_or(self.policy.min_release_age)
+        repo.min_release_age
+            .unwrap_or_else(|| crate::policy::repository_floor(&self.policy.repository_ages, &repo.url, self.policy.min_release_age))
     }
 }
 
@@ -472,7 +476,7 @@ pub fn parse_with(text: &str, global: bool, outer: &crate::policy::Outer) -> Res
         Some((V::Bool(b), _)) => *b,
         _ => default,
     };
-    let policy = Policy {
+    let mut policy = Policy {
         min_release_age: match effective.get("min-release-age") {
             Some((V::Age(a), _)) => *a,
             _ => SignedDuration::from_hours(72),
@@ -491,6 +495,7 @@ pub fn parse_with(text: &str, global: bool, outer: &crate::policy::Outer) -> Res
         },
         github_public: outer.config.enforce.contains("allow-sources") && outer.config.values.contains_key("allow-sources"),
         effective,
+        repository_ages: BTreeMap::new(),
     };
     if let Some(list) = &policy.allow_sources
         && let Some(n) = list.iter().find(|e| !matches!(e.as_str(), "packagist" | "github") && !e.starts_with("https://"))
@@ -511,8 +516,9 @@ pub fn parse_with(text: &str, global: bool, outer: &crate::policy::Outer) -> Res
         policy.effective.get("min-release-age")
         && outer.config.enforce.contains(&"min-release-age")
     {
+        policy.repository_ages = outer.config.repository_ages.clone();
         for r in &mut repositories {
-            let floor = crate::policy::repository_floor(outer, &r.url, *enforced);
+            let floor = crate::policy::repository_floor(&outer.config.repository_ages, &r.url, *enforced);
             match r.min_release_age {
                 Some(a) if a < floor => {
                     return Err(bad(format!(
@@ -1265,6 +1271,30 @@ min-release-age = "12h"
         }
         assert_eq!(age(parse_with(&repo(""), false, &o("7d")).unwrap()), SignedDuration::from_hours(168));
         assert!(parse_with(&repo(", min-release-age = \"0\""), false, &o("7d")).unwrap_err().msg.contains("shorter than \"7d\""));
+    }
+
+    #[test]
+    fn enforced_age_exceptions_cover_git_and_github_entries() {
+        let text = format!(
+            "[policy]\nmin-release-age = \"3d\"\nenforce = [\"min-release-age\"]\n[policy.repository-min-release-age]\n\"https://git.example.com/\" = \"0\"\n\"https://git.example.com/slow/\" = \"5d\"\n\"{}/repos/trusted/\" = \"1d\"",
+            crate::github::api()
+        );
+        let doc: DocumentMut = text.parse().unwrap();
+        let config = crate::policy::layer(doc.get("policy").and_then(Item::as_table_like), "config.toml", true).unwrap();
+        let o = crate::policy::Outer { config, config_path: "config.toml".into(), ..Default::default() };
+        let m = parse_with("", false, &o).unwrap();
+        let git = |url: &str| m.min_release_age(&crate::git::repository(url));
+
+        // Regression: git and GitHub entries got the enforced 3d even under an exempt prefix.
+        assert_eq!(git("https://git.example.com/sec/skills.git"), SignedDuration::ZERO);
+        assert_eq!(git("https://git.example.com/slow/skills.git"), SignedDuration::from_hours(120));
+        assert_eq!(git("https://other.example/sec/skills.git"), SignedDuration::from_hours(72));
+        assert_eq!(m.min_release_age(&crate::github::repository("trusted/skills")), SignedDuration::from_hours(24));
+        assert_eq!(m.min_release_age(&crate::github::repository("other/skills")), SignedDuration::from_hours(72));
+
+        // Not enforced: no exceptions, the project's cooldown applies.
+        let m = parse_with("[policy]\nmin-release-age = \"2d\"", false, &crate::policy::Outer::default()).unwrap();
+        assert_eq!(m.min_release_age(&crate::git::repository("https://git.example.com/sec/skills.git")), SignedDuration::from_hours(48));
     }
 
     #[test]

@@ -81,6 +81,7 @@ pub fn check(key: &str, value: &str) -> std::result::Result<(Target, Option<GitH
         deny_packages: Vec::new(),
         github_public: false,
         effective: Default::default(),
+        repository_ages: Default::default(),
     };
     manifest::check_constraint(&req, &any).map_err(|e| format!("{key}: {e}"))?;
     Ok((t, mode))

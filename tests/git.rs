@@ -270,3 +270,28 @@ fn a_moved_tag_is_reported() {
     let out = p.ok(&["update"]);
     assert!(out.contains("acme/skills v1.0.0: same version, other content (a moved tag or a republished version)"), "{out}");
 }
+
+#[test]
+fn a_repository_min_release_age_exception_covers_git_entries() {
+    let s = Server::start();
+    let r = repo();
+    let fresh = commit(r.path(), &[("SKILL.md", &skill_md("tool"))], 1, None);
+    let url = served(&s, r.path());
+    s.serve_git("/other/skills.git", r.path());
+    let other = s.url("/other/skills.git");
+    let p = Project::new(&s);
+    manifest(&p, "", "");
+    p.config(&format!(
+        "[policy]\nmin-release-age = \"3d\"\nenforce = [\"min-release-age\"]\n\n[policy.repository-min-release-age]\n\"{}\" = \"0\"\n",
+        s.url("/acme/")
+    ));
+    p.ok(&["add", &format!("git:{url}")]);
+    assert!(p.read("skills.lock").contains(&fresh), "{}", p.read("skills.lock"));
+    p.ok(&["install", "--frozen"]);
+
+    // The same commit under a prefix without the exception keeps the enforced cooldown.
+    assert!(p.expect(&["add", &format!("git:{other}")], 1).contains("newer than policy.min-release-age (3d"));
+    p.write("skills.lock", &p.read("skills.lock").replace(&url, &other));
+    p.write("skills.toml", &p.read("skills.toml").replace(&url, &other));
+    assert!(p.expect(&["install", "--frozen"], 1).contains("newer than policy.min-release-age (3d, config.toml, enforced)"));
+}

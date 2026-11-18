@@ -147,8 +147,9 @@ impl Ctx {
     fn candidate(&self, m: &Manifest, req: &SkillReq, locked: Option<&Package>) -> Result<(Repository, Candidate)> {
         if req.github.is_some() {
             m.check_source(req)?;
-            let c = github::resolve(self.http()?, req, m.policy.min_release_age, Timestamp::now())?;
-            return Ok((github::repository_of(req), c));
+            let repo = github::repository_of(req);
+            let c = github::resolve(self.http()?, req, m.min_release_age(&repo), Timestamp::now())?;
+            return Ok((repo, c));
         }
         let (repo, cands) = find(&Registry::new(self.http()?), m, req, locked)?;
         let c = registry::select(&cands, &req.name, &req.constraint, m.min_release_age(&repo), Timestamp::now())?;
@@ -404,7 +405,9 @@ impl Ctx {
         {
             let now = Timestamp::now();
             for p in &lock.packages {
-                let age = m.repositories.iter().find(|r| r.url == p.repository).map_or(m.policy.min_release_age, |r| m.min_release_age(r));
+                let repo = m.repositories.iter().find(|r| r.url == p.repository).cloned();
+                let repo = repo.unwrap_or_else(|| Repository { url: p.repository.clone(), ..Default::default() });
+                let age = m.min_release_age(&repo);
                 let Some(t) = p.released.filter(|t| now.checked_sub(age).is_ok_and(|cutoff| *t > cutoff)) else { continue };
                 let eligible = t.checked_add(age).unwrap_or(Timestamp::MAX);
                 return Err(Error::new(
@@ -1571,7 +1574,7 @@ fn add_vcs(ctx: &Ctx, name: String, git: Option<String>, skills: Vec<String>, at
     if given.is_some() {
         manifest::check_constraint(&req, &m.policy).map_err(|e| Error::new(MANIFEST, format!("{}: {e}", req.name)))?;
     }
-    let c = github::resolve(ctx.http()?, &req, m.policy.min_release_age, Timestamp::now())?;
+    let c = github::resolve(ctx.http()?, &req, m.min_release_age(&github::repository_of(&req)), Timestamp::now())?;
     if given.is_none() {
         req.constraint = match (mode, m.policy.allow_ranges) {
             (GitHub::Tags, allow_ranges) => default_constraint(&c, allow_ranges),

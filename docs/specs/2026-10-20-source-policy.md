@@ -57,7 +57,8 @@ enforce = ["allow-sources"]
 An enforced `min-release-age` also binds the per-repository values of D15 (D28): a project's
 `min-release-age` on a repository may be longer, never shorter (exit 1 naming the repository);
 a repository without one gets the enforced value. `config.toml` lists the exceptions by
-`https://` URL prefix, longest match wins, and only next to `enforce = ["min-release-age"]`:
+`https://` URL prefix, longest match wins, and only next to `enforce = ["min-release-age"]`;
+GitHub and plain git entries under a prefix get its value too (D68):
 
 ```toml
 [policy.repository-min-release-age]

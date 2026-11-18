@@ -345,7 +345,7 @@ pub fn over(system: Outer, mut user: Outer) -> Result<Outer> {
     }
     if let (true, Some(Value::Age(floor))) = (s.enforce.contains("min-release-age"), s.values.get("min-release-age")) {
         for (prefix, age) in &u.repository_ages {
-            let least = repository_floor(&system, prefix, *floor);
+            let least = repository_floor(&system.config.repository_ages, prefix, *floor);
             if *age < least {
                 bail!(
                     MANIFEST,
@@ -581,8 +581,8 @@ pub fn fixed(e: &Effective, k: &str) -> bool {
 
 /// With `min-release-age` enforced, the shortest cooldown a project may give the repository at
 /// `url`: the longest matching prefix of `repository-min-release-age`, else the enforced value.
-pub fn repository_floor(o: &Outer, url: &str, enforced: SignedDuration) -> SignedDuration {
-    o.config.repository_ages.iter().filter(|(p, _)| under(url, p)).max_by_key(|(p, _)| p.len()).map_or(enforced, |(_, a)| *a)
+pub fn repository_floor(ages: &BTreeMap<String, SignedDuration>, url: &str, enforced: SignedDuration) -> SignedDuration {
+    ages.iter().filter(|(p, _)| under(url, p)).max_by_key(|(p, _)| p.len()).map_or(enforced, |(_, a)| *a)
 }
 
 /// `url` is `prefix` or below it on a `/` (or query) boundary, both compared as parsed URLs, as the
@@ -659,8 +659,14 @@ mod tests {
         };
         assert!(ages("0").unwrap_err().msg.contains("shorter than \"1d\" enforced by /sys/config.toml"));
         let o = ages("2d").unwrap();
-        assert_eq!(repository_floor(&o, "https://r.example/x/p.json", SignedDuration::from_hours(72)), SignedDuration::from_hours(48));
-        assert_eq!(repository_floor(&o, "https://r.example/p.json", SignedDuration::from_hours(72)), SignedDuration::from_hours(24));
+        assert_eq!(
+            repository_floor(&o.config.repository_ages, "https://r.example/x/p.json", SignedDuration::from_hours(72)),
+            SignedDuration::from_hours(48)
+        );
+        assert_eq!(
+            repository_floor(&o.config.repository_ages, "https://r.example/p.json", SignedDuration::from_hours(72)),
+            SignedDuration::from_hours(24)
+        );
         let none = over(Outer::default(), parse_config("", "/u/config.toml").unwrap()).unwrap();
         assert!(none.system_path.is_empty() && none.config.values.is_empty());
     }
