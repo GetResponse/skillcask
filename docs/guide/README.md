@@ -24,7 +24,7 @@ Composer or Node.
 | [Security](security.md) | Lock hashes, archive checks, warnings, `audit`, credentials |
 | [Publishing skills](publishing.md) | One repository per skill, monorepos with `skillcask publish`, `validate`, deprecation |
 | [macOS app](macos-app.md) | The SwiftUI app over the CLI, installing and building it |
-| [Deploy on managed Macs](deploy-macos.md) | The installer package for device management, verifying it, the machine-wide `config.toml`, updates, uninstall |
+| [Deploy on managed Macs](deploy-macos.md) | The installer package for device management, verifying it, the AutoPkg recipes, the machine-wide `config.toml`, updates, uninstall |
 
 ## Design
 
