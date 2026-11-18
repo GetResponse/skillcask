@@ -1,6 +1,6 @@
 # Deploy on managed Macs
 
-From VNEXT on, every release also has one installer package for Macs that device management (Jamf
+From 0.14.0 on, every release also has one installer package for Macs that device management (Jamf
 and others) installs software on: `Skillcask-X.Y.Z-macos-universal.pkg`, with
 `Skillcask-X.Y.Z-macos-universal.pkg.sha256` next to it. It is for administrators. On your own Mac,
 use Homebrew or the installer scripts ([Install](install.md)).
@@ -384,7 +384,7 @@ What stays, per user, because the package never wrote it:
   release and the app zip are public, and waits for a reviewer. If that job fails, the release
   stands without a package until it is rerun. Check that the release you want has the `.pkg`: a
   tool that takes the newest release with a matching file picks the release before it meanwhile.
-  Releases before VNEXT have none.
+  Releases before 0.14.0 have none.
 - **Pre-releases.** `-rc` tags carry a package too. Deploy only releases that are not marked
   pre-release.
 - **No recipes yet.** AutoPkg recipes are not published.

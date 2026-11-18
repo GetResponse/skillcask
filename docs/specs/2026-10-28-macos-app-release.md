@@ -87,7 +87,7 @@ and starts no process besides `open`.
 
 ### 4. Installer package for managed Macs
 
-Device management (Jamf and others) installs packages, not zips or casks. From VNEXT on, every
+Device management (Jamf and others) installs packages, not zips or casks. From 0.14.0 on, every
 release tag therefore also gets `Skillcask-X.Y.Z-macos-universal.pkg` with its `.sha256` (D69): a product
 archive, identifier `com.getresponse.skillcask.pkg`, of two components.
 

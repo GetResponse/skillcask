@@ -52,7 +52,7 @@ Linux and Windows have the terminal UI, `skillcask ui`. More in [macOS app](maco
 
 **Installer package (managed Macs)**
 
-For Macs that device management installs software on, every release from VNEXT on also has
+For Macs that device management installs software on, every release from 0.14.0 on also has
 `Skillcask-X.Y.Z-macos-universal.pkg`, signed and notarized: the same app in `/Applications` and
 `/usr/local/bin/skillcask` as a link to the CLI inside it, with no install scripts. Do not combine
 it with a Homebrew install on the same Mac. Verifying it, the machine-wide `config.toml` that goes
