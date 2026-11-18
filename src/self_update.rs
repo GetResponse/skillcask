@@ -1,5 +1,5 @@
 //! `self-update` (D52): rerun the release's shell installer for an installer-script install on
-//! Unix; for every other install, name the one command that updates it.
+//! Unix; for every other install, name the one command that updates it, or the package to deploy.
 
 use std::path::{Path, PathBuf};
 
@@ -8,8 +8,10 @@ use crate::self_check::{RELEASES, RUNNING, is_newer, latest_release};
 
 #[derive(Debug, PartialEq)]
 enum Method {
-    /// The CLI inside `Skillcask.app`; `true` when Homebrew's cask installed the app.
+    /// The CLI inside `Skillcask.app`; `true` when a Caskroom folder of Homebrew's cask exists.
     App(bool),
+    /// The CLI inside the `Skillcask.app` that the macOS installer package put there (D69).
+    Pkg,
     Homebrew,
     Npm,
     Bun,
@@ -20,6 +22,13 @@ enum Method {
 }
 
 const CASKROOMS: [&str; 2] = ["/opt/homebrew/Caskroom/skillcask-app", "/usr/local/Caskroom/skillcask-app"];
+
+/// Where Installer keeps the receipts of third-party packages.
+const PKG_RECEIPTS_DIR: &str = "/var/db/receipts";
+/// The receipt of the package's app component.
+const PKG_RECEIPT: &str = "com.getresponse.skillcask.pkg.app.plist";
+/// The user Installer writes the app as: root.
+const PKG_OWNER: u32 = 0;
 
 pub fn run(verbose: bool, dry_run: bool) -> Result<()> {
     let Some(latest) = latest_release(verbose)? else {
@@ -35,7 +44,8 @@ pub fn run(verbose: bool, dry_run: bool) -> Result<()> {
         );
     }
     let exe = std::fs::canonicalize(std::env::current_exe()?)?;
-    let method = detect(&exe, cargo_home().as_deref(), receipt_dir().as_deref());
+    let pkg = cfg!(target_os = "macos").then_some((Path::new(PKG_RECEIPTS_DIR), PKG_OWNER));
+    let method = detect(&exe, cargo_home().as_deref(), receipt_dir().as_deref(), pkg, &CASKROOMS);
     let off = std::env::var_os("SKILLCASK_SELF_UPDATE").is_some_and(|v| v == "0");
     #[cfg(unix)]
     if let Method::Installer(prefix) = &method
@@ -49,10 +59,18 @@ pub fn run(verbose: bool, dry_run: bool) -> Result<()> {
             .hint(format!("update it the way you installed it; see {RELEASES}/tag/v{latest}")));
     };
     let why = if off && matches!(method, Method::Installer(_)) { " (SKILLCASK_SELF_UPDATE=0)" } else { "" };
-    Err(Error::new(MANIFEST, format!("skillcask {RUNNING} -> {latest}: installed with {how}{why}; update with:")).hint(command))
+    let then = then(&method);
+    Err(Error::new(MANIFEST, format!("skillcask {RUNNING} -> {latest}: installed with {how}{why}; {then}")).hint(command))
 }
 
-/// One pasteable command per method; `None` when the method is unknown.
+/// What follows `installed with <method>`: the package has no command its user can run.
+fn then(method: &Method) -> &'static str {
+    if *method == Method::Pkg { "your administrator deploys updates" } else { "update with:" }
+}
+
+/// One pasteable command per method, for the package its file name and the release page (not the
+/// asset's URL: the package is attached after the release and may not be there yet); `None` when
+/// the method is unknown.
 fn advice(method: &Method, latest: &str, windows: bool) -> Option<(&'static str, String)> {
     let download = format!("{RELEASES}/download/v{latest}");
     Some(match method {
@@ -67,6 +85,9 @@ fn advice(method: &Method, latest: &str, windows: bool) -> Option<(&'static str,
             "the macOS app",
             format!("curl --proto '=https' --tlsv1.2 -LsSf {download}/skillcask-app-installer.sh | SKILLCASK_VERSION={latest} sh"),
         ),
+        Method::Pkg => {
+            ("the macOS installer package", format!("the package Skillcask-{latest}-macos-universal.pkg is on {RELEASES}/tag/v{latest}"))
+        }
         Method::Homebrew => ("Homebrew", "brew update && brew upgrade skillcask".into()),
         Method::Npm => ("npm", "npm install -g skillcask@latest".into()),
         Method::Bun => ("bun", "bun add -g skillcask@latest".into()),
@@ -92,10 +113,17 @@ fn receipt_dir() -> Option<PathBuf> {
 
 /// First match wins. `cargo install` comes before the receipt because both write
 /// `<cargo_home>/bin`, and a later `cargo install` leaves the installer's receipt behind.
-fn detect(exe: &Path, cargo_home: Option<&Path>, receipt_dir: Option<&Path>) -> Method {
+/// The package comes before the cask: nothing removes its receipt or a Caskroom folder when the
+/// app is installed another way later, so the helper's owner decides. `pkg` is the folder of
+/// Installer's receipts and the uid Installer writes the helper as (root); the cask and the
+/// installer script write it as the user.
+fn detect(exe: &Path, cargo_home: Option<&Path>, receipt_dir: Option<&Path>, pkg: Option<(&Path, u32)>, caskrooms: &[&str]) -> Method {
     let path = exe.to_string_lossy().replace('\\', "/");
     if path.contains(".app/Contents/Helpers/") {
-        return Method::App(CASKROOMS.iter().any(|c| Path::new(c).is_dir()));
+        if pkg.is_some_and(|(receipts, owner)| receipts.join(PKG_RECEIPT).is_file() && owned_by(exe, owner)) {
+            return Method::Pkg;
+        }
+        return Method::App(caskrooms.iter().any(|c| Path::new(c).is_dir()));
     }
     if path.contains("/Cellar/") {
         return Method::Homebrew;
@@ -123,6 +151,17 @@ fn detect(exe: &Path, cargo_home: Option<&Path>, receipt_dir: Option<&Path>) -> 
         return Method::Installer(prefix);
     }
     Method::Unknown
+}
+
+#[cfg(unix)]
+fn owned_by(path: &Path, uid: u32) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata(path).is_ok_and(|m| m.uid() == uid)
+}
+
+#[cfg(not(unix))]
+fn owned_by(_: &Path, _: u32) -> bool {
+    false
 }
 
 /// `{"installs": {"skillcask 0.10.1 (registry+…)": {…}}}`
@@ -230,20 +269,60 @@ mod tests {
             std::fs::write(home.join(".crates2.json"), c.to_string()).unwrap();
         }
         fn detect(&self) -> Method {
-            detect(&self.exe, Some(&self.cargo), Some(&self.receipts))
+            detect(&self.exe, Some(&self.cargo), Some(&self.receipts), None, &[])
         }
     }
 
     #[test]
     fn package_managers_by_path() {
-        let none = |p: &str| detect(Path::new(p), None, None);
+        let none = |p: &str| detect(Path::new(p), None, None, None, &[]);
         assert_eq!(none("/opt/homebrew/Cellar/skillcask/0.10.1/bin/skillcask"), Method::Homebrew);
         assert_eq!(none("/home/linuxbrew/.linuxbrew/Cellar/skillcask/0.10.1/bin/skillcask"), Method::Homebrew);
-        assert!(matches!(none("/Applications/Skillcask.app/Contents/Helpers/skillcask"), Method::App(_)));
+        assert_eq!(none("/Applications/Skillcask.app/Contents/Helpers/skillcask"), Method::App(false));
         assert_eq!(none("/Users/a/.bun/install/global/node_modules/skillcask/skillcask"), Method::Bun);
         assert_eq!(none("/usr/lib/node_modules/skillcask/node_modules/.bin_skillcask/skillcask"), Method::Npm);
         assert_eq!(none(r"C:\Users\a\AppData\Roaming\npm\node_modules\skillcask\skillcask.exe"), Method::Npm);
         assert_eq!(none("/usr/local/bin/skillcask"), Method::Unknown);
+    }
+
+    /// The helper of an app under the fixture, the package's receipts folder, a Caskroom folder
+    /// and the uid the test's files have.
+    #[cfg(unix)]
+    fn app(f: &Fixture) -> (PathBuf, PathBuf, PathBuf, u32) {
+        use std::os::unix::fs::MetadataExt;
+        let helpers = f.root.join("Applications/Skillcask.app/Contents/Helpers");
+        let (db, caskroom) = (f.root.join("db/receipts"), f.root.join("Caskroom/skillcask-app"));
+        std::fs::create_dir_all(&helpers).unwrap();
+        std::fs::create_dir_all(&db).unwrap();
+        std::fs::write(helpers.join("skillcask"), "").unwrap();
+        let me = std::fs::metadata(&f.root).unwrap().uid();
+        (helpers.join("skillcask"), db, caskroom, me)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_package_receipt_with_the_helper_its_installer_wrote() {
+        let f = fixture();
+        let (exe, db, caskroom, me) = app(&f);
+        let cask = [caskroom.to_str().unwrap()];
+        let pkg = |owner: u32, casks: &[&str]| detect(&exe, None, None, Some((&db, owner)), casks);
+        // What `run` passes on macOS, literally: a typo in a constant must not pass.
+        assert_eq!((PKG_RECEIPTS_DIR, PKG_RECEIPT, PKG_OWNER), ("/var/db/receipts", "com.getresponse.skillcask.pkg.app.plist", 0));
+        assert_eq!(pkg(me, &[]), Method::App(false), "no receipt");
+        std::fs::write(db.join("com.getresponse.skillcask.pkg.cli.plist"), "").unwrap();
+        assert_eq!(pkg(me, &[]), Method::App(false), "only the CLI component's receipt");
+        std::fs::write(db.join(PKG_RECEIPT), "").unwrap();
+        assert_eq!(pkg(me, &[]), Method::Pkg);
+        assert_eq!(detect(&exe, None, None, None, &[]), Method::App(false), "not macOS");
+        // Reinstalled as the user since: the receipt is stale.
+        assert_eq!(pkg(me + 1, &[]), Method::App(false));
+        assert_eq!(pkg(me + 1, &cask), Method::App(false), "no Caskroom folder");
+        std::fs::create_dir_all(&caskroom).unwrap();
+        assert_eq!(pkg(me + 1, &cask), Method::App(true), "a stale receipt, the cask's app");
+        assert_eq!(pkg(me, &cask), Method::Pkg, "a stale Caskroom folder, the package's app");
+        assert_eq!(detect(&exe, None, None, None, &cask), Method::App(true));
+        // The receipt says nothing about a skillcask outside the app.
+        assert_eq!(detect(&f.exe, None, None, Some((&db, me)), &cask), Method::Unknown);
     }
 
     #[test]
@@ -277,12 +356,12 @@ mod tests {
         f.receipt("cargo-home", &f.cargo);
         let renamed = f.cargo.join("bin/skillcask-old");
         std::fs::write(&renamed, "").unwrap();
-        assert_eq!(detect(&renamed, Some(&f.cargo), Some(&f.receipts)), Method::Unknown, "not the receipt's binary");
+        assert_eq!(detect(&renamed, Some(&f.cargo), Some(&f.receipts), None, &[]), Method::Unknown, "not the receipt's binary");
         std::fs::remove_file(f.receipts.join("skillcask-receipt.json")).unwrap();
         let other = f.root.join("other-cargo");
         std::fs::create_dir_all(other.join("bin")).unwrap();
         f.crates2(&other, "skillcask 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)");
-        assert_eq!(detect(&f.exe, Some(&other), Some(&f.receipts)), Method::Unknown);
+        assert_eq!(detect(&f.exe, Some(&other), Some(&f.receipts), None, &[]), Method::Unknown);
     }
 
     #[test]
@@ -298,6 +377,15 @@ mod tests {
         assert_eq!(cmd(Method::App(true), false).unwrap(), "brew update && brew upgrade skillcask skillcask-app");
         let app = cmd(Method::App(false), false).unwrap();
         assert!(app.ends_with("/download/v1.2.3/skillcask-app-installer.sh | SKILLCASK_VERSION=1.2.3 sh"), "{app}");
+        assert_eq!(
+            advice(&Method::Pkg, "1.2.3", false).unwrap(),
+            (
+                "the macOS installer package",
+                "the package Skillcask-1.2.3-macos-universal.pkg is on https://github.com/GetResponse/skillcask/releases/tag/v1.2.3".into()
+            )
+        );
+        assert_eq!(then(&Method::Pkg), "your administrator deploys updates");
+        assert_eq!(then(&Method::App(false)), "update with:");
         assert_eq!(cmd(Method::Unknown, false), None);
         for m in [Method::Homebrew, Method::Npm, Method::Bun, Method::Cargo, Method::App(true), Method::App(false)] {
             let c = cmd(m, false).unwrap();
