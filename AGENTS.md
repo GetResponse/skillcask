@@ -65,7 +65,9 @@ regenerating:
   `NODE_AUTH_TOKEN` that breaks OIDC with E404).
 - `publish-macos-app` is written by hand, not a dist custom publish job: dist skips those on
   pre-releases and gives them no `contents: write`. It keeps `environment: release`, where the
-  signing secrets live. `publish-homebrew-cask` is hand-written too and writes the whole cask.
+  signing secrets live. It imports its key non-extractable (`-x`), fails on an empty
+  `MACOS_SIGN_IDENTITY` (bundle.sh would sign ad hoc) and sets `GH_TOKEN` only on its two `gh`
+  steps. `publish-homebrew-cask` is hand-written too and writes the whole cask.
 - `publish-macos-pkg` is hand-written too and runs `macos/pkg.sh` and `macos/Scripts/check-pkg.sh`:
   it keeps `environment: release`, needs `publish-macos-app`, compiles nothing and fails when its
   keychain holds a Developer ID Application certificate, so it signs with the Developer ID
@@ -73,7 +75,12 @@ regenerating:
   differs from `expected_authority_names` in `autopkg/Skillcask.download.recipe.yaml` (a rerun
   cannot fix that: it reads the recipe at the tag). Nothing needs it.
 - Supply chain: every action pinned to a commit sha, the dist installer checked against a pinned
-  sha256, and `GH_TOKEN: ""` on the steps that install tools.
+  sha256 in `plan` and `build-local-artifacts` (which replaces `matrix.install_dist.run`; on
+  Windows it fetches the release zip, pinned, since the PowerShell installer checks nothing, and
+  copies `dist.exe` to `~\.cargo\bin` when the runner leaves `CARGO_HOME` unset), and
+  `GH_TOKEN: ""` on the steps that install tools. Bump all three pins with `cargo-dist-version`.
+- The tag trigger is `v[0-9]+.[0-9]+.[0-9]+*`, not dist's `**[0-9]+.[0-9]+.[0-9]+*`: only tags the
+  `v*` tag ruleset protects publish npm and the Homebrew formula.
 
 The installer package is a published contract that does not change: its asset name
 (`Skillcask-X.Y.Z-macos-universal.pkg`), its three identifiers (`com.getresponse.skillcask.pkg`,
