@@ -40,9 +40,10 @@
   | tells the agent to ignore its instructions | "ignore (all) previous/prior instructions", "disregard all previous/prior" |
 
   Skills that teach shell setup trigger some of these legitimately, so they are warnings. Text that
-  forbids what it names does not count: entries of a `deny` list (`"deny": [` or `deny = [` up to
-  its `]`), a TOML `<key> = "deny"`, a Codex `prefix_rule` with `decision = "forbidden"`, and, for
-  the first two rows, a `#` or `//` comment in a file other than Markdown or `.txt`. With
+  forbids what it names does not count, in files other than Markdown (`.md`, `.markdown`, `.mdx`,
+  `.mdc`), `.txt` and files without an extension: entries of a `deny` list (`"deny": [` or
+  `deny = [` up to its `]`), a TOML `<key> = "deny"`, a Codex `prefix_rule` with
+  `decision = "forbidden"`, and, for the first two rows, a `#` or `//` comment. With
   `deny-patterns = true` under `[policy]` (or enforced in `config.toml`) they, and the invisible
   characters above, fail the command with exit 1 and nothing is written. `deny-patterns-exempt` in
   `config.toml` lists `https://` URL prefixes whose packages still warn but are not refused; see

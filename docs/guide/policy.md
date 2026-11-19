@@ -69,7 +69,9 @@ An enforced `deny-patterns` refuses every package with a risky line, also a revi
 whose setup docs name `~/.ssh`. `deny-patterns-exempt` lists `https://` URL prefixes, matched
 against the package's repository as for `repository-min-release-age`, whose packages warn but
 install. Only `config.toml` takes it. While the machine-wide file enforces `deny-patterns`, each
-prefix of the user's file must lie under one of its prefixes.
+prefix of the user's file must lie under one of its prefixes. A prefix exempts every repository
+under it, personal projects on the same host and anything a registry mirrors included, so name the
+narrowest path that holds only reviewed skills.
 
 ```toml
 [policy]
