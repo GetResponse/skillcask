@@ -73,7 +73,8 @@ regenerating:
   Installer certificate alone. Nothing needs it.
 - Supply chain: every action pinned to a commit sha, the dist installer checked against a pinned
   sha256 in `plan` and `build-local-artifacts` (which replaces `matrix.install_dist.run`; on
-  Windows it fetches the release zip, pinned, since the PowerShell installer checks nothing), and
+  Windows it fetches the release zip, pinned, since the PowerShell installer checks nothing, and
+  copies `dist.exe` to `~\.cargo\bin` when the runner leaves `CARGO_HOME` unset), and
   `GH_TOKEN: ""` on the steps that install tools. Bump all three pins with `cargo-dist-version`.
 - The tag trigger is `v[0-9]+.[0-9]+.[0-9]+*`, not dist's `**[0-9]+.[0-9]+.[0-9]+*`: only tags the
   `v*` tag ruleset protects publish npm and the Homebrew formula.

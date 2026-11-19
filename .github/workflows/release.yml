@@ -162,7 +162,11 @@ jobs:
           Invoke-WebRequest -Uri https://github.com/axodotdev/cargo-dist/releases/download/v0.32.0/cargo-dist-x86_64-pc-windows-msvc.zip -OutFile $zip
           if ((Get-FileHash -Algorithm SHA256 $zip).Hash -ne '26e845cabff12a92911ce960af73a86c8f9b2b2d9072b01dfe5b662acf044fa3') { throw "cargo-dist zip does not match the pinned sha256" }
           Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP\cargo-dist"
-          Copy-Item "$env:RUNNER_TEMP\cargo-dist\dist.exe" (Join-Path $env:CARGO_HOME bin)
+          # windows-2022 sets CARGO_HOME only while the image is built; cargo lives in ~\.cargo\bin.
+          $bin = if ($env:CARGO_HOME) { Join-Path $env:CARGO_HOME bin } else { Join-Path $HOME ".cargo\bin" }
+          New-Item -ItemType Directory -Force $bin | Out-Null
+          Copy-Item "$env:RUNNER_TEMP\cargo-dist\dist.exe" $bin
+          $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       # Get the dist-manifest
       - name: Fetch local artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -171,6 +175,8 @@ jobs:
           path: target/distrib/
           merge-multiple: true
       - name: Install dependencies
+        env:
+          GH_TOKEN: ""
         run: |
           ${{ matrix.packages_install }}
       - name: Build artifacts
