@@ -116,3 +116,29 @@ fn deny_patterns_exempt_lets_an_internal_source_in_with_warnings() {
     manifest(&q, &s, "");
     assert!(q.expect(&["add", "acme/x"], 1).contains("refused by policy.deny-patterns"), "another prefix exempts nothing");
 }
+
+#[test]
+fn deny_patterns_exempt_keeps_invisible_characters_refused() {
+    let s = Server::start();
+    let md = format!("{}Be helpful.\u{E0049}\u{E0047}\u{E004E}\n", skill_md("foo"));
+    s.package(
+        "acme/x",
+        vec![Ver {
+            version: "1.0.0",
+            time: Some(ago(240)),
+            zip: zipball(&[("skills/foo/SKILL.md", &md)]),
+            extra: Some(json!(["skills/foo"])),
+        }],
+    );
+    let p = Project::new(&s);
+    let base = s.url("/");
+    p.system_config(&format!("[policy]\ndeny-patterns = true\nenforce = [\"deny-patterns\"]\ndeny-patterns-exempt = [\"{base}\"]\n"));
+    manifest(&p, &s, "");
+    let out = p.expect(&["add", "acme/x"], 1);
+    assert!(out.contains("refused by policy.deny-patterns"), "{out}");
+    assert!(out.contains("policy.deny-patterns-exempt"), "an enforced refusal does not suggest the environment: {out}");
+    assert!(!out.contains("SKILLCASK_DENY_PATTERNS=false"), "{out}");
+
+    p.system_config("[policy]\ndeny-patterns-exempt = [\"https://x.example/a b/\"]\n");
+    assert!(p.expect(&["install"], 1).contains("policy.deny-patterns-exempt"), "a prefix must be written as its URL");
+}

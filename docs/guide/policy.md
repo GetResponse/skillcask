@@ -68,8 +68,13 @@ enforce = ["min-release-age"]
 An enforced `deny-patterns` refuses every package with a risky line, also a reviewed internal one
 whose setup docs name `~/.ssh`. `deny-patterns-exempt` lists `https://` URL prefixes, matched
 against the package's repository as for `repository-min-release-age`, whose packages warn but
-install. Only `config.toml` takes it. While the machine-wide file enforces `deny-patterns`, each
-prefix of the user's file must lie under one of its prefixes. A prefix exempts every repository
+install; invisible characters are still refused. Only `config.toml` takes it, set with
+`skillcask config edit`. While the machine-wide file enforces `deny-patterns`, each prefix of the
+user's file must lie under one of its prefixes.
+
+The key needs skillcask 0.15.0 or later: an older one fails every command with `unknown key
+policy.deny-patterns-exempt`. Under device management, deploy the new binary to every machine
+first and the `config.toml` with the key after. A prefix exempts every repository
 under it, personal projects on the same host and anything a registry mirrors included, so name the
 narrowest path that holds only reviewed skills.
 

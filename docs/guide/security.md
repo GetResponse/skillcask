@@ -39,14 +39,14 @@
   | reads system account files | `/etc/passwd`, `/etc/shadow` |
   | tells the agent to ignore its instructions | "ignore (all) previous/prior instructions", "disregard all previous/prior" |
 
-  Skills that teach shell setup trigger some of these legitimately, so they are warnings. Text that
-  forbids what it names does not count, in files other than Markdown (`.md`, `.markdown`, `.mdx`,
-  `.mdc`), `.txt` and files without an extension: entries of a `deny` list (`"deny": [` or
-  `deny = [` up to its `]`), a TOML `<key> = "deny"`, a Codex `prefix_rule` with
-  `decision = "forbidden"`, and, for the first two rows, a `#` or `//` comment. With
-  `deny-patterns = true` under `[policy]` (or enforced in `config.toml`) they, and the invisible
-  characters above, fail the command with exit 1 and nothing is written. `deny-patterns-exempt` in
-  `config.toml` lists `https://` URL prefixes whose packages still warn but are not refused; see
+  Skills that teach shell setup trigger some of these legitimately, so they are warnings. In
+  config files, text that forbids what it names does not count: the quoted entries of a `deny`
+  list in `.json`, `.jsonc` and `.toml`, a TOML `<key> = "deny"`, and a Codex `prefix_rule` in
+  `.rules` whose only decision is `"forbidden"`. In a line comment (`#` or `//`, by file type) the
+  first two rows are not reported. With `deny-patterns = true` under `[policy]` (or enforced in
+  `config.toml`) they, and the invisible characters above, fail the command with exit 1 and
+  nothing is written. `deny-patterns-exempt` in `config.toml` lists `https://` URL prefixes whose
+  risky lines still warn but are not refused; invisible characters still are. See
   [policy](policy.md).
 - `skillcask audit` reviews what is installed now, every skill in `.agents/skills` and the project
   skills: the commands its shell code blocks run, the hosts of its URLs, the paths in the home

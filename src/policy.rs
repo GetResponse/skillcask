@@ -198,6 +198,7 @@ pub fn layer(t: Option<&dyn TableLike>, file: &str, config: bool) -> Result<Laye
                 if !prefix.starts_with("https://") || prefix.len() == "https://".len() {
                     return Err(bad(k, format!("{prefix:?} is not an https:// URL prefix")));
                 }
+                check_source(&prefix, false).map_err(|e| bad(k, e))?;
                 out.deny_exempt.insert(prefix);
             }
             continue;
