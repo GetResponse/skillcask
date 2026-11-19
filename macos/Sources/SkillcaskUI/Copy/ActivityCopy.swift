@@ -132,7 +132,7 @@ public enum ActivityCopy {
 
     /// `0:03 · 14:02`: the run in flight, elapsed as the list header counts it.
     public static func elapsed(_ seconds: TimeInterval, startedAt: Date, timeZone: TimeZone = .current) -> String {
-        "\(RunningCopy.elapsed(seconds)) · \(clock(startedAt, timeZone: timeZone))"
+        "\(AdoptCopy.elapsed(seconds)) · \(clock(startedAt, timeZone: timeZone))"
     }
 
     /// `3.2 s` under a minute, `1 min 12 s` past it.

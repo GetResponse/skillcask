@@ -79,11 +79,4 @@ public enum ContentsCopy {
         guard !home.isEmpty else { return text }
         return text.replacingOccurrences(of: home + "/", with: "~/")
     }
-
-    // MARK: - Escapes
-
-    /// The body as shown: the `<U+XXXX>` escapes of D26 as `‹U+XXXX›` (the diff pane's display, `DiffCopy.shown`).
-    public static func shown(_ text: String) -> String {
-        DiffCopy.shown(text)
-    }
 }

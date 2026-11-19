@@ -326,7 +326,7 @@ private struct FrontMatterCard: View {
                         .foregroundStyle(Color.textSecondary)
                         .frame(width: ContentsTab.frontMatterLabelWidth, alignment: .leading)
                         .padding(.vertical, ContentsTab.frontMatterRowPadding)
-                    Text(ContentsCopy.shown(row.value))
+                    Text(DiffCopy.shown(row.value))
                         .font(ContentsCopy.monoKeys.contains(row.key) ? Font.Token.monoSmall : Font.Token.callout)
                         .foregroundStyle(Color.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)

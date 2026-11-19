@@ -88,19 +88,18 @@ import Testing
             ])
     }
 
-    @Test func mutationsGetJSONOnlyWithTheCapability() throws {
-        #expect(try argv(.initialize, capabilities: all) == ["init", "--json"])
-        #expect(try argv(.install(frozen: false), capabilities: all) == ["install", "--json"])
-        #expect(try argv(.update(packages: ["a/b"]), capabilities: all) == ["update", "--json", "--", "a/b"])
-        #expect(try argv(.remove(packages: ["a/b"]), capabilities: all) == ["remove", "--json", "--", "a/b"])
+    @Test func mutationsNeverGetJSON() throws {
+        #expect(try argv(.initialize, capabilities: all) == ["init"])
+        #expect(try argv(.install(frozen: false), capabilities: all) == ["install"])
+        #expect(try argv(.update(packages: ["a/b"]), capabilities: all) == ["update", "--", "a/b"])
+        #expect(try argv(.remove(packages: ["a/b"]), capabilities: all) == ["remove", "--", "a/b"])
         let add = Invocation.Command.add(
             spec: "a/b", repository: nil, adopt: false, rename: ["x": "y", "a": "b"], skills: ["s1", "s2"])
         #expect(
             try argv(add, capabilities: all) == [
-                "add", "--rename", "a=b", "--rename", "x=y", "--skill", "s1", "--skill", "s2", "--json", "--", "a/b",
+                "add", "--rename", "a=b", "--rename", "x=y", "--skill", "s1", "--skill", "s2", "--", "a/b",
             ])
-        #expect(try !Invocation(.initialize, in: project, capabilities: caps).expectsDocument)
-        #expect(try Invocation(.initialize, in: project, capabilities: all).expectsDocument)
+        #expect(try !Invocation(.initialize, in: project, capabilities: all).expectsDocument)
     }
 
     @Test func renameAndSkillNeedTheirFeatures() throws {

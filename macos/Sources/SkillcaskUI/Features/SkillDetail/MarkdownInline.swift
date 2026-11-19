@@ -125,7 +125,7 @@ enum MarkdownInline {
 
     /// The styled runs of `source` before any layout attribute.
     static func runs(_ source: String, style: Style) -> NSMutableAttributedString {
-        let shown = ContentsCopy.shown(source)
+        let shown = DiffCopy.shown(source)
         let options = AttributedString.MarkdownParsingOptions(
             allowsExtendedAttributes: false, interpretedSyntax: .inlineOnlyPreservingWhitespace,
             failurePolicy: .returnPartiallyParsedIfPossible)

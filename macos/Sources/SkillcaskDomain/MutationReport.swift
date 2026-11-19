@@ -1,8 +1,6 @@
-import SkillcaskCore
-
-/// What a mutation changed, for the outcome toast and the post-mutation selection. From the planned JSON
-/// document when the CLI has it, else from the verb lines the CLI prints (`src/ui.rs` `done`): `added`,
-/// `installed`, `updated a -> b`, `locked`, `removed`, `kept … as a dependency`, `adopted`, `created`.
+/// What a mutation changed, for the outcome toast and the post-mutation selection. From the verb lines the CLI
+/// prints (`src/ui.rs` `done`): `added`, `installed`, `updated a -> b`, `locked`, `removed`, `kept … as a
+/// dependency`, `adopted`, `created`.
 public struct MutationReport: Hashable, Sendable {
     public struct Updated: Hashable, Sendable {
         public let package: String
@@ -26,15 +24,7 @@ public struct MutationReport: Hashable, Sendable {
 
     public init() {}
 
-    public init(_ document: MutationDocument, warnings: [String] = []) {
-        added = document.added
-        installed = document.installed
-        updated = document.updated.compactMap(Self.updatedLine)
-        removed = document.removed
-        self.warnings = document.warnings + warnings
-    }
-
-    /// `stdout` lines of a mutation without `--json`; `stderr` warnings come from the `StderrReport`.
+    /// `stdout` lines of a mutation; `stderr` warnings come from the `StderrReport`.
     public init(verbLines stdout: String, warnings: [String] = []) {
         self.warnings = warnings
         for raw in stdout.split(separator: "\n") {
@@ -67,7 +57,7 @@ public struct MutationReport: Hashable, Sendable {
             && adopted.isEmpty && created.isEmpty
     }
 
-    /// `acme/one 1.0.0 -> 1.1.0` (also with a leading package name in a JSON document).
+    /// `acme/one 1.0.0 -> 1.1.0`.
     static func updatedLine(_ text: String) -> Updated? {
         let words = text.split(separator: " ").map(String.init)
         guard words.count == 4, words[2] == "->" else { return nil }

@@ -3,32 +3,14 @@
 public struct Capabilities: Hashable, Sendable {
     /// Additions to the CLI that the app uses when present and works around when absent.
     public enum Feature: String, CaseIterable, Hashable, Sendable {
-        /// `init`, `install`, `update`, `add` and `remove` print one JSON document with `--json`.
-        case jsonMutations
-        /// `status --json` entries carry `description`.
-        case statusDescription
-        /// `outdated --json` packages carry `eligible` (RFC 3339) instead of a free-text `note`.
-        case outdatedEligible
-        /// `status --json` entries carry `source`: the repository name (`packagist`, `github`, a custom name) or
-        /// `git` for a git URL. Planned, not shipped: the list row's second line and the detail pill need it.
-        case statusSource
-        /// An earlier plan's `released` key on `outdated --json` packages (when `latest` was published); never
-        /// shipped. D67 prints `locked-released`, `within-released`, `latest-released`, `info`'s
-        /// `versions-released` and `status`'s `released` instead, which the app reads by key presence, ungated:
-        /// absent from an older CLI, so the Versions tab says "unknown" as before.
-        case outdatedReleased
         /// Planned: `audit --json` also lists not-managed skills with `kind: "not managed"`. At 0.9.4 `audit`
         /// builds its rows from the lock, the hand-written and the project skills only, so a not-managed skill
         /// has no findings and no reach until this ships.
         case auditNotManaged
-        /// `info --json <skill>` carries `description`.
-        case infoSkillDescription
         /// `add --rename old=new`.
         case addRename
         /// `add --skill name` (repeatable).
         case addSkill
-        /// `diff --json`.
-        case diffJSON
         /// `self-check --json` (D51). Gated, not just tried: 0.9.0–0.10.1 take an unknown command for a plugin and
         /// run `skillcask-<name>` from `PATH` (`src/main.rs` `plugin`), so asking them would start whatever
         /// `skillcask-self-check` lies there. `SelfCheckGate` also lets the bundled CLI through.

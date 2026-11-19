@@ -14,7 +14,7 @@ import Testing
         .binaryIsApp(path: "/Applications/Skillcask.app/Contents/MacOS/Skillcask"),
         .unreadableVersion(output: "zsh: command not found"),
         .tooOld(found: Version(0, 7, 2), needs: Version(0, 9, 0)),
-        .unsupported(feature: "diffJSON"),
+        .unsupported(feature: "addRename"),
         .invalidInvocation("empty package list"),
         .launchFailed("Permission denied"),
         .failed(code: .problem, message: "skills.toml not found", hint: "run skillcask init", stderr: "error: x"),

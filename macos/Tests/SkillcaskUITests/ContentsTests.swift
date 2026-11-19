@@ -120,7 +120,7 @@ import Testing
         let ranges = MarkdownBody.escapeRanges(in: fenced)
         #expect(ranges.map { String(fenced[$0].characters) } == ["‹U+202E›"])
         #expect(ranges.allSatisfy { fenced[$0].runs.allSatisfy { $0.backgroundColor == Color.statusWarningTint } })
-        #expect(ContentsCopy.shown("a <U+12> b <U+202E>") == "a <U+12> b ‹U+202E›")
+        #expect(DiffCopy.shown("a <U+12> b <U+202E>") == "a <U+12> b ‹U+202E›")
     }
 
     @Test func inlineMarkdownStylesCodeAndDropsLinkTargets() {

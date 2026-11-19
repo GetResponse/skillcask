@@ -15,9 +15,9 @@ public struct StatusDocument: Decodable, Hashable, Sendable {
         public let ok: Bool
         /// For a `not managed` personal skill: the `add --adopt` source recorded by `npx skills` (D38).
         public let adopt: String?
-        /// Planned (`statusDescription`): the skill's front-matter description.
+        /// Planned: the skill's front-matter description.
         public let description: String?
-        /// Planned (`statusSource`): the repository the package came from (`packagist`, `github`, a custom
+        /// Planned: the repository the package came from (`packagist`, `github`, a custom
         /// repository name) or `git` for a git URL; nil for project and hand-written skills. A not managed skill
         /// carries the source `adopt` was recorded from when known, nil otherwise.
         public let source: String?

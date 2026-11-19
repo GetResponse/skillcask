@@ -113,7 +113,7 @@ struct MarkdownBody: View {
         case .list(let ordered, let start, let items):
             InlineText(MarkdownInline.list(ordered: ordered, start: start, items: items, style: .body), style: .body)
         case .code(_, let text):
-            Text(Self.escapesMarked(AttributedString(ContentsCopy.shown(text))))
+            Text(Self.escapesMarked(AttributedString(DiffCopy.shown(text))))
                 .font(Font.Token.mono)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(Spacing.s)

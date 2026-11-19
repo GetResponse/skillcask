@@ -293,18 +293,6 @@ import Testing
     }
 }
 
-@Suite struct MutationDocumentTests {
-    @Test func everyKeyIsOptional() throws {
-        let full =
-            #"{"ok":true,"added":["a/b"],"installed":["x"],"updated":["a/b v1 -> v2"],"removed":[],"warnings":["w"]}"#
-        let doc = try JSONDecoder().decode(MutationDocument.self, from: Data(full.utf8))
-        #expect(
-            doc.ok && doc.added == ["a/b"] && doc.installed == ["x"] && doc.updated.count == 1 && doc.warnings == ["w"])
-        let bare = try JSONDecoder().decode(MutationDocument.self, from: Data("{}".utf8))
-        #expect(bare.ok && bare.added.isEmpty && bare.removed.isEmpty)
-    }
-}
-
 @Suite struct JSONValueTests {
     @Test func decodesEveryShapeAndShowsItLikeTheCLI() throws {
         let json = #"{"a":true,"b":"72h","c":["packagist","github"],"d":null,"e":3,"f":1.5,"g":{"k":false}}"#
