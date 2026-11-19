@@ -231,13 +231,17 @@ fn varint(b: &[u8], pos: &mut usize) -> Result<usize> {
     }
 }
 
-fn apply_delta(base: &[u8], delta: &[u8]) -> Result<Vec<u8>> {
+/// `max`: the largest result accepted, checked before the declared size is allocated.
+fn apply_delta(base: &[u8], delta: &[u8], max: u64) -> Result<Vec<u8>> {
     let bad = || Error::new(NETWORK, "git: corrupt delta");
     let mut pos = 0;
     if varint(delta, &mut pos)? != base.len() {
         return Err(bad());
     }
     let size = varint(delta, &mut pos)?;
+    if size as u64 > max {
+        bail!(IO, "git: a delta declares {size} bytes, more than the {max} left under the unpacked limit (--max-unpacked)");
+    }
     let mut out = Vec::with_capacity(size);
     while pos < delta.len() {
         let op = delta[pos];
@@ -364,7 +368,7 @@ fn parse_pack(p: &[u8], max: u64) -> Result<HashMap<Id, (u8, Vec<u8>)>> {
             let resolved = match base {
                 None => Some((raw[i].1, std::mem::take(&mut raw[i].2))),
                 Some(id) => match id.and_then(|id| objects.get(&id)) {
-                    Some((kind, data)) => Some((*kind, apply_delta(data, &raw[i].2)?)),
+                    Some((kind, data)) => Some((*kind, apply_delta(data, &raw[i].2, max.saturating_mul(2).saturating_sub(total))?)),
                     None => None,
                 },
             };
@@ -475,7 +479,7 @@ pub fn checkout(http: &Http, url: &str, sha: &str, limits: &Limits) -> Result<Ch
     let objects = parse_pack(&fetch_pack(http, &r, url, sha, 1, false, limits.download)?, limits.unpacked)?;
     let commit = commit_of(&objects, url, sha)?;
     let mut files: Vec<(String, u32, Vec<u8>)> = Vec::new();
-    walk(&objects, url, commit.tree, "", 0, &mut files, limits)?;
+    walk(&objects, url, commit.tree, "", 0, &mut files, &mut (0, 0), limits)?;
     files.sort_by(|a, b| a.0.cmp(&b.0));
     let top = format!("{}-{}", name_of(url).map_or("repo".into(), |n| n.replace('/', "-")), &sha[..12]);
     let mut w = ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -495,6 +499,9 @@ pub fn checkout(http: &Http, url: &str, sha: &str, limits: &Limits) -> Result<Ch
     Ok(Checkout { zip: w.finish()?.into_inner(), sha256: hex::encode(Sha256::digest(&listing)) })
 }
 
+/// `seen`: tree entries visited and file bytes copied so far. A tree may be referenced from many
+/// entries, so without them a few small objects expand exponentially.
+#[allow(clippy::too_many_arguments)]
 fn walk(
     objects: &HashMap<Id, (u8, Vec<u8>)>,
     url: &str,
@@ -502,6 +509,7 @@ fn walk(
     prefix: &str,
     depth: usize,
     out: &mut Vec<(String, u32, Vec<u8>)>,
+    seen: &mut (usize, u64),
     limits: &Limits,
 ) -> Result<()> {
     let missing = |what: &str| Error::new(NETWORK, format!("git: {url}: the server did not send {what}"));
@@ -517,18 +525,27 @@ fn walk(
         let name = String::from_utf8_lossy(&data[space + 1..nul]).into_owned();
         let id: Id = data.get(nul + 1..nul + 21).ok_or_else(|| missing("a valid tree"))?.try_into().expect("20 bytes");
         pos = nul + 21;
+        seen.0 += 1;
+        // Directories and submodules count too, so a legitimate repository has at most about twice as many entries as files.
+        if seen.0 > limits.files.saturating_mul(2) {
+            bail!(IO, "git: {url}: more than {} tree entries, twice the file limit (--max-files)", limits.files.saturating_mul(2));
+        }
         if name.is_empty() || name == "." || name == ".." || name.contains('/') {
             bail!(IO, "git: {url}: unsafe path {name:?}");
         }
         let path = if prefix.is_empty() { name } else { format!("{prefix}/{name}") };
         match mode {
-            Some(0o40000) => walk(objects, url, id, &path, depth + 1, out, limits)?,
+            Some(0o40000) => walk(objects, url, id, &path, depth + 1, out, seen, limits)?,
             // Submodules point into other repositories, which are not fetched.
             Some(0o160000) => {}
             Some(m @ (0o100644 | 0o100755 | 0o100664 | 0o120000)) => {
                 let Some((3, blob)) = objects.get(&id) else { return Err(missing(&path)) };
                 if out.len() >= limits.files {
                     bail!(IO, "git: {url}: more than {} files", limits.files);
+                }
+                seen.1 = seen.1.saturating_add(blob.len() as u64);
+                if seen.1 > limits.unpacked {
+                    bail!(IO, "git: {url}: repository content exceeds {} bytes", limits.unpacked);
                 }
                 let mode = match m {
                     0o100755 => 0o755,
@@ -681,8 +698,49 @@ mod tests {
         let base = b"hello world";
         // base size 11, result size 11: copy "hello " (offset 0, len 6), insert "there".
         let delta = [11, 11, 0x80 | 0x01 | 0x10, 0, 6, 5, b't', b'h', b'e', b'r', b'e'];
-        assert_eq!(apply_delta(base, &delta).unwrap(), b"hello there");
-        assert!(apply_delta(b"short", &delta).is_err());
+        assert_eq!(apply_delta(base, &delta, 11).unwrap(), b"hello there");
+        assert!(apply_delta(b"short", &delta, 11).is_err());
+    }
+
+    fn tree(entries: &[(&str, &str, Id)]) -> Vec<u8> {
+        entries.iter().flat_map(|(mode, name, id)| [format!("{mode} {name}\0").into_bytes(), id.to_vec()].concat()).collect()
+    }
+
+    #[test]
+    fn a_tree_referenced_many_times_stops_at_an_entry_budget() {
+        // Regression: only files counted, so 10 entries to the previous tree, nested, cost 10^depth.
+        let mut objects = HashMap::new();
+        let mut id = object_id(2, b"");
+        objects.insert(id, (2, Vec::new()));
+        for _ in 0..5 {
+            let names: Vec<String> = (0..10).map(|i| format!("d{i}")).collect();
+            let data = tree(&names.iter().map(|n| ("40000", n.as_str(), id)).collect::<Vec<_>>());
+            id = object_id(2, &data);
+            objects.insert(id, (2, data));
+        }
+        let e = walk(&objects, "u", id, "", 0, &mut Vec::new(), &mut (0, 0), &Limits::default()).unwrap_err();
+        assert!(e.msg.contains("more than 10000 tree entries"), "{}", e.msg);
+    }
+
+    #[test]
+    fn one_blob_behind_many_entries_counts_against_the_unpacked_limit() {
+        // Regression: each entry cloned the blob, unchecked, before archive::extract saw any size.
+        let blob = vec![b'x'; 100];
+        let blob_id = object_id(3, &blob);
+        let names: Vec<String> = (0..20).map(|i| format!("f{i}")).collect();
+        let data = tree(&names.iter().map(|n| ("100644", n.as_str(), blob_id)).collect::<Vec<_>>());
+        let id = object_id(2, &data);
+        let objects = HashMap::from([(blob_id, (3, blob)), (id, (2, data))]);
+        let limits = Limits { unpacked: 1000, ..Limits::default() };
+        let e = walk(&objects, "u", id, "", 0, &mut Vec::new(), &mut (0, 0), &limits).unwrap_err();
+        assert!(e.msg.contains("exceeds 1000 bytes"), "{}", e.msg);
+    }
+
+    #[test]
+    fn a_delta_declaring_a_huge_result_is_refused_before_allocating() {
+        // Regression: `Vec::with_capacity` of a declared 2^62 bytes aborted the process.
+        let delta = [5, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x40];
+        assert!(apply_delta(b"hello", &delta, 1 << 20).is_err());
     }
 
     #[test]
