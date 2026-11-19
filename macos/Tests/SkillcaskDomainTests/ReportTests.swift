@@ -60,16 +60,6 @@ import Testing
         let report = MutationReport(verbLines: "")
         #expect(report.isEmpty && report.warnings.isEmpty)
     }
-
-    @Test func fromTheDocument() throws {
-        let json =
-            #"{"ok":true,"added":["a/b"],"installed":["x"],"updated":["a/b 1 -> 2","garbage"],"removed":["c/d"],"warnings":["w"]}"#
-        let document = try JSONDecoder().decode(MutationDocument.self, from: Data(json.utf8))
-        let report = MutationReport(document, warnings: ["stderr"])
-        #expect(report.added == ["a/b"] && report.installed == ["x"] && report.removed == ["c/d"])
-        #expect(report.updated == [MutationReport.Updated(package: "a/b", from: "1", to: "2")])
-        #expect(report.warnings == ["w", "stderr"])
-    }
 }
 
 @Suite struct UnifiedDiffTests {

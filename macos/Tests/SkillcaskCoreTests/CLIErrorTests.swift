@@ -157,7 +157,7 @@ import Testing
     }
 
     @Test func explicitFeatureSet() {
-        let caps = Capabilities(version: Version(0, 10, 0), features: [.jsonMutations])
-        #expect(caps.supports(.jsonMutations) && !caps.supports(.diffJSON))
+        let caps = Capabilities(version: Version(0, 10, 0), features: [.addSkill])
+        #expect(caps.supports(.addSkill) && !caps.supports(.addRename))
     }
 }

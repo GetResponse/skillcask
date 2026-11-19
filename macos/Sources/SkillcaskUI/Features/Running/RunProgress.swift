@@ -74,7 +74,7 @@ struct RunProgress: View {
                     .foregroundStyle(Color.textPrimary)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Text(RunningCopy.elapsed(elapsed))
+                Text(AdoptCopy.elapsed(elapsed))
                     .font(Font.Token.caption)
                     .foregroundStyle(Color.textSecondary)
                     .monospacedDigit()

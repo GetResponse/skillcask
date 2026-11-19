@@ -29,7 +29,7 @@ public struct Invocation: Hashable, Sendable {
         case search(query: String, skillsSh: SkillsShChoice?, remember: Bool)
         /// `projects <dirs>`: the CLI refuses `-g`, so the scope only sets the working directory.
         case projects(roots: [URL])
-        /// `diff [package]`: unified diff of what `update` would change; text, not JSON (until `diffJSON`).
+        /// `diff [package]`: unified diff of what `update` would change; text, not JSON.
         case diff(package: String?)
         /// `diff --to <version> -- <package>`: the diff to the newest version matching `version`, with NO cooldown
         /// (`src/main.rs` `Diff.to`, `src/commands.rs` `diff` → `candidate_at`); shipped in 0.9.1. For reading a
@@ -145,8 +145,9 @@ public struct Invocation: Hashable, Sendable {
     public var expectsDocument: Bool {
         switch command {
         case .status, .audit, .outdated, .doctor, .info, .search, .projects, .config, .configList, .selfCheck: true
-        case .initialize, .install, .update, .add, .remove: capabilities.supports(.jsonMutations)
-        case .version, .diff, .diffTo, .authSet, .authRemove, .configSet, .configUnset: false
+        case .version, .diff, .diffTo, .authSet, .authRemove, .configSet, .configUnset, .initialize, .install, .update,
+            .add, .remove:
+            false
         }
     }
 

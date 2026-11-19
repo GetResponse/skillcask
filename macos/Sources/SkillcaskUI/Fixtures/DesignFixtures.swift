@@ -27,7 +27,7 @@ public enum DesignFixtures {
     /// board inconsistency.
     ///
     /// Planned shape, beyond what the 0.9.4 CLI prints: `status.api.json` gives every row the `source` and
-    /// `description` keys (`Capabilities.Feature.statusSource` / `.statusDescription`, not emitted yet) and has a
+    /// `description` keys (not emitted yet) and has a
     /// `not managed` row (caveman) in a project scope, where 0.9.4 reports `not managed` only for the personal
     /// scope (`not_managed` in src/commands.rs returns nothing unless the scope is global). The boards draw both,
     /// so the board states keep this fixture; `apiCLI` is the same scope as 0.9.4 prints it, and the first

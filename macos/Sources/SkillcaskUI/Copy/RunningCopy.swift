@@ -24,11 +24,6 @@ public enum RunningCopy {
     public static let hideOutput = AddSkillCopy.hideOutput
     public static let showOutput = AddSkillCopy.showOutput
 
-    /// `0:03`: minutes and seconds since the run started.
-    public static func elapsed(_ seconds: TimeInterval) -> String {
-        AdoptCopy.elapsed(seconds)
-    }
-
     // MARK: - Health popover (Health-States)
 
     /// The popover's accessibility label (the board's `aria-label`).

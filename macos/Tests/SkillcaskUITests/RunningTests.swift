@@ -69,7 +69,7 @@ import Testing
 
     @Test(arguments: [(0.0, "0:00"), (3.2, "0:03"), (59.9, "0:59"), (75, "1:15"), (-1, "0:00"), (3600, "60:00")])
     func elapsedIsMinutesAndSeconds(seconds: TimeInterval, text: String) {
-        #expect(RunningCopy.elapsed(seconds) == text)
+        #expect(AdoptCopy.elapsed(seconds) == text)
     }
 
     @Test func theBlockKeepsTheNewestTwoLines() {
