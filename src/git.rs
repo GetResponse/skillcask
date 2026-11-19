@@ -240,7 +240,7 @@ fn apply_delta(base: &[u8], delta: &[u8], max: u64) -> Result<Vec<u8>> {
     }
     let size = varint(delta, &mut pos)?;
     if size as u64 > max {
-        bail!(IO, "git: repository content exceeds the unpacked limit");
+        bail!(IO, "git: a delta declares {size} bytes, more than the {max} left under the unpacked limit (--max-unpacked)");
     }
     let mut out = Vec::with_capacity(size);
     while pos < delta.len() {
@@ -528,7 +528,7 @@ fn walk(
         seen.0 += 1;
         // Directories and submodules count too, so a legitimate repository has at most about twice as many entries as files.
         if seen.0 > limits.files.saturating_mul(2) {
-            bail!(IO, "git: {url}: more than {} tree entries", limits.files.saturating_mul(2));
+            bail!(IO, "git: {url}: more than {} tree entries, twice the file limit (--max-files)", limits.files.saturating_mul(2));
         }
         if name.is_empty() || name == "." || name == ".." || name.contains('/') {
             bail!(IO, "git: {url}: unsafe path {name:?}");

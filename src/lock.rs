@@ -215,12 +215,24 @@ fn package(t: &dyn TableLike) -> Result<Package> {
     if !dist.url.starts_with("https://") {
         return Err(bad(format!("invalid dist url in {name}: only https:// is allowed")));
     }
-    // D62: the lock is committed and its URLs reach error messages. skillcask never writes userinfo
+    // D70: the lock is committed and its URLs reach error messages. skillcask never writes userinfo
     // there, and a git dist is the repository URL, which the manifest already holds to `check_url`.
+    // A URL that does not parse is refused too, since then nothing can tell whether it hides any.
     let repository = s(t, "repository").map_err(ctx)?;
-    let userinfo = |u: &str| url::Url::parse(u).is_ok_and(|u| !u.username().is_empty() || u.password().is_some());
-    if crate::manifest::carries_credentials(&repository) || userinfo(&dist.url) {
-        return Err(bad(format!("invalid url in {name}: it carries credentials")).hint("move them to auth.json"));
+    let credentials = |field: &str| {
+        bad(format!("invalid {field} in {name}: it carries credentials"))
+            .hint("delete the entry from skills.lock, or the whole file, and run `skillcask install`; tokens go to auth.json")
+    };
+    let unparsed = |field: &str| bad(format!("invalid {field} in {name}: not a valid URL"));
+    if url::Url::parse(&repository).is_err() {
+        return Err(unparsed("repository"));
+    }
+    if crate::manifest::carries_credentials(&repository) {
+        return Err(credentials("repository"));
+    }
+    let Ok(parsed) = url::Url::parse(&dist.url) else { return Err(unparsed("dist url")) };
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err(credentials("dist url"));
     }
     if dist.kind == crate::git::KIND {
         crate::git::check_url(&dist.url).map_err(|e| bad(format!("invalid dist url in {name}: {e}")))?;
@@ -359,7 +371,7 @@ mod tests {
 
     #[test]
     fn credentials_in_lock_urls_are_refused_unshown() {
-        // Regression (D62): only the https:// prefix was checked, and git printed the URL in errors.
+        // Regression (D70): only the https:// prefix was checked, and git printed the URL in errors.
         let git = sample().replace("type = \"zip\", url = \"https://r/a.zip\"", "type = \"git\", url = \"https://r/a/b\"");
         assert!(parse(&git).is_ok());
         for (from, to) in [
@@ -373,7 +385,17 @@ mod tests {
             assert!(e.code == MANIFEST && e.msg.contains("invalid") && !e.msg.contains("SECRET"), "{to}: {}", e.msg);
         }
         let zip = sample().replace("url = \"https://r/a.zip\"", "url = \"https://u:SECRET@r/a.zip\"");
-        assert!(!parse(&zip).unwrap_err().msg.contains("SECRET"));
+        let e = parse(&zip).unwrap_err();
+        assert!(e.msg.contains("invalid dist url") && !e.msg.contains("SECRET"), "{}", e.msg);
+        assert!(e.hint.as_deref().is_some_and(|h| h.contains("skills.lock")), "{:?}", e.hint);
+        // Regression: a URL that did not parse counted as carrying no credentials.
+        for (from, to) in [
+            ("url = \"https://r/a.zip\"", "url = \"https://u:SECRET@r:99999/a.zip\""),
+            ("repository = \"https://r/", "repository = \"https://u:SECRET@r:99999/"),
+        ] {
+            let e = parse(&sample().replace(from, to)).unwrap_err();
+            assert!(e.msg.contains("not a valid URL") && !e.msg.contains("SECRET"), "{to}: {}", e.msg);
+        }
     }
 
     #[test]
