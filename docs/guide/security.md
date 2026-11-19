@@ -42,8 +42,9 @@
   Skills that teach shell setup trigger some of these legitimately, so they are warnings. In
   config files, text that forbids what it names does not count: the quoted entries of a `deny`
   list in `.json`, `.jsonc` and `.toml`, a TOML `<key> = "deny"`, and a Codex `prefix_rule` in
-  `.rules` whose only decision is `"forbidden"`. In a line comment (`#` or `//`, by file type) the
-  first two rows are not reported. With `deny-patterns = true` under `[policy]` (or enforced in
+  `.rules` whose only decision is `"forbidden"`; text after the rule's closing `)` is still
+  scanned. In a line comment of a config file (`#` in `.toml` and `.rules`, `//` in `.jsonc`) the
+  first two rows are not reported; scripts get no such exception. With `deny-patterns = true` under `[policy]` (or enforced in
   `config.toml`) they, and the invisible characters above, fail the command with exit 1 and
   nothing is written. `deny-patterns-exempt` in `config.toml` lists `https://` URL prefixes whose
   risky lines still warn but are not refused; invisible characters still are. See
