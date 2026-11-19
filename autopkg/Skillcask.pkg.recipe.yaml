@@ -1,0 +1,18 @@
+Description: |
+  Downloads the latest Skillcask installer package from GitHub Releases, verifies its signature
+  chain and copies it, unchanged, to the recipe cache as Skillcask-VERSION.pkg.
+
+  Set PRERELEASE to any non-empty value (for example "yes") to consider pre-releases too; leave it
+  empty for stable releases only.
+Identifier: com.github.getresponse.pkg.Skillcask
+ParentRecipe: com.github.getresponse.download.Skillcask
+MinimumVersion: '2.3'
+
+Input:
+  NAME: Skillcask
+
+Process:
+  - Processor: PkgCopier
+    Arguments:
+      source_pkg: '%pathname%'
+      pkg_path: '%RECIPE_CACHE_DIR%/%NAME%-%version%.pkg'

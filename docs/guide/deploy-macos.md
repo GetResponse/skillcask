@@ -102,6 +102,46 @@ Remove a Homebrew install first: the package and Homebrew's `skillcask` and `ski
 not go together on one Mac ([below](#next-to-homebrew-and-other-installs)). Then deploy the
 package, then the configuration.
 
+## AutoPkg
+
+The repository publishes two [AutoPkg](https://github.com/autopkg/autopkg) recipes in
+[`autopkg/`](../../autopkg/README.md), for AutoPkg 2.3 or newer:
+
+| Recipe | Identifier | What it does |
+|---|---|---|
+| `Skillcask.download` | `com.github.getresponse.download.Skillcask` | Finds the newest release that has the package, downloads it and verifies its signer |
+| `Skillcask.pkg` | `com.github.getresponse.pkg.Skillcask` | The same, then copies the package, unchanged, into the recipe cache and sets `pkg_path` |
+
+```sh
+autopkg repo-add GetResponse/skillcask
+autopkg make-override Skillcask.pkg
+autopkg run -v Skillcask.pkg      # ~/Library/AutoPkg/Cache/local.pkg.Skillcask/Skillcask-X.Y.Z.pkg
+```
+
+- **Your import.** The recipes stop at the package. Uploading it to Jamf or another management
+  system is your own recipe, with `ParentRecipe: com.github.getresponse.pkg.Skillcask`, taking
+  `%pkg_path%` and `%version%`.
+- **Pre-releases.** The recipes take stable releases only. To pilot a release candidate on test
+  Macs, run `autopkg run -v -k PRERELEASE=yes Skillcask.pkg`, or set `PRERELEASE` in an override
+  used only for the pilot; any non-empty value turns it on, `no` too. The first package came with
+  0.14.0-rc.1, so until 0.14.0 is released only such a run finds one.
+- **What is verified.** Only the signer: the chain must be exactly
+  `Developer ID Installer: GetResponse Sp. z o.o. (K9247ZCUJS)`,
+  `Developer ID Certification Authority`, `Apple Root CA`. The release job checks every package
+  against these names before it attaches it. The recipes check neither the notarization nor the
+  `.sha256` file, and `autopkg run --check` stops before the signer check. The cached package has
+  another file name than the release asset, so `shasum -c` does not apply to it: use the commands
+  under "What the recipes verify" in [`autopkg/README.md`](../../autopkg/README.md).
+- **A release without its package.** The package is attached after the release, by a job that
+  waits for a reviewer and may have to be rerun. Meanwhile the recipes return the previous
+  release's package, without a warning, since they take the newest release that has one. Run
+  them again later, and compare the version with the release you expect.
+- **Trust info.** Your override stores a hash of both recipe files. The recipes keep their
+  identifiers and the inputs `NAME` and `PRERELEASE`, and new behaviour comes as a new recipe,
+  but when a file does change (a new signer name, announced one release ahead), `autopkg run`
+  fails trust verification until you review the change (`autopkg verify-trust-info -vv
+  Skillcask.pkg` shows it) and run `autopkg update-trust-info Skillcask.pkg`.
+
 ## Machine-wide config.toml
 
 skillcask reads `/Library/Application Support/skillcask/config.toml` under every user's own
@@ -380,14 +420,13 @@ What stays, per user, because the package never wrote it:
 
 ## Limits
 
-- **The package can trail the release, or be missing.** A separate job attaches it after the
-  release and the app zip are public, and waits for a reviewer. If that job fails, the release
-  stands without a package until it is rerun. Check that the release you want has the `.pkg`: a
-  tool that takes the newest release with a matching file picks the release before it meanwhile.
-  Releases before 0.14.0 have none.
-- **Pre-releases.** `-rc` tags carry a package too. Deploy only releases that are not marked
-  pre-release.
-- **No recipes yet.** AutoPkg recipes are not published.
+- **The package trails the release.** A separate job attaches it after the release and the app
+  zip are public, and waits for a reviewer. It fails rather than leave a release without a
+  package unnoticed, but until it is rerun the release has none. Check that the release you want
+  has the `.pkg`: a tool that takes the newest release with a matching file, like the AutoPkg
+  recipes, picks the release before it meanwhile. Releases before 0.14.0 have none.
+- **Pre-releases.** `-rc` tags carry a package too. Pilot them on test Macs only; deploy only
+  releases that are not marked pre-release.
 - **Old packages.** The Developer ID Installer certificate that signs a package expires, and
   Apple's own pages disagree on whether a package still installs after that. Deploy the latest
   release; do not count on an old package installing later.

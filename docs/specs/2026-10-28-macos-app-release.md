@@ -112,9 +112,11 @@ Job `publish-macos-pkg` in `release.yml`, hand-written like `publish-macos-app`,
 on `macos-26` with the same Xcode, in the `release` environment (its own review), for
 pre-releases too:
 
-1. Stops with a visible skip (a warning and a line in the job summary) while the environment has
-   no installer certificate. Temporary: once the first signed package is out, a missing package
-   must fail.
+1. Fails, naming each one, when a secret it reads (the three installer secrets and the notary
+   key's three) is not set in the environment. It never skips: AutoPkg's GitHub provider silently
+   takes the release before when the newest has no package, so a missing package must be loud.
+   Only a rerun that finds the package complete (step 2, which the job looks at first) reads no
+   secret and passes without them.
 2. Looks at the release. Package and `.sha256` both there and matching: nothing to do. Only the
    package (a run stopped between the two uploads): it is checked like a fresh one (steps 3, 6
    and 7) and only its `.sha256` is attached. An unfinished upload, a `.sha256` that does not
@@ -129,8 +131,11 @@ pre-releases too:
    `notarytool submit … --wait --timeout 30m` (fails unless `Accepted`, printing `notarytool log`)
    and `stapler staple`.
 6. `stapler validate`; `pkgutil --check-signature` must list three certificates, the first exactly
-   `MACOS_INSTALLER_SIGN_IDENTITY`; `spctl --assess --type install -vv` must say `accepted` and
-   `Notarized Developer ID`. Then writes the `.sha256`, after the staple, which changes the file.
+   `MACOS_INSTALLER_SIGN_IDENTITY`, and the three names must be the recipe's
+   `expected_authority_names` at the tag (`autopkg/test_recipes.py --authority-names`), since every
+   administrator's recipe refuses any other chain and a rerun reads the same recipe;
+   `spctl --assess --type install -vv` must say `accepted` and `Notarized Developer ID`. Then
+   writes the `.sha256`, after the staple, which changes the file.
 7. `macos/Scripts/check-pkg.sh <pkg> --install`: the runner is thrown away, so the package is
    really installed once. The installed app's CDHash for arm64 and for x86_64 must then equal the
    released app's.
@@ -153,7 +158,7 @@ as the app's helper, the resolved binary is the helper inside `Skillcask.app`; w
 newer release makes it print
 `error: skillcask X -> Y: installed with the macOS installer package; your administrator deploys updates`
 with the hint `the package Skillcask-Y-macos-universal.pkg is on <release page of vY>` and exit 1
-(the page, not the asset's URL: the package job can lag or be skipped, and that URL would then be
+(the page, not the asset's URL: the package job can lag or fail, and that URL would then be
 a 404). It downloads and installs nothing. This goes before the cask, and the owner decides: neither
 the receipt nor a Caskroom folder is removed when another method installs the app later, while
 Installer writes the app as root and the cask and the app's installer script write it as the
@@ -176,11 +181,20 @@ the formula unlinked, as long as the link resolves; a dangling one Homebrew repl
 `brew uninstall skillcask` and `brew uninstall --cask skillcask-app` come before the package.
 For administrators: `docs/guide/deploy-macos.md`.
 
-AutoPkg recipes follow once the first signed package exists, since they name its signer:
-`autopkg/Skillcask.download.recipe.yaml` (`com.github.getresponse.download.Skillcask`) and
-`autopkg/Skillcask.pkg.recipe.yaml` (`com.github.getresponse.pkg.Skillcask`). AutoPkg's GitHub
-provider takes the newest release that has a matching asset, so while a release lacks its package
-it silently stays on the one before: confirm the `.pkg` is attached before announcing.
+AutoPkg recipes, published with the first signed package (`v0.14.0-rc.1`), whose signer they
+name: `autopkg/Skillcask.download.recipe.yaml` (`com.github.getresponse.download.Skillcask`)
+finds the newest release with the package (`PRERELEASE` set: pre-releases too), downloads it and
+requires the chain `Developer ID Installer: GetResponse Sp. z o.o. (K9247ZCUJS)`,
+`Developer ID Certification Authority`, `Apple Root CA`; `autopkg/Skillcask.pkg.recipe.yaml`
+(`com.github.getresponse.pkg.Skillcask`) copies it unchanged and sets `pkg_path`. They use only
+AutoPkg's own processors; the import into a management system is the administrator's own child
+recipe. An override stores a hash of both files, so any edit fails every administrator's trust
+check until reviewed: the identifiers and the inputs `NAME` and `PRERELEASE` stay, new behaviour
+comes as a new recipe, and the signer names change only with the certificate's name, announced one
+release ahead. `autopkg.yml` checks the asset regex and the signer names (also as PyYAML reads
+them), audits both recipes and runs the pkg recipe on pull requests that touch them. AutoPkg's
+GitHub provider takes the newest release that has a matching asset, so while a release lacks its
+package it silently stays on the one before: confirm the `.pkg` is attached before announcing.
 
 ### Rejected
 
@@ -277,7 +291,7 @@ and promises nothing for old packages.
 - [x] README and `macos/README.md`: install via the cask; the quarantine instructions stay for
       local ad-hoc builds only.
 - [x] AGENTS.md release steps: the new jobs, and what to do when notarization is slow or rejected.
-- [ ] Developer ID Installer certificate issued; the three installer secrets in `release`.
+- [x] Developer ID Installer certificate issued; the three installer secrets in `release`.
 - [x] Job `publish-macos-pkg` in `release.yml`: section 4, steps 1–9.
 - [x] `macos/pkg.sh` and `macos/Scripts/check-pkg.sh`, which the job runs, with the CI job
       `macos-pkg` in its own workflow `macos-pkg.yml`, which runs on pull requests that change
@@ -285,11 +299,13 @@ and promises nothing for old packages.
       on every push to `master`.
 - [x] Decision D69 in `docs/specs/2026-10-19-skillcask-v1.md` (amends D50 and D52) and
       `docs/guide/deploy-macos.md`.
-- [ ] First signed package on an `-rc` tag: notarized, `spctl` accepted, installed on the runner.
+- [x] First signed package on an `-rc` tag: notarized, `spctl` accepted, installed on the runner
+      (`v0.14.0-rc.1`; the downloaded asset's chain, `spctl`, `stapler` and `.sha256` checked by
+      hand).
 - [ ] Manual acceptance through device management: a policy install on a Mac that never had
       skillcask, the machine-wide `config.toml`, an update, a rollback, an uninstall.
-- [ ] AutoPkg recipes in `autopkg/`, with the signer the first signed package shows.
-- [ ] Remove the certificate gate (step 1) once the first signed package is released.
+- [x] AutoPkg recipes in `autopkg/`, with the signer the first signed package shows.
+- [x] Remove the certificate gate: a missing secret fails the job (step 1).
 - [ ] First stable release with the cask, on a Mac without the tap:
       `brew install getresponse/tap/skillcask getresponse/tap/skillcask-app`, then `skillcask app`; also
       the cask alone, to see whether Homebrew refuses the formula it depends on.
@@ -310,6 +326,10 @@ and promises nothing for old packages.
 - Package, signed: an `-rc` tag runs `publish-macos-pkg` without touching Homebrew and npm; in the
   job `stapler validate`, `pkgutil --check-signature`, `spctl --assess --type install` and one real
   install.
+- AutoPkg recipes (`autopkg.yml`, on pull requests that change `autopkg/**` or the workflow, and
+  by hand): `autopkg/test_recipes.py` with the runner's Python and AutoPkg's, the identifiers,
+  `autopkg audit`, then `autopkg run` of the pkg recipe against the published releases, pre-releases
+  included, which verifies the real signer chain.
 - Package, manual, once per change to the job or to `pkg.sh`: the device-management acceptance of
   the task list. An install sent as a device-management command or during enrolment is not tested.
 

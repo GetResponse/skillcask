@@ -47,8 +47,9 @@ Conventional Commits with a lowercase subject that states the outcome, e.g.
    not acquired or notarization fails or times out, the CLI release stands: rerun the failed jobs
    (`gh run rerun <id> --failed`); for a rejection read the printed `notarytool log` first.
    When `publish-macos-app` has finished, approve `publish-macos-pkg` the same way (a second
-   review); it attaches the signed, notarized installer package for device-managed Macs. A failed
-   package job leaves the release, the app and the cask intact: rerun it with
+   review); it attaches the signed, notarized installer package for device-managed Macs. It fails,
+   never skips, when a signing secret is missing in `release`. A failed package job leaves the
+   release, the app and the cask intact: fix the cause, then rerun it with
    `gh run rerun <id> --failed`. Before telling administrators about the release, confirm it lists
    the `.pkg` and its `.sha256` (the `announce` job does not wait for them): device-management
    tooling silently stays on the previous release when the package is missing.
@@ -68,7 +69,9 @@ regenerating:
 - `publish-macos-pkg` is hand-written too and runs `macos/pkg.sh` and `macos/Scripts/check-pkg.sh`:
   it keeps `environment: release`, needs `publish-macos-app`, compiles nothing and fails when its
   keychain holds a Developer ID Application certificate, so it signs with the Developer ID
-  Installer certificate alone. Nothing needs it.
+  Installer certificate alone. It fails on a missing secret and when the package's signer chain
+  differs from `expected_authority_names` in `autopkg/Skillcask.download.recipe.yaml` (a rerun
+  cannot fix that: it reads the recipe at the tag). Nothing needs it.
 - Supply chain: every action pinned to a commit sha, the dist installer checked against a pinned
   sha256, and `GH_TOKEN: ""` on the steps that install tools.
 
@@ -77,4 +80,9 @@ The installer package is a published contract that does not change: its asset na
 `.pkg.app`, `.pkg.cli`; in the organisation's reverse-domain namespace, while the app keeps its
 bundle id `io.github.puniserv.skillcask`) and its install paths (`/Applications/Skillcask.app`,
 and `/usr/local/bin/skillcask`, a symbolic link to that app's `Contents/Helpers/skillcask`: the
-package holds no second copy of the CLI, D69).
+package holds no second copy of the CLI, D69). So are the AutoPkg recipes in `autopkg/`: their
+identifiers (`com.github.getresponse.download.Skillcask`, `com.github.getresponse.pkg.Skillcask`)
+and input names (`NAME`, `PRERELEASE`). Any edit to a recipe file, even a comment, fails every
+administrator's override trust until they review it: add a recipe instead, and change the signer
+names only for a new certificate name, announced one release ahead. `autopkg.yml` checks and runs
+the recipes on pull requests that touch them.

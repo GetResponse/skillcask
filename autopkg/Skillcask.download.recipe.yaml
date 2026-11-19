@@ -1,0 +1,34 @@
+Description: |
+  Downloads the latest Skillcask installer package from GitHub Releases and verifies its
+  Developer ID Installer signature chain. The package installs Skillcask.app to /Applications and
+  the skillcask CLI to /usr/local/bin.
+
+  Set PRERELEASE to any non-empty value (for example "yes") to consider pre-releases too; leave it
+  empty for stable releases only.
+Identifier: com.github.getresponse.download.Skillcask
+MinimumVersion: '2.3'
+
+Input:
+  NAME: Skillcask
+  PRERELEASE: ''
+
+Process:
+  - Processor: GitHubReleasesInfoProvider
+    Arguments:
+      github_repo: GetResponse/skillcask
+      asset_regex: '^Skillcask-[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?-macos-universal\.pkg$'
+      include_prereleases: '%PRERELEASE%'
+
+  - Processor: URLDownloader
+    Arguments:
+      filename: '%NAME%-%version%.pkg'
+
+  - Processor: EndOfCheckPhase
+
+  - Processor: CodeSignatureVerifier
+    Arguments:
+      input_path: '%pathname%'
+      expected_authority_names:
+        - 'Developer ID Installer: GetResponse Sp. z o.o. (K9247ZCUJS)'
+        - Developer ID Certification Authority
+        - Apple Root CA
