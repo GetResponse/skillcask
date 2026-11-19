@@ -39,9 +39,14 @@
   | reads system account files | `/etc/passwd`, `/etc/shadow` |
   | tells the agent to ignore its instructions | "ignore (all) previous/prior instructions", "disregard all previous/prior" |
 
-  Skills that teach shell setup trigger some of these legitimately, so they are warnings. With
+  Skills that teach shell setup trigger some of these legitimately, so they are warnings. Text that
+  forbids what it names does not count: entries of a `deny` list (`"deny": [` or `deny = [` up to
+  its `]`), a TOML `<key> = "deny"`, a Codex `prefix_rule` with `decision = "forbidden"`, and, for
+  the first two rows, a `#` or `//` comment in a file other than Markdown or `.txt`. With
   `deny-patterns = true` under `[policy]` (or enforced in `config.toml`) they, and the invisible
-  characters above, fail the command with exit 1 and nothing is written.
+  characters above, fail the command with exit 1 and nothing is written. `deny-patterns-exempt` in
+  `config.toml` lists `https://` URL prefixes whose packages still warn but are not refused; see
+  [policy](policy.md).
 - `skillcask audit` reviews what is installed now, every skill in `.agents/skills` and the project
   skills: the commands its shell code blocks run, the hosts of its URLs, the paths in the home
   directory or under system roots, the environment variables it reads and the files an agent could

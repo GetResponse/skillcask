@@ -13,6 +13,7 @@ use crate::error::{Context, Error, MANIFEST, Result};
 pub const CONFIG: &str = "config.toml";
 pub const SKILLS_SH: &str = "skills-sh";
 pub const REPOSITORY_AGES: &str = "repository-min-release-age";
+pub const DENY_EXEMPT: &str = "deny-patterns-exempt";
 pub const KEYS: [&str; 7] =
     ["min-release-age", "allow-ranges", "packagist", "github-requires", "allow-sources", "deny-patterns", "deny-packages"];
 
@@ -43,6 +44,9 @@ pub struct Layer {
     /// `config.toml` only: URL prefix to the cooldown an enforced `min-release-age` allows for
     /// repositories under it (D28).
     pub repository_ages: BTreeMap<String, SignedDuration>,
+    /// `config.toml` only: URL prefixes of repositories whose packages `deny-patterns` does not
+    /// refuse; their risky lines still warn (D71).
+    pub deny_exempt: BTreeSet<String>,
 }
 
 /// The layers around a manifest: the system and user config, merged, and the environment.
@@ -185,6 +189,16 @@ pub fn layer(t: Option<&dyn TableLike>, file: &str, config: bool) -> Result<Laye
                 let age = age.as_str().ok_or_else(|| bad(k, format!("{prefix:?} must be a string such as \"3d\"")))?;
                 let age = crate::manifest::duration(age).map_err(|e| bad(k, format!("{prefix:?}: {e}")))?;
                 out.repository_ages.insert(prefix.to_string(), age);
+            }
+            continue;
+        }
+        if config && k == DENY_EXEMPT {
+            let list = raw(item).and_then(|r| if let Raw::List(l) = r { Some(l) } else { None });
+            for prefix in list.ok_or_else(|| bad(k, "must be a list of https:// URL prefixes".into()))? {
+                if !prefix.starts_with("https://") || prefix.len() == "https://".len() {
+                    return Err(bad(k, format!("{prefix:?} is not an https:// URL prefix")));
+                }
+                out.deny_exempt.insert(prefix);
             }
             continue;
         }
@@ -361,6 +375,21 @@ pub fn over(system: Outer, mut user: Outer) -> Result<Outer> {
     for (prefix, age) in &s.repository_ages {
         u.repository_ages.entry(prefix.clone()).or_insert(*age);
     }
+    if s.enforce.contains("deny-patterns")
+        && let Some(prefix) = u.deny_exempt.iter().find(|p| !s.deny_exempt.iter().any(|sp| under(p, sp)))
+    {
+        return Err(Error::new(
+            MANIFEST,
+            format!(
+                "{}: policy.{DENY_EXEMPT} {:?} is not under one of {} while it enforces deny-patterns",
+                shown(&user.config_path),
+                crate::http::shown_url(prefix),
+                system.config_path
+            ),
+        )
+        .hint(format!("remove it, or ask whoever manages {} to exempt it", system.config_path)));
+    }
+    u.deny_exempt.extend(s.deny_exempt.iter().cloned());
     u.enforce.extend(&s.enforce);
     user.system_enforce = s.enforce.clone();
     if user.targets.is_none() && system.targets.is_some() {

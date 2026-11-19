@@ -90,3 +90,29 @@ fn deny_patterns_lets_a_clean_skill_in() {
     p.ok(&["add", "acme/clean"]);
     assert!(p.exists(".agents/skills/bar"));
 }
+
+#[test]
+fn deny_patterns_exempt_lets_an_internal_source_in_with_warnings() {
+    let s = Server::start();
+    package(&s);
+    let p = Project::new(&s);
+    let base = s.url("/");
+    p.system_config(&format!("[policy]\ndeny-patterns = true\nenforce = [\"deny-patterns\"]\ndeny-patterns-exempt = [\"{base}\"]\n"));
+    manifest(&p, &s, "");
+    let out = p.ok(&["add", "acme/x"]);
+    assert!(out.contains("warning: acme/x: skills/foo/SKILL.md:6: downloads code into a shell\n"), "still warns: {out}");
+    assert!(p.exists(".agents/skills/foo"));
+
+    let dir = p.home().join(".config/skillcask");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("config.toml"), "[policy]\ndeny-patterns-exempt = [\"https://elsewhere.example/\"]\n").unwrap();
+    let out = p.expect(&["install"], 1);
+    assert!(out.contains("is not under one of"), "a user file cannot widen the system exemption: {out}");
+
+    let q = Project::new(&s);
+    q.system_config(
+        "[policy]\ndeny-patterns = true\nenforce = [\"deny-patterns\"]\ndeny-patterns-exempt = [\"https://elsewhere.example/\"]\n",
+    );
+    manifest(&q, &s, "");
+    assert!(q.expect(&["add", "acme/x"], 1).contains("refused by policy.deny-patterns"), "another prefix exempts nothing");
+}

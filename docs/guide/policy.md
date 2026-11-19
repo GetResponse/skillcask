@@ -65,6 +65,19 @@ enforce = ["min-release-age"]
 "https://gitlab.example.com/" = "0"   # internal skills, reviewed in merge requests
 ```
 
+An enforced `deny-patterns` refuses every package with a risky line, also a reviewed internal one
+whose setup docs name `~/.ssh`. `deny-patterns-exempt` lists `https://` URL prefixes, matched
+against the package's repository as for `repository-min-release-age`, whose packages warn but
+install. Only `config.toml` takes it. While the machine-wide file enforces `deny-patterns`, each
+prefix of the user's file must lie under one of its prefixes.
+
+```toml
+[policy]
+deny-patterns = true
+enforce = ["deny-patterns"]
+deny-patterns-exempt = ["https://gitlab.example.com/"]   # internal skills, reviewed in merge requests
+```
+
 `enforce` stops a project and its dependencies from loosening the policy for what they resolve, and
 a lock entry from a source outside an enforced `allow-sources`, or younger than an enforced
 `min-release-age`, or an environment one where the project's repository sets none, from installing;

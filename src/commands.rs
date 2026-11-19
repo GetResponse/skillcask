@@ -138,7 +138,7 @@ impl Ctx {
         let p = self.lock_candidate(m, req, &repo, &c, None, prepared)?;
         // The same dist as the lock's was scanned when it was locked.
         if locked.is_none_or(|l| l.dist_sha256 != p.dist_sha256) {
-            scan_new(&prepared[&p.name], &p, m.policy.deny_patterns)?;
+            scan_new(&prepared[&p.name], &p, m.policy.refuses_patterns(&p.repository))?;
         }
         Ok(p)
     }
@@ -1590,7 +1590,7 @@ fn add_vcs(ctx: &Ctx, name: String, git: Option<String>, skills: Vec<String>, at
 fn finish_add(ctx: &Ctx, m: &Manifest, req: &SkillReq, repo: &Repository, c: &Candidate, must_have: &[String]) -> Result<()> {
     let mut prepared = HashMap::new();
     let pkg = ctx.lock_candidate(m, req, repo, c, None, &mut prepared)?;
-    scan_new(&prepared[&pkg.name], &pkg, m.policy.deny_patterns)?;
+    scan_new(&prepared[&pkg.name], &pkg, m.policy.refuses_patterns(&pkg.repository))?;
     let have: Vec<&str> = pkg.skills.iter().map(|k| k.from.as_deref().unwrap_or(&k.name)).collect();
     if let Some(s) = must_have.iter().find(|s| !have.contains(&s.as_str())) {
         bail!(MANIFEST, "{}: no skill {s:?} in {} (it has: {})", req.name, c.version, have.join(", "));
@@ -2303,7 +2303,7 @@ pub fn audit(ctx: &Ctx, json: bool, sarif: bool, advisories: bool) -> Result<()>
             let bytes = std::fs::read(abs.join(&e.path)).ctx(&path)?;
             reach.add(&e.path, e.exec, &bytes);
             let Ok(text) = std::str::from_utf8(&bytes) else { continue };
-            for (line, why) in skill::risky(text) {
+            for (line, why) in skill::risky(&e.path, text) {
                 found.push(Finding { rule: "risky-pattern", path: path.clone(), line: Some(line), message: why.into() });
             }
             for i in skill::invisible(text) {

@@ -1,6 +1,6 @@
 //! `skills.toml`: read with declaration order preserved, edited in place so comments survive.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use jiff::SignedDuration;
@@ -180,6 +180,15 @@ pub struct Policy {
     pub effective: crate::policy::Effective,
     /// `repository-min-release-age` while `min-release-age` is enforced, else empty (D28).
     pub repository_ages: BTreeMap<String, SignedDuration>,
+    /// `deny-patterns-exempt` of `config.toml` (D71).
+    pub deny_exempt: BTreeSet<String>,
+}
+
+impl Policy {
+    /// Whether risky lines in a package from `repository` fail instead of warning (D31, D71).
+    pub fn refuses_patterns(&self, repository: &str) -> bool {
+        self.deny_patterns && !self.deny_exempt.iter().any(|p| crate::policy::under(repository, p))
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -496,6 +505,7 @@ pub fn parse_with(text: &str, global: bool, outer: &crate::policy::Outer) -> Res
         github_public: outer.config.enforce.contains("allow-sources") && outer.config.values.contains_key("allow-sources"),
         effective,
         repository_ages: BTreeMap::new(),
+        deny_exempt: outer.config.deny_exempt.clone(),
     };
     if let Some(list) = &policy.allow_sources
         && let Some(n) = list.iter().find(|e| !matches!(e.as_str(), "packagist" | "github") && !e.starts_with("https://"))
