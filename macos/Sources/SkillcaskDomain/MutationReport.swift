@@ -24,7 +24,7 @@ public struct MutationReport: Hashable, Sendable {
 
     public init() {}
 
-    /// `stdout` lines of a mutation without `--json`; `stderr` warnings come from the `StderrReport`.
+    /// `stdout` lines of a mutation; `stderr` warnings come from the `StderrReport`.
     public init(verbLines stdout: String, warnings: [String] = []) {
         self.warnings = warnings
         for raw in stdout.split(separator: "\n") {

@@ -145,9 +145,8 @@ public struct Invocation: Hashable, Sendable {
     public var expectsDocument: Bool {
         switch command {
         case .status, .audit, .outdated, .doctor, .info, .search, .projects, .config, .configList, .selfCheck: true
-        case .version, .diff, .diffTo, .authSet, .authRemove, .configSet, .configUnset, .initialize, .install, .update,
-            .add, .remove:
-            false
+        case .version, .diff, .diffTo, .authSet, .authRemove, .configSet, .configUnset: false
+        case .initialize, .install, .update, .add, .remove: false
         }
     }
 
