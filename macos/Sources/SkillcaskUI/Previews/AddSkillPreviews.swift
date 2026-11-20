@@ -8,7 +8,8 @@ extension PreviewRegistry {
     /// AddSkill-States boards. `preview` is the AddSkill board ("jira", consent card, the selected package's
     /// preview); `name-clash` is the 0.9.4 path (the CLI's error after Add); `capable-name-clash` and
     /// `capable-skills` run against a CLI with `add --rename` and several specs (0.15.0): a GitHub repository with one
-    /// skill unticked; `whole-repository` is one skill of a GitHub repository, with the link to the repository.
+    /// skill unticked; `whole-repository` is one skill of a GitHub repository, with the link to the repository. `batch`
+    /// is three results selected at once (D72), `batch-problem` a custom repository's result with a Packagist one.
     /// `added` is the sheet after an add, still open: the added row selected and marked Installed, the footer saying
     /// what was added, Done in place of Cancel. `success` is the window after that sheet closed: the toast in the
     /// list column, the new skill selected.
@@ -66,6 +67,16 @@ extension PreviewRegistry {
                 query: AddSkillSamples.githubJira, selection: AddSkillSamples.githubJira,
                 info: AddSkillSamples.jiraInfo)
             $0.excludedSkills = ["jira-communication"]
+        },
+        sheet("batch", capable: true, boardScope: true) {
+            $0.preload(
+                query: DesignFixtures.jiraQuery, results: .loaded(DesignFixtures.jiraSearch), skillsSh: .disabled,
+                batch: ["atlassian/jira-cli-skill", "kolya/jira-to-md", "github:ankit/jira-helper"])
+        },
+        sheet("batch-problem", capable: true, boardScope: true) {
+            $0.preload(
+                query: DesignFixtures.jiraQuery, results: .loaded(DesignFixtures.jiraSearch), skillsSh: .disabled,
+                batch: ["acme/jira-triage", "atlassian/jira-cli-skill"])
         },
         sheet("whole-repository", capable: true, boardScope: true) {
             $0.preload(

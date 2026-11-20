@@ -89,8 +89,8 @@ struct ResultPreview: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.m) {
                 failureBlock
-                if search.batchMixesRepositories {
-                    FailureBanner(UserMessage(title: AddSkillCopy.batchMixesRepositories, severity: .warning))
+                if let problem = search.batchProblem {
+                    FailureBanner(UserMessage(title: problem, severity: .warning))
                 }
                 Text(AddSkillCopy.batchHeading(search.batch.count))
                     .font(Font.Token.calloutSemibold)

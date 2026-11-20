@@ -135,7 +135,7 @@ import SkillcaskDomain
             items = search.batch.compactMap(PackageSpec.parse).map { ($0, $0.skill.map { [$0] } ?? []) }
         }
         let skills = items.flatMap(\.skills)
-        let package = items.count == 1 ? items[0].spec.base : AddSkillCopy.skillCount(items.count)
+        let package = items.count == 1 ? items[0].spec.base : AddSkillCopy.resultCount(items.count)
         let choices = search.choices
         let ticket = UUID()
         focusAfterRun = .field
@@ -143,7 +143,12 @@ import SkillcaskDomain
         let run = run.start(
             command, title: AddSkillCopy.adding(package), failure: AddSkillCopy.couldNotAdd(package),
             outcome: { _ in AddSkillCopy.added(package: package) },
-            report: { _, transcript in AddSkillCopy.added(package: package, skills: skills, transcript: transcript) },
+            // A batch prints one `added` line per package: no one version stands for all of them.
+            report: { _, transcript in
+                items.count == 1
+                    ? AddSkillCopy.added(package: package, skills: skills, transcript: transcript)
+                    : AddSkillCopy.added(package: package)
+            },
             emphasis: skills, announce: false, in: search.store, runner: runner,
             onSuccess: {
                 let start = self.added.count

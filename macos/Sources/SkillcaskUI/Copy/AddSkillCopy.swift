@@ -6,7 +6,8 @@ import SkillcaskDomain
 /// where noted; versions carry no `v` prefix (the `DesignFixtures` decision).
 ///
 /// Invented (no board draws them): `searching`, `loadingPreview`, `idleTitle`, `idleBody`, `noSelection`,
-/// `skillCount`, `batchHeading`, `batchNote`, `batchMixesRepositories`,
+/// `resultCount`, `addResults`, `batchHeading`, `batchNote`, `batchMixesRepositories`, `batchSamePackage`,
+/// `batchHasEntry`,
 /// `allSkillsAdded`, `everySkillAdded`, `selectionKept`, `oneSkillAdded`, `otherSkillsIn`, `addOne`, `showOutput`, `waitingForOutput`,
 /// `couldNotAdd`, `added(package:)`, `addedSoFar`, `status(_:count:)`, `summary(done:scope:)`, `done`,
 /// `footerPersonal`,
@@ -207,17 +208,30 @@ public enum AddSkillCopy {
             ? "Only this skill is added, not the whole package."
             : "Only this skill is added, next to \(some(others)) from the same package."
     }
-    /// Invented: several results selected (D72), in the Add button's title and the run's: `3 skills`.
-    public static func skillCount(_ count: Int) -> String {
-        count == 1 ? "1 skill" : "\(count) skills"
+    /// Invented: several results selected (D72), in the run's title: `3 results`. A result is a package or one
+    /// skill, so they are not counted as skills.
+    public static func resultCount(_ count: Int) -> String {
+        count == 1 ? "1 result" : "\(count) results"
+    }
+    /// Invented: the Add button over several selected results: `Add 3 Results`.
+    public static func addResults(_ count: Int) -> String {
+        count == 1 ? "Add 1 Result" : "Add \(count) Results"
     }
     /// Invented: the preview pane over several selected results.
     public static func batchHeading(_ count: Int) -> String {
-        "\(skillCount(count)) selected"
+        "\(resultCount(count)) selected"
     }
-    /// Invented: under the selected results: they are added in one go, each as the CLI adds a result by default.
+    /// Invented: under the selected results: they are added in one go, each as `add` takes a result by default.
     public static let batchNote =
-        "Added together, each with its default version rule. If one cannot be added, none is."
+        "Each result is added with all its skills, and with the version rule skills.toml has for it or the default one. If one cannot be added, none is."
+    /// Invented: two selected results are the same package.
+    public static func batchSamePackage(_ package: String) -> String {
+        "\(package) is selected more than once. Keep one of its results."
+    }
+    /// Invented: a selected result's package is already in skills.toml; its own preview says what Add changes.
+    public static func batchHasEntry(_ package: String) -> String {
+        "\(package) is already in skills.toml. Select it on its own to see what Add changes."
+    }
     /// Invented: the batch mixes a custom repository's results with other sources: one `--repository` applies to all.
     public static let batchMixesRepositories =
         "Results from a custom repository can only be added together with results from the same repository."

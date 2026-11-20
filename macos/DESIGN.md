@@ -175,11 +175,14 @@ Code comments cite these by number.
   output…", no board) where the first line will be.
 - **G19** No board draws several selected results. With a CLI that takes several specs (D72), the
   results list selects several (⌘- and ⇧-click); the preview pane then lists their names and
-  sources instead of one `info` (none is read), and Add (`Add 3 Skills`) runs one `add` of all of
-  them with the CLI's defaults: no rule, skills or rename to choose. Results of a custom repository
-  go together only with results of the same repository, since `--repository` applies to every spec.
-  Each spec counts as one add in the footer and the closing summary. With an older CLI the list
-  keeps one selection.
+  sources instead of one `info` (none is read), and Add (`Add 3 Results`: a result is a package or
+  one skill) runs one `add` of all of them with the CLI's defaults: no rule, skills or rename to
+  choose. What the single preview would warn about is refused instead, with a warning: results of a
+  custom repository with results of another source (`--repository` applies to every spec), two
+  results of one package, and a package skills.toml already names (its entry may be replaced),
+  unless this sheet added it from the same kind of source. Each spec counts as one add in the footer and the
+  closing summary; the run's headline names no version. With an older CLI the list keeps one
+  selection, the first newly selected row in list order.
 - The toast's shadow (`0 8pt 24pt`, black at 0.16 light / 0.5 dark) lives in `Toast.Shadow`; no
   shadow token exists yet. Cards never have a shadow.
 

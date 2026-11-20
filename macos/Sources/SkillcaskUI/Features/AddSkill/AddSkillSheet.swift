@@ -162,7 +162,7 @@ struct AddSkillSheet: View {
 
     private var addTitle: String {
         if !search.batch.isEmpty {
-            return AddSkillCopy.addButton(skills: search.batch.count)
+            return AddSkillCopy.addResults(search.batch.count)
         }
         if let clash = search.clash {
             let name = search.renameTo.trimmingCharacters(in: .whitespacesAndNewlines)

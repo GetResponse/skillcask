@@ -96,7 +96,13 @@ import SkillcaskDomain
     }
     /// Several results selected at once (D72), in the list's order: added together, each with the CLI's defaults.
     /// Empty for none or one, which is `selection`.
-    private(set) var batch: [String] = []
+    private(set) var batch: [String] = [] {
+        didSet {
+            if batch != oldValue {
+                justAdded = nil
+            }
+        }
+    }
     /// The list's selection: `batch`, or `selection` alone. Several names make a batch only where the CLI takes
     /// several specs; otherwise the newly selected one is kept.
     var selections: Set<String> {
@@ -104,7 +110,8 @@ import SkillcaskDomain
         set {
             let names = filteredResults.map(\.name).filter(newValue.contains)
             guard names.count > 1, store.capabilities.supports(.addSpecs) else {
-                let picked = newValue.subtracting(selections).first ?? newValue.first
+                // In list order, so ⇧-click and ⌘A keep the same row on every launch.
+                let picked = names.first { !selections.contains($0) } ?? names.first
                 batch = []
                 selection = picked
                 return
@@ -152,7 +159,11 @@ import SkillcaskDomain
     /// is the entry's.
     private var entryInfos: Set<String> = []
     /// Packages (lock names) an `add` of a `github:` spec exited 0 for in this sheet: GitHub entries since.
-    private var addedFromGitHub: Set<String> = []
+    private var addedFromGitHub: Set<String> {
+        Set(addedKinds.filter { $0.value == .github }.keys)
+    }
+    /// The kind of source each package (lock name) was last added from in this sheet: its entry is that kind's.
+    private var addedKinds: [String: PackageSpec.Kind] = [:]
 
     /// A store for `scope`'s sheet, with the field pre-filled (`AppStore.Sheet.addSkill(query:)`). Runs nothing
     /// until `begin()`: a view's `init` may build it more than once.
@@ -617,19 +628,41 @@ import SkillcaskDomain
             skills: skills)
     }
 
-    /// `add` of every result in `batch`, nil when one has no spec shape or they need different `--repository`
-    /// values (`batchMixesRepositories`).
+    /// `add` of every result in `batch`, nil while one is not shown (a reload would lose its `--repository`), has
+    /// no spec shape, or `batchProblem` stands.
     private var batchCommand: Invocation.Command? {
+        let shown = Set(filteredResults.map(\.name))
         let specs = batch.compactMap(PackageSpec.parse)
-        guard specs.count == batch.count, !batchMixesRepositories else { return nil }
+        guard specs.count == batch.count, batch.allSatisfy(shown.contains), batchProblem == nil else { return nil }
         return .addMany(
             specs: specs.map { $0.text(constraint: nil) }, repository: repository(for: specs[0], from: batch[0]))
     }
 
-    /// The batch holds results of a custom repository and results of another source: `--repository` would apply
-    /// to all of them (D72), so they cannot be added together.
-    var batchMixesRepositories: Bool {
-        Set(batch.map { name in PackageSpec.parse(name).flatMap { repository(for: $0, from: name) } }).count > 1
+    /// Why the batch cannot be added together; nil when it can. A batch reads no `info`, so what the single
+    /// preview warns about is refused instead:
+    /// - a custom repository's results with results of another source: `--repository` applies to every spec (D72);
+    /// - two results of one package: `add` merges or replaces them into one entry, and counts would claim two;
+    /// - a package skills.toml already names, unless this sheet added it from the same kind of source: `add` may
+    ///   replace that entry (`entryWarning`), which only its own preview can tell.
+    var batchProblem: String? {
+        let specs = batch.compactMap { name in PackageSpec.parse(name).map { (name, $0) } }
+        if Set(specs.map { repository(for: $0.1, from: $0.0) }).count > 1 {
+            return AddSkillCopy.batchMixesRepositories
+        }
+        var seen: Set<String> = []
+        for (_, spec) in specs where !seen.insert(spec.package).inserted {
+            return AddSkillCopy.batchSamePackage(spec.package)
+        }
+        let named = Set(
+            store.snapshot?.entries
+                .compactMap { entry -> String? in
+                    if case .package(let package) = entry.kind { package.lowercased() } else { nil }
+                } ?? [])
+        for (_, spec) in specs
+        where named.contains(spec.package) && addedKinds[spec.package] != spec.kind {
+            return AddSkillCopy.batchHasEntry(spec.package)
+        }
+        return nil
     }
 
     /// The choices as they stand.
@@ -655,9 +688,7 @@ import SkillcaskDomain
         justAdded = choices
         for name in choices.batch + (choices.selection.map { [$0] } ?? []) {
             let package = PackageSpec.packageName(of: name)
-            if PackageSpec.parse(name)?.kind == .github {
-                addedFromGitHub.insert(package)
-            }
+            addedKinds[package] = PackageSpec.parse(name)?.kind
             staleInfos.formUnion(infos.keys.filter { PackageSpec.packageName(of: $0) == package })
         }
     }
@@ -819,7 +850,8 @@ import SkillcaskDomain
     private func clearHiddenSelection() {
         guard case .loaded = results else { return }
         let shown = Set(filteredResults.map(\.name))
-        if !batch.allSatisfy(shown.contains) {
+        if !batch.isEmpty {
+            // Also after a reload that kept every row: the batch follows the list's new order.
             selections = Set(batch).intersection(shown)
         } else if let selection, !shown.contains(selection) {
             self.selection = nil
