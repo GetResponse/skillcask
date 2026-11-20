@@ -41,7 +41,7 @@ agent reads `.agents/skills` or `~/.agents/skills` and gets no link.
 |---|---|---|---|
 | `claude` | `.claude/skills` | `.claude/skills` | code.claude.com/docs/en/skills; `.agents` support is an open request (anthropics/claude-code#31005) |
 | `kiro` | `.kiro/skills` | `.kiro/skills` | kiro.dev/docs/skills; no `.agents` support documented |
-| `junie` | store | `.junie/skills` | junie.jetbrains.com/docs/agent-skills.html lists `.agents/skills` for projects only |
+| `junie` | store | store | junie.jetbrains.com/docs/agent-skills.html lists `.agents/skills` in the project and in home since 2026-11 (D73) |
 | `codex` | store | store | learn.chatgpt.com/docs/build-skills |
 | `copilot` | store | store | docs.github.com (Copilot CLI, coding agent), code.visualstudio.com (VS Code) |
 | `cursor` | store | store | cursor.com/docs/context/skills |

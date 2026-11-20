@@ -152,7 +152,7 @@ fn status_targets_pair_each_agent_with_its_directory() {
     assert_eq!(t["dirs"], json!([".claude/skills", "tools/skills"]));
     assert_eq!(t["local"], json!("my-skills"));
     // Every distinct entry once: a preset whose directory a path already named keeps it, and an
-    // agent reading the store (codex, junie in a project) has none.
+    // agent reading the store (codex, junie) has none.
     assert_eq!(
         t["agents"],
         json!([
@@ -170,5 +170,5 @@ fn status_targets_pair_each_agent_with_its_directory() {
     std::fs::write(&config, text).unwrap();
     let t = &serde_json::from_str::<Value>(&p.global(&["status", "--json"], 0)).unwrap()["targets"];
     assert_eq!(t["local"], json!(null), "[agents] local does not apply globally");
-    assert_eq!(t["agents"], json!([{ "entry": "junie", "dir": ".junie/skills" }]));
+    assert_eq!(t["agents"], json!([{ "entry": "junie", "dir": null }]));
 }

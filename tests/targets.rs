@@ -59,9 +59,15 @@ fn presets_resolve_per_scope_and_unknown_names_fail() {
     p.global_manifest(&s, "");
     let cfg = p.home().join(".config/skillcask/skills.toml");
     let text = std::fs::read_to_string(&cfg).unwrap();
-    std::fs::write(&cfg, text.replace("targets = [\".claude/skills\", \".junie/skills\"]", "targets = [\"junie\"]")).unwrap();
+    std::fs::write(&cfg, text.replace("targets = [\".claude/skills\", \".junie/skills\"]", "targets = [\"./.junie/skills\"]")).unwrap();
     p.global(&["add", "acme/one"], 0);
-    assert!(p.home().join(".junie/skills/one/SKILL.md").is_file(), "Junie reads only ~/.junie/skills in home");
+    assert!(p.home().join(".junie/skills/one/SKILL.md").is_file());
+    // Before D73 the `junie` preset linked ~/.junie/skills; switching to it now drops those links.
+    let text = std::fs::read_to_string(&cfg).unwrap();
+    std::fs::write(&cfg, text.replace("targets = [\"./.junie/skills\"]", "targets = [\"junie\"]")).unwrap();
+    p.global(&["install"], 0);
+    assert!(!p.home().join(".junie/skills/one").exists(), "Junie reads ~/.agents/skills");
+    assert!(p.home().join(".agents/skills/one/SKILL.md").is_file());
     assert!(!p.home().join(".claude").exists());
 
     config(&p, "[agents]\ntargets = [\"cusor\"]\n");

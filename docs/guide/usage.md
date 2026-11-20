@@ -68,8 +68,7 @@ Junie, Devin/Windsurf, Roo Code, Cline, Goose, Factory, Mistral Vibe), so they n
 |---|---|---|
 | `claude` | `.claude/skills` | `~/.claude/skills` |
 | `kiro` | `.kiro/skills` | `~/.kiro/skills` |
-| `junie` | store | `~/.junie/skills` |
-| `codex`, `copilot`, `cursor`, `gemini`, `opencode`, `amp`, `devin`, `roo`, `cline`, `goose`, `factory`, `vibe` | store | store |
+| `codex`, `junie`, `copilot`, `cursor`, `gemini`, `opencode`, `amp`, `devin`, `roo`, `cline`, `goose`, `factory`, `vibe` | store | store |
 
 Set the list once in `config.toml` next to the global manifest; a `skills.toml` that sets
 `targets` replaces it. Manifests from before 0.6.0 carry an explicit list: delete the line to
