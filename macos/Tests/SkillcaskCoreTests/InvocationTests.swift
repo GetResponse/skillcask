@@ -94,10 +94,10 @@ import Testing
         #expect(try argv(.update(packages: ["a/b"]), capabilities: all) == ["update", "--", "a/b"])
         #expect(try argv(.remove(packages: ["a/b"]), capabilities: all) == ["remove", "--", "a/b"])
         let add = Invocation.Command.add(
-            spec: "a/b", repository: nil, adopt: false, rename: ["x": "y", "a": "b"], skills: ["s1", "s2"])
+            spec: "github:o/r@^1", repository: nil, adopt: false, rename: ["x": "y", "a": "b"], skills: ["s1", "s2"])
         #expect(
             try argv(add, capabilities: all) == [
-                "add", "--rename", "a=b", "--rename", "x=y", "--skill", "s1", "--skill", "s2", "--", "a/b",
+                "add", "--rename", "a=b", "--rename", "x=y", "--", "github:o/r/s1@^1", "github:o/r/s2@^1",
             ])
         #expect(try !Invocation(.initialize, in: project, capabilities: all).expectsDocument)
     }
@@ -107,9 +107,14 @@ import Testing
         #expect(throws: CLIError.unsupported(feature: "add --rename")) {
             try Invocation(rename, in: project, capabilities: caps)
         }
-        let skill = Invocation.Command.add(spec: "a/b", repository: nil, adopt: false, rename: [:], skills: ["s"])
-        #expect(throws: CLIError.unsupported(feature: "add --skill")) {
+        let skill = Invocation.Command.add(
+            spec: "github:o/r", repository: nil, adopt: false, rename: [:], skills: ["s"])
+        #expect(throws: CLIError.unsupported(feature: "add with several specs")) {
             try Invocation(skill, in: project, capabilities: caps)
+        }
+        for spec in ["a/b", "github:o/r/s", "github:o/r/", "github:o//r"] {
+            let notRepo = Invocation.Command.add(spec: spec, repository: nil, adopt: false, rename: [:], skills: ["s"])
+            #expect(throws: CLIError.self) { try Invocation(notRepo, in: project, capabilities: all) }
         }
     }
 

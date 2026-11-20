@@ -153,11 +153,16 @@ import Testing
 
     /// Every other feature is planned: no release turns one on until `shipped` names it.
     @Test func aNewerReleaseHasNoPlannedFeature() {
-        #expect(Capabilities(version: Version(1, 0, 0)).features == [.selfCheck])
+        #expect(Capabilities(version: Version(1, 0, 0)).features == [.selfCheck, .addSpecs])
+        #expect(!Capabilities(version: Version(0, 14, 0)).supports(.addSpecs))
+        #expect(Capabilities(version: Version(0, 15, 0)).supports(.addSpecs))
+        #expect(
+            !Capabilities(version: Version(0, 15, 0, prerelease: "rc.1")).supports(.addSpecs),
+            "an rc of 0.15.0 may predate several specs")
     }
 
     @Test func explicitFeatureSet() {
-        let caps = Capabilities(version: Version(0, 10, 0), features: [.addSkill])
-        #expect(caps.supports(.addSkill) && !caps.supports(.addRename))
+        let caps = Capabilities(version: Version(0, 10, 0), features: [.addSpecs])
+        #expect(caps.supports(.addSpecs) && !caps.supports(.addRename))
     }
 }

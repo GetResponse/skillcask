@@ -109,7 +109,7 @@ import SkillcaskDomain
     var rule: VersionRule?
     /// The Branch rule's branch name.
     var branch = ""
-    /// Provided skills unticked in the preview; only honoured where the CLI has `add --skill`.
+    /// Provided skills unticked in the preview; only honoured where they can be chosen (`canChooseSkills`).
     var excludedSkills: Set<String> = []
     /// The name typed into the rename field; prefilled with the clash's suggestion.
     var renameTo = ""
@@ -390,9 +390,11 @@ import SkillcaskDomain
 
     // MARK: - Provided skills and rename
 
-    /// `add --skill`: the provided skills can be chosen. Without it (0.9.4) every provided skill is added.
+    /// The provided skills can be chosen: a GitHub repository with a CLI that takes several specs (D72), one per
+    /// chosen skill, not yet locked. A locked package's `info` lists the lock's skills only, so its boxes could
+    /// neither show the repository's other skills nor remove one: `skillsNote` says the entry's skills are kept.
     var canChooseSkills: Bool {
-        store.capabilities.supports(.addSkill)
+        store.capabilities.supports(.addSpecs) && selectedSpec?.kind == .github && info?.locked != true
     }
 
     /// `add --rename`: a clashing skill can be installed under another name. Without it (0.9.4) the clash is the
@@ -417,11 +419,21 @@ import SkillcaskDomain
         return named
     }
 
+    /// The source of the whole repository of a `github:owner/repo/skill` selection, typed into the field to list
+    /// and add its other skills (D72); nil for any other selection, and once the package is locked, when `info`
+    /// would list only the skills already installed.
+    var wholeRepository: String? {
+        guard let spec = selectedSpec, spec.kind == .github, spec.skill != nil, info?.locked != true else {
+            return nil
+        }
+        return spec.infoTarget
+    }
+
     /// The line under the provided skills, which says what Add does where they cannot be chosen.
     /// - A `github:…/skill` spec adds its one skill. Next to the package's skills already in the scope only where
     ///   `add` merges it into their entry (`joinsEntry`); when the skill is there itself, nothing is added and the
     ///   entry is resolved again.
-    /// - Without `add --skill` a package is added whole; once it has an entry, `add` keeps that entry's skills
+    /// - Where skills cannot be chosen a package is added whole; once it has an entry, `add` keeps that entry's skills
     ///   (`src/commands.rs` `add`, `add_vcs`), which are the ones a locked package's `info` lists.
     /// - An entry `add` replaces (`replacedSource`) keeps nothing: `entryWarning` says so.
     var skillsNote: String? {
@@ -434,7 +446,10 @@ import SkillcaskDomain
         if canChooseSkills || replacedSource != nil {
             return nil
         }
-        return existingConstraint != nil ? AddSkillCopy.selectionKept : AddSkillCopy.allSkillsAdded
+        if existingConstraint != nil {
+            return AddSkillCopy.selectionKept
+        }
+        return store.capabilities.supports(.addSpecs) ? AddSkillCopy.everySkillAdded : AddSkillCopy.allSkillsAdded
     }
 
     // MARK: - The package's entry
@@ -564,7 +579,10 @@ import SkillcaskDomain
         if canChooseSkills, spec.skill == nil, !all.isEmpty, chosen.isEmpty {
             return nil
         }
-        let skills = canChooseSkills && spec.skill == nil && chosen.count < all.count ? chosen : []
+        // Every skill ticked is the bare `github:owner/repo` only while the package has no entry: for a bare spec
+        // `add` keeps the entry's own selection (`add_vcs`), so a skill ticked after a partial add would be dropped.
+        let narrows = chosen.count < all.count || hasEntry || addedFromGitHub.contains(spec.package)
+        let skills = canChooseSkills && spec.skill == nil && narrows ? chosen : []
         var rename: [String: String] = [:]
         if let clash {
             let name = renameTo.trimmingCharacters(in: .whitespacesAndNewlines)

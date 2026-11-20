@@ -6,7 +6,7 @@ import SkillcaskDomain
 /// where noted; versions carry no `v` prefix (the `DesignFixtures` decision).
 ///
 /// Invented (no board draws them): `searching`, `loadingPreview`, `idleTitle`, `idleBody`, `noSelection`,
-/// `allSkillsAdded`, `selectionKept`, `oneSkillAdded`, `otherSkillsIn`, `addOne`, `showOutput`, `waitingForOutput`,
+/// `allSkillsAdded`, `everySkillAdded`, `selectionKept`, `oneSkillAdded`, `otherSkillsIn`, `addOne`, `showOutput`, `waitingForOutput`,
 /// `couldNotAdd`, `added(package:)`, `addedSoFar`, `status(_:count:)`, `summary(done:scope:)`, `done`,
 /// `footerPersonal`,
 /// `willInstall`, `noResultsBody` for skills.sh on or undecided, the rule label `upToNextMinor`, `branchLabel`,
@@ -188,9 +188,12 @@ public enum AddSkillCopy {
         "Skills in this package · \(selected) selected"
     }
 
-    /// Invented: under the provided skills where the CLI has no `add --skill` and the package has no entry yet:
-    /// they cannot be unticked.
+    /// Invented: under the provided skills where the CLI takes one spec only (before 0.15.0) and the package has
+    /// no entry yet: they cannot be unticked.
     public static let allSkillsAdded = "This version of skillcask adds every skill in the package."
+    /// Invented: the same place for a registry or git package with a newer CLI, where only a GitHub repository's
+    /// skills can be chosen: upgrading would not help.
+    public static let everySkillAdded = "Every skill in the package is added."
     /// Invented: the same place once the package has an entry, and under a skill that is already in the scope:
     /// `add` keeps the skills that entry has, all of them or the ones it selects.
     public static let selectionKept = "Adding it again keeps this package’s current skills."
@@ -202,6 +205,10 @@ public enum AddSkillCopy {
         others.isEmpty
             ? "Only this skill is added, not the whole package."
             : "Only this skill is added, next to \(some(others)) from the same package."
+    }
+    /// Invented: the link under one skill of a GitHub result to the repository's other skills (D72).
+    public static func allSkillsOf(_ package: String) -> String {
+        "Show all skills of \(package)"
     }
     public static let versionRule = "Version rule"
     /// The rule button's label: `Up to next major`; `^0.y` reads `Up to next minor`; without a version (Adopt) the

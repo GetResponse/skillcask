@@ -7,7 +7,8 @@ import SwiftUI
 /// version rule and the agents it will be linked into. The failure of the preview or of the last Add sits on top
 /// (AddSkill-States failures), with the action the CLI's hint suggests.
 ///
-/// Gated on the CLI (`Capabilities`): the provided skills are checkboxes only with `add --skill`, read-only and all
+/// Gated on the CLI (`Capabilities`): the provided skills are checkboxes only for an unlocked GitHub repository with
+/// a CLI that takes several specs (`SearchStore.canChooseSkills`), read-only and all
 /// ticked otherwise, with a line that says what Add does (`SearchStore.skillsNote`); a result that names one skill
 /// lists that skill, read-only. The name-clash rename field shows only with `add --rename` (on 0.9.4 the clash is
 /// the CLI's error and hint after Add).
@@ -189,6 +190,11 @@ struct ResultPreview: View {
                 Text(note)
                     .font(Font.Token.caption)
                     .foregroundStyle(Color.textSecondary)
+            }
+            if let repository = search.wholeRepository, let package = search.selectedSpec?.package {
+                Button(AddSkillCopy.allSkillsOf(package)) { search.query = repository }
+                    .buttonStyle(.link)
+                    .font(Font.Token.caption)
             }
         }
     }
