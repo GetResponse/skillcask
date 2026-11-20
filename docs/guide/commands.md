@@ -8,6 +8,7 @@ Every command except `publish`, `validate`, `projects`, `auth`, `app` and plugin
 | `add <vendor/name>[@constraint] [--repository r]` | Resolve, lock and install. |
 | `add github:<owner/repo>[/skill][@version-or-ref]` | The same from a GitHub repository, [see Sources](sources.md#skills-from-github-and-skillssh). |
 | `add git:<https-url>[@version-or-ref]` | The same from any git repository over HTTPS, [see Sources](sources.md#skills-from-any-git-repository). |
+| `add <spec> <spec>…` | Several of the above at once: one lock and one install, and nothing is written when one fails. Skills of one GitHub repository merge into its entry. |
 | `remove <vendor/name>…` | Drop from manifest and lock; delete files, links and gitignore lines. |
 | `install [--frozen]` | Install the lock. `--frozen` (implied by `CI`) fails when the lock is out of date. |
 | `update [vendor/name…] [--diff]` | Re-resolve within constraints. `--diff` prints what changes in each updated or added package; it does not ask before installing. |

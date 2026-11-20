@@ -587,6 +587,42 @@ fn with_github(mut p: Project, s: &Server) -> Project {
     p
 }
 
+// D72: several specs in one `add`, written together or not at all.
+#[test]
+fn add_takes_several_specs_at_once() {
+    let s = Server::start();
+    let sha = "a".repeat(40);
+    let skills = [("one", skill_md("one")), ("two", skill_md("two")), ("three", skill_md("three"))];
+    let files: Vec<(String, &str)> = skills.iter().map(|(n, md)| (format!("skills/{n}/SKILL.md"), md.as_str())).collect();
+    s.put("/repos/acme/tools/tags", "[]");
+    s.put("/repos/acme/tools/commits/HEAD", gh_commit(&sha, 240).to_string());
+    s.put(&format!("/repos/acme/tools/zipball/{sha}"), zipball(&files.iter().map(|(p, c)| (p.as_str(), *c)).collect::<Vec<_>>()));
+    let p = with_github(Project::new(&s), &s);
+    p.manifest(&s, "");
+    let before = p.read("skills.toml");
+
+    let out = p.expect(&["add", "github:acme/tools/one", "github:acme/tools/nope"], 1);
+    assert!(out.contains(r#"no skill "nope""#), "{out}");
+    assert_eq!(p.read("skills.toml"), before);
+    assert!(!p.exists("skills.lock") || !p.read("skills.lock").contains("acme/tools"));
+    assert!(!p.exists(".agents/skills/one"));
+
+    let out = p.ok(&["add", "github:acme/tools/one", "github:acme/tools/two"]);
+    assert_eq!(out.matches("added").count(), 1, "one entry for one repository: {out}");
+    assert!(p.read("skills.toml").contains(r#"skills = ["one", "two"]"#), "{}", p.read("skills.toml"));
+    assert!(p.exists(".agents/skills/one/SKILL.md") && p.exists(".agents/skills/two/SKILL.md"));
+    assert!(!p.exists(".agents/skills/three"));
+
+    s.put("/repos/acme/more/tags", "[]");
+    s.put("/repos/acme/more/commits/HEAD", gh_commit(&sha, 240).to_string());
+    s.put(&format!("/repos/acme/more/zipball/{sha}"), zipball(&[("skills/four/SKILL.md", &skill_md("four"))]));
+    let out = p.ok(&["add", "github:acme/tools/three", "github:acme/more"]);
+    assert_eq!(out.matches("added").count(), 2, "{out}");
+    assert!(p.read("skills.toml").contains(r#"skills = ["one", "two", "three"]"#) && p.read("skills.toml").contains(r#""acme/more""#));
+    assert!(p.exists(".agents/skills/three/SKILL.md") && p.exists(".agents/skills/four/SKILL.md"));
+    p.ok(&["status"]);
+}
+
 #[test]
 fn github_branch_respects_cooldown_and_selects_skills() {
     let s = Server::start();
