@@ -21,7 +21,7 @@ import Testing
     static let markdown = Added(package: "kolya/jira-to-md", skill: "jira-to-md", version: "0.9.0")
     static let german = Added(
         package: "netresearch/german-technical-writing-skill", skill: "german-writing", version: "1.0.0")
-    static let capable = Capabilities(version: Capabilities.minimum, features: [.addSkill, .addRename])
+    static let capable = Capabilities(version: Capabilities.minimum, features: [.addSpecs, .addRename])
 
     @MainActor final class Counter {
         var count = 0

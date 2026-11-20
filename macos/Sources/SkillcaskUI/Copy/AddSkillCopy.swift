@@ -203,6 +203,10 @@ public enum AddSkillCopy {
             ? "Only this skill is added, not the whole package."
             : "Only this skill is added, next to \(some(others)) from the same package."
     }
+    /// Invented: the link under one skill of a GitHub result to the repository's other skills (D72).
+    public static func allSkillsOf(_ package: String) -> String {
+        "Show all skills of \(package)"
+    }
     public static let versionRule = "Version rule"
     /// The rule button's label: `Up to next major`; `^0.y` reads `Up to next minor`; without a version (Adopt) the
     /// CLI's default names no span.

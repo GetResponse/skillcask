@@ -390,9 +390,10 @@ import SkillcaskDomain
 
     // MARK: - Provided skills and rename
 
-    /// `add --skill`: the provided skills can be chosen. Without it (0.9.4) every provided skill is added.
+    /// The provided skills can be chosen: a GitHub repository with a CLI that takes several specs (D72), one per
+    /// chosen skill. Otherwise every provided skill is added.
     var canChooseSkills: Bool {
-        store.capabilities.supports(.addSkill)
+        store.capabilities.supports(.addSpecs) && selectedSpec?.kind == .github
     }
 
     /// `add --rename`: a clashing skill can be installed under another name. Without it (0.9.4) the clash is the
@@ -415,6 +416,13 @@ import SkillcaskDomain
             return [InfoDocument.Skill(name: skill)]
         }
         return named
+    }
+
+    /// The source of the whole repository of a `github:owner/repo/skill` selection, typed into the field to list
+    /// and add its other skills (D72); nil for any other selection.
+    var wholeRepository: String? {
+        guard let spec = selectedSpec, spec.kind == .github, spec.skill != nil else { return nil }
+        return spec.infoTarget
     }
 
     /// The line under the provided skills, which says what Add does where they cannot be chosen.

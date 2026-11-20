@@ -14,7 +14,7 @@ import Testing
     let scope = Scope.project(URL(fileURLWithPath: "/tmp/add-tests"))
     static let jira = "netresearch/agent-jira-skill"
     static let searchJira = Invocation.Command.search(query: "jira", skillsSh: nil, remember: false)
-    static let capable = Capabilities(version: Capabilities.minimum, features: [.addSkill, .addRename])
+    static let capable = Capabilities(version: Capabilities.minimum, features: [.addSpecs, .addRename])
 
     /// A store over the api board's snapshot (its lock, policy and repositories) in the test scope.
     func store(capabilities: Capabilities = Capabilities(version: Capabilities.minimum)) -> ScopeStore {
@@ -222,25 +222,42 @@ import Testing
             command == .add(spec: AddSkillSamples.kolyaPackage, repository: nil, adopt: false, rename: [:], skills: []))
         let argv = try Invocation(command, in: scope, capabilities: search.store.capabilities).argv
         #expect(!argv.contains("--skill") && !argv.contains("--rename") && !argv.contains("--adopt"))
-        #expect(throws: CLIError.unsupported(feature: "add --skill")) {
+        #expect(throws: CLIError.unsupported(feature: "add with several specs")) {
             try Invocation(
                 .add(spec: "a/b", repository: nil, adopt: false, rename: [:], skills: ["x"]), in: scope,
                 capabilities: Capabilities(version: Capabilities.minimum))
         }
     }
 
-    @Test func withAddSkillTheUntickedSkillsAreLeftOut() throws {
+    // D72: a GitHub repository's ticked skills go as one `github:owner/repo/skill` spec each; a registry package
+    // has no spec per skill, so it is added whole.
+    @Test func withSeveralSpecsTheUntickedSkillsOfAGitHubRepositoryAreLeftOut() throws {
+        let registry = search(capabilities: Self.capable)
+        registry.preload(query: Self.jira, selection: Self.jira, info: AddSkillSamples.jiraInfo)
+        #expect(!registry.canChooseSkills)
+
+        let github = AddSkillSamples.githubJira
         let search = search(capabilities: Self.capable)
-        search.preload(query: Self.jira, selection: Self.jira, info: AddSkillSamples.jiraInfo)
+        search.preload(query: github, selection: github, info: AddSkillSamples.jiraInfo)
+        #expect(search.canChooseSkills)
         #expect(
-            try #require(search.command)
-                == .add(spec: Self.jira, repository: nil, adopt: false, rename: [:], skills: []))
+            try #require(search.command) == .add(spec: github, repository: nil, adopt: false, rename: [:], skills: []))
         search.excludedSkills = ["jira-communication"]
         let command = try #require(search.command)
-        #expect(command == .add(spec: Self.jira, repository: nil, adopt: false, rename: [:], skills: ["jira-syntax"]))
-        #expect(try Invocation(command, in: scope, capabilities: Self.capable).argv.contains("--skill"))
+        #expect(command == .add(spec: github, repository: nil, adopt: false, rename: [:], skills: ["jira-syntax"]))
+        let argv = try Invocation(command, in: scope, capabilities: Self.capable).argv
+        #expect(argv.suffix(2) == ["--", "\(github)/jira-syntax"] && !argv.contains("--skill"))
         search.excludedSkills = ["jira-syntax", "jira-communication"]
         #expect(search.command == nil, "nothing to add")
+    }
+
+    @Test func aGitHubSkillResultLeadsToItsWholeRepository() {
+        let search = search(capabilities: Self.capable)
+        search.preload(
+            query: "pdf", selection: "github:anthropics/skills/pdf@^1", info: AddSkillSamples.jiraInfo)
+        #expect(search.wholeRepository == "github:anthropics/skills@^1")
+        search.preload(query: Self.jira, selection: Self.jira, info: AddSkillSamples.jiraInfo)
+        #expect(search.wholeRepository == nil)
     }
 
     @Test func withAddRenameAClashIsPrefilledVendorDashName() throws {

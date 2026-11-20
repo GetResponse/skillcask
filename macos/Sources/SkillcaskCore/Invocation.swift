@@ -150,6 +150,12 @@ public struct Invocation: Hashable, Sendable {
         }
     }
 
+    /// `github:owner/repo[@pin]` with `skill` → `github:owner/repo/skill[@pin]`.
+    static func skillSpec(_ spec: String, _ skill: String) -> String {
+        guard let at = spec.firstIndex(of: "@") else { return "\(spec)/\(skill)" }
+        return "\(spec[..<at])/\(skill)\(spec[at...])"
+    }
+
     public var argv: [String] {
         var args: [String] = []
         if scope.isPersonal && acceptsGlobal {
@@ -232,10 +238,7 @@ public struct Invocation: Hashable, Sendable {
             for (old, new) in rename.sorted(by: { $0.key < $1.key }) {
                 flags += ["--rename", "\(old)=\(new)"]
             }
-            for skill in skills {
-                flags += ["--skill", skill]
-            }
-            return ["add"] + flags + json + ["--", spec]
+            return ["add"] + flags + json + ["--"] + (skills.isEmpty ? [spec] : skills.map { Self.skillSpec(spec, $0) })
         case .remove(let packages):
             return ["remove"] + json + ["--"] + packages
         case .authSet(let host, let username):
@@ -277,8 +280,10 @@ public struct Invocation: Hashable, Sendable {
                 try require(rename.allSatisfy { !$0.key.isEmpty && !$0.value.isEmpty }, "add --rename needs old=new")
             }
             if !skills.isEmpty {
-                try feature(.addSkill, capabilities, "add --skill")
-                try require(skills.allSatisfy { !$0.isEmpty }, "add --skill needs a skill name")
+                try feature(.addSpecs, capabilities, "add with several specs")
+                let repo = spec.hasPrefix("github:") ? spec.dropFirst(7).split(separator: "@", maxSplits: 1).first : nil
+                try require(repo?.split(separator: "/").count == 2, "chosen skills need a github:owner/repo spec")
+                try require(skills.allSatisfy { !$0.isEmpty }, "add needs a skill name")
             }
         case .remove(let packages):
             try require(!packages.isEmpty && packages.allSatisfy { !$0.isEmpty }, "remove needs at least one package")

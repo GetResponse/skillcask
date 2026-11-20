@@ -9,8 +9,9 @@ public struct Capabilities: Hashable, Sendable {
         case auditNotManaged
         /// `add --rename old=new`.
         case addRename
-        /// `add --skill name` (repeatable).
-        case addSkill
+        /// `add` takes several specs and writes them together (D72): the chosen skills of a GitHub repository go as
+        /// one `github:owner/repo/skill` spec each.
+        case addSpecs
         /// `self-check --json` (D51). Gated, not just tried: 0.9.0–0.10.1 take an unknown command for a plugin and
         /// run `skillcask-<name>` from `PATH` (`src/main.rs` `plugin`), so asking them would start whatever
         /// `skillcask-self-check` lies there. `SelfCheckGate` also lets the bundled CLI through.
@@ -24,7 +25,7 @@ public struct Capabilities: Hashable, Sendable {
 
     /// The release that shipped each feature beyond `minimum`. A feature that is only planned has no entry, so it
     /// stays off.
-    static let shipped: [Feature: Version] = [.selfCheck: Version(0, 10, 2)]
+    static let shipped: [Feature: Version] = [.selfCheck: Version(0, 10, 2), .addSpecs: Version(0, 15, 0)]
 
     public let version: Version
     public let features: Set<Feature>

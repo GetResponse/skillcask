@@ -190,6 +190,11 @@ struct ResultPreview: View {
                     .font(Font.Token.caption)
                     .foregroundStyle(Color.textSecondary)
             }
+            if let repository = search.wholeRepository, let package = search.selectedSpec?.package {
+                Button(AddSkillCopy.allSkillsOf(package)) { search.query = repository }
+                    .buttonStyle(.link)
+                    .font(Font.Token.caption)
+            }
         }
     }
 

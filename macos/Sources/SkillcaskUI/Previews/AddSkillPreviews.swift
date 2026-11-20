@@ -321,7 +321,7 @@ private struct AddSkillSample: View {
         let version = Capabilities.minimum
         let capabilities =
             capable
-            ? Capabilities(version: version, features: [.addSkill, .addRename]) : Capabilities(version: version)
+            ? Capabilities(version: version, features: [.addSpecs, .addRename]) : Capabilities(version: version)
         let store = ScopeStore(
             scope: scope, client: FixtureCLIClient(), capabilities: capabilities, textReader: Boot.fixtureText)
         store.preload(snapshot: snapshot)
