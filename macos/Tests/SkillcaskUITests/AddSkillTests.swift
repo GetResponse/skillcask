@@ -322,6 +322,82 @@ import Testing
         #expect(old.skillsNote == AddSkillCopy.allSkillsAdded)
     }
 
+    // D72: several selected results are one `add`, in the list's order, each spec as the CLI's default takes it.
+    // D72: several selected results are one `add`, in the list's order (by installs, not by name), each spec as
+    // the CLI's default takes it.
+    @Test func severalSelectedResultsAreAddedTogether() throws {
+        let search = search(capabilities: Self.capable)
+        search.preload(query: "jira", results: .loaded(DesignFixtures.jiraSearch), skillsSh: .disabled)
+        search.selections = ["netresearch/jira-skill", "github:ankit/jira-helper", "kolya/jira-to-md"]
+        let order = ["kolya/jira-to-md", "github:ankit/jira-helper", "netresearch/jira-skill"]
+        #expect(search.batch == order && search.selection == nil)
+        #expect(search.preview == .none && search.batchProblem == nil)
+        let command = try #require(search.command)
+        #expect(command == .addMany(specs: order, repository: nil))
+        let invocation = try Invocation(command, in: scope, capabilities: Self.capable)
+        #expect(invocation.argv == ["add", "--"] + order)
+        #expect(invocation.isMutation && invocation.needsNetwork && !invocation.expectsDocument)
+
+        search.selections = ["kolya/jira-to-md"]
+        #expect(search.batch.isEmpty && search.selection == "kolya/jira-to-md", "one is a selection again")
+    }
+
+    @Test func aNewQueryClearsTheBatch() {
+        let search = search(capabilities: Self.capable)
+        search.preload(query: "jira", results: .loaded(DesignFixtures.jiraSearch), skillsSh: .disabled)
+        search.selections = ["kolya/jira-to-md", "netresearch/jira-skill"]
+        search.query = "pdf"
+        #expect(search.batch.isEmpty && search.selection == nil)
+    }
+
+    @Test func aBatchTakesOneRepositoryForAll() throws {
+        let search = search(capabilities: Self.capable)
+        search.preload(query: "jira", results: .loaded(DesignFixtures.jiraSearch), skillsSh: .disabled)
+        search.selections = ["acme/jira-triage", "atlassian/jira-cli-skill"]
+        #expect(search.batchProblem == AddSkillCopy.batchMixesRepositories, "--repository acme would apply to both")
+        #expect(search.command == nil)
+        search.sourceFilter = "acme"
+        #expect(search.batch.isEmpty && search.selection == "acme/jira-triage", "the filter hides the other one")
+
+        let acme = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"{"results":[{"name":"acme/a","source":"acme"},{"name":"acme/b","source":"acme"}]}"#)
+        search.preload(query: "acme", results: .loaded(acme), skillsSh: .disabled)
+        search.selections = ["acme/a", "acme/b"]
+        #expect(try #require(search.command) == .addMany(specs: ["acme/a", "acme/b"], repository: "acme"))
+    }
+
+    // Review of #91: a batch reads no `info`, so what the single preview warns about is refused.
+    @Test func aBatchRefusesWhatOnlyAPreviewCouldExplain() {
+        let search = search(capabilities: Self.capable)
+        let twice = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"vendor/tool","source":"packagist"},{"name":"github:vendor/tool/s","source":"github"},
+                {"name":"kolya/jira-to-md","source":"packagist"},{"name":"github:netresearch/agent-jira-skill/jira-syntax","source":"github"}]}
+                """#)
+        search.preload(query: "tool", results: .loaded(twice), skillsSh: .disabled)
+        search.selections = ["vendor/tool", "github:vendor/tool/s"]
+        #expect(search.batchProblem == AddSkillCopy.batchSamePackage("vendor/tool") && search.command == nil)
+        search.selections = ["kolya/jira-to-md", "github:netresearch/agent-jira-skill/jira-syntax"]
+        #expect(
+            search.batchProblem == AddSkillCopy.batchHasEntry("netresearch/agent-jira-skill"),
+            "skills.toml has it, maybe from Packagist: add would replace that entry")
+        #expect(search.command == nil)
+    }
+
+    // Review of #91: ⇧-click and ⌘A with an older CLI kept an arbitrary row of the set.
+    @Test func withoutSeveralSpecsTheListKeepsOneSelection() {
+        let search = search()
+        search.preload(
+            query: "jira", results: .loaded(DesignFixtures.jiraSearch), skillsSh: .disabled,
+            selection: "atlassian/jira-cli-skill")
+        search.selections = ["atlassian/jira-cli-skill", "kolya/jira-to-md"]
+        #expect(search.batch.isEmpty && search.selection == "kolya/jira-to-md", "the newly clicked row wins")
+        search.selections = Set(search.filteredResults.map(\.name))
+        #expect(search.selection == "netresearch/agent-jira-skill", "the first new row in list order")
+    }
+
     @Test func withAddRenameAClashIsPrefilledVendorDashName() throws {
         let search = search(capabilities: Self.capable)
         search.preload(

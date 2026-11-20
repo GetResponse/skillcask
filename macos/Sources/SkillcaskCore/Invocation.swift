@@ -39,6 +39,9 @@ public struct Invocation: Hashable, Sendable {
         case install(frozen: Bool)
         case update(packages: [String])
         case add(spec: String, repository: String?, adopt: Bool, rename: [String: String], skills: [String])
+        /// `add [--repository <name>] -- <spec>…` (D72, `Capabilities.Feature.addSpecs`): several specs written
+        /// together or not at all; `--repository` applies to every one.
+        case addMany(specs: [String], repository: String?)
         case remove(packages: [String])
         /// `auth set <host>`: the token goes to stdin, never into argv. Like `auth remove`, the CLI refuses `-g`
         /// ("--global does not apply"), so the scope only sets the working directory.
@@ -104,7 +107,7 @@ public struct Invocation: Hashable, Sendable {
     /// Changes skills.toml, skills.lock, the store or the links: serialised per scope by `MutationQueue`.
     public var isMutation: Bool {
         switch command {
-        case .initialize, .install, .update, .add, .remove, .doctor(fix: true): true
+        case .initialize, .install, .update, .add, .addMany, .remove, .doctor(fix: true): true
         default: false
         }
     }
@@ -136,7 +139,7 @@ public struct Invocation: Hashable, Sendable {
     /// May talk to a registry or GitHub; shown with a network affordance and a Retry on exit 3.
     public var needsNetwork: Bool {
         switch command {
-        case .outdated, .search, .diff, .diffTo, .info(.package), .install, .update, .add, .selfCheck: true
+        case .outdated, .search, .diff, .diffTo, .info(.package), .install, .update, .add, .addMany, .selfCheck: true
         default: false
         }
     }
@@ -146,7 +149,7 @@ public struct Invocation: Hashable, Sendable {
         switch command {
         case .status, .audit, .outdated, .doctor, .info, .search, .projects, .config, .configList, .selfCheck: true
         case .version, .diff, .diffTo, .authSet, .authRemove, .configSet, .configUnset: false
-        case .initialize, .install, .update, .add, .remove: false
+        case .initialize, .install, .update, .add, .addMany, .remove: false
         }
     }
 
@@ -239,6 +242,8 @@ public struct Invocation: Hashable, Sendable {
                 flags += ["--rename", "\(old)=\(new)"]
             }
             return ["add"] + flags + json + ["--"] + (skills.isEmpty ? [spec] : skills.map { Self.skillSpec(spec, $0) })
+        case .addMany(let specs, let repository):
+            return ["add"] + (repository.map { ["--repository", $0] } ?? []) + ["--"] + specs
         case .remove(let packages):
             return ["remove"] + json + ["--"] + packages
         case .authSet(let host, let username):
@@ -288,6 +293,10 @@ public struct Invocation: Hashable, Sendable {
                     "chosen skills need a github:owner/repo spec")
                 try require(skills.allSatisfy { !$0.isEmpty }, "add needs a skill name")
             }
+        case .addMany(let specs, let repository):
+            try feature(.addSpecs, capabilities, "add with several specs")
+            try require(specs.count > 1 && specs.allSatisfy { !$0.isEmpty }, "add needs several package specs")
+            try require(repository?.isEmpty != true, "add --repository needs a name")
         case .remove(let packages):
             try require(!packages.isEmpty && packages.allSatisfy { !$0.isEmpty }, "remove needs at least one package")
         case .update(let packages):

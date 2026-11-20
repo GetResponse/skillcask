@@ -22,6 +22,14 @@ struct ResultPreview: View {
     @State private var showsDetails = false
 
     var body: some View {
+        if search.batch.isEmpty {
+            single
+        } else {
+            batch
+        }
+    }
+
+    @ViewBuilder private var single: some View {
         switch search.preview {
         case .none:
             VStack(spacing: Spacing.m) {
@@ -71,6 +79,41 @@ struct ResultPreview: View {
                 .padding(.horizontal, Spacing.l)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+        }
+    }
+
+    // MARK: - Batch
+
+    /// Several selected results (D72): their names and sources, and how Add treats them.
+    private var batch: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Spacing.m) {
+                failureBlock
+                if let problem = search.batchProblem {
+                    FailureBanner(UserMessage(title: problem, severity: .warning))
+                }
+                Text(AddSkillCopy.batchHeading(search.batch.count))
+                    .font(Font.Token.calloutSemibold)
+                    .foregroundStyle(Color.textPrimary)
+                ForEach(search.batch, id: \.self) { name in
+                    HStack(spacing: Spacing.s) {
+                        Text(name)
+                            .font(Font.Token.mono)
+                            .foregroundStyle(Color.textPrimary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        if let source = search.filteredResults.first(where: { $0.name == name })?.source {
+                            Pill(source: SourceKind(parsing: source))
+                        }
+                    }
+                }
+                Text(AddSkillCopy.batchNote)
+                    .font(Font.Token.caption)
+                    .foregroundStyle(Color.textSecondary)
+            }
+            .padding(.vertical, Size.cardPaddingH)
+            .padding(.horizontal, Spacing.l)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

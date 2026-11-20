@@ -112,6 +112,16 @@ import Testing
         #expect(throws: CLIError.unsupported(feature: "add with several specs")) {
             try Invocation(skill, in: project, capabilities: caps)
         }
+        let many = Invocation.Command.addMany(specs: ["a/b", "github:o/r/s"], repository: nil)
+        #expect(throws: CLIError.unsupported(feature: "add with several specs")) {
+            try Invocation(many, in: project, capabilities: caps)
+        }
+        #expect(throws: CLIError.self) {
+            try Invocation(.addMany(specs: ["a/b"], repository: nil), in: project, capabilities: all)
+        }
+        #expect(
+            try Invocation(.addMany(specs: ["a/b", "c/d"], repository: "acme"), in: project, capabilities: all).argv
+                == ["add", "--repository", "acme", "--", "a/b", "c/d"])
         for spec in ["a/b", "github:o/r/s", "github:o/r/", "github:o//r"] {
             let notRepo = Invocation.Command.add(spec: spec, repository: nil, adopt: false, rename: [:], skills: ["s"])
             #expect(throws: CLIError.self) { try Invocation(notRepo, in: project, capabilities: all) }

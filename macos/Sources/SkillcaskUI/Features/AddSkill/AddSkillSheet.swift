@@ -129,6 +129,7 @@ struct AddSkillSheet: View {
         }
         .onChange(of: search.query) { failedSpec = nil }
         .onChange(of: search.selection) { failedSpec = nil }
+        .onChange(of: search.batch) { failedSpec = nil }
     }
 
     // MARK: - Derived
@@ -160,6 +161,9 @@ struct AddSkillSheet: View {
     }
 
     private var addTitle: String {
+        if !search.batch.isEmpty {
+            return AddSkillCopy.addResults(search.batch.count)
+        }
         if let clash = search.clash {
             let name = search.renameTo.trimmingCharacters(in: .whitespacesAndNewlines)
             return AddSkillCopy.addAs(name.isEmpty ? clash.suggestion : name)
@@ -277,8 +281,8 @@ struct AddSkillSheet: View {
 
     /// Runs `add` through the runner (`AddSkillVisit.add(runner:)`); on exit 0 the sheet stays open.
     private func add() {
-        guard canAdd, let spec = search.selectedSpec else { return }
-        failedSpec = spec.base
+        guard canAdd, let spec = search.selectedSpec?.base ?? search.batch.first else { return }
+        failedSpec = spec
         visit.add(runner: runner)
     }
 }

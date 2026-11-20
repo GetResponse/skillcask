@@ -84,15 +84,15 @@ struct ResultsColumn: View {
     }
 
     private var list: some View {
-        List(selection: $search.selection) {
+        List(selection: $search.selections) {
             ForEach(search.filteredResults, id: \.name) { result in
                 ResultRow(
                     result: result, installedAs: search.installedSkills(of: result),
                     otherSkills: search.otherInstalledSkills(of: result), isBlocked: search.isBlocked(result),
-                    isSelected: result.name == search.selection,
+                    isSelected: search.selections.contains(result.name),
                     isPersonal: search.store.scope.isPersonal
                 )
-                .tag(Optional(result.name))
+                .tag(result.name)
                 .listRowSeparator(.hidden)
             }
         }
