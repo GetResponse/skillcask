@@ -66,7 +66,7 @@ public struct FixtureCLIClient: CLIClient {
         case .diffTo:
             // Read the changes… of the cooldown: jira-communication's waiting 4.3.0, cooldown not applied.
             return answer(invocation, text: DesignFixtures.text("diff.jira-communication", "txt"))
-        case .install, .doctor(fix: true), .update, .add, .remove, .initialize:
+        case .install, .doctor(fix: true), .update, .add, .addMany, .remove, .initialize:
             for line in DesignFixtures.Transcripts.sync {
                 onLine(.stdout(line))
                 try? await Task.sleep(for: mutationDelay / DesignFixtures.Transcripts.sync.count)

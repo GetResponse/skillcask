@@ -173,6 +173,13 @@ Code comments cite these by number.
   width and keeps its height from the first frame: the board's 112 pt in the board-size sheet, plus
   every point a taller sheet adds. Until the CLI prints it holds one placeholder line ("Waiting for
   output…", no board) where the first line will be.
+- **G19** No board draws several selected results. With a CLI that takes several specs (D72), the
+  results list selects several (⌘- and ⇧-click); the preview pane then lists their names and
+  sources instead of one `info` (none is read), and Add (`Add 3 Skills`) runs one `add` of all of
+  them with the CLI's defaults: no rule, skills or rename to choose. Results of a custom repository
+  go together only with results of the same repository, since `--repository` applies to every spec.
+  Each spec counts as one add in the footer and the closing summary. With an older CLI the list
+  keeps one selection.
 - The toast's shadow (`0 8pt 24pt`, black at 0.16 light / 0.5 dark) lives in `Toast.Shadow`; no
   shadow token exists yet. Cards never have a shadow.
 

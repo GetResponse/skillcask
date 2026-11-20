@@ -6,6 +6,7 @@ import SkillcaskDomain
 /// where noted; versions carry no `v` prefix (the `DesignFixtures` decision).
 ///
 /// Invented (no board draws them): `searching`, `loadingPreview`, `idleTitle`, `idleBody`, `noSelection`,
+/// `skillCount`, `batchHeading`, `batchNote`, `batchMixesRepositories`,
 /// `allSkillsAdded`, `everySkillAdded`, `selectionKept`, `oneSkillAdded`, `otherSkillsIn`, `addOne`, `showOutput`, `waitingForOutput`,
 /// `couldNotAdd`, `added(package:)`, `addedSoFar`, `status(_:count:)`, `summary(done:scope:)`, `done`,
 /// `footerPersonal`,
@@ -206,6 +207,20 @@ public enum AddSkillCopy {
             ? "Only this skill is added, not the whole package."
             : "Only this skill is added, next to \(some(others)) from the same package."
     }
+    /// Invented: several results selected (D72), in the Add button's title and the run's: `3 skills`.
+    public static func skillCount(_ count: Int) -> String {
+        count == 1 ? "1 skill" : "\(count) skills"
+    }
+    /// Invented: the preview pane over several selected results.
+    public static func batchHeading(_ count: Int) -> String {
+        "\(skillCount(count)) selected"
+    }
+    /// Invented: under the selected results: they are added in one go, each as the CLI adds a result by default.
+    public static let batchNote =
+        "Added together, each with its default version rule. If one cannot be added, none is."
+    /// Invented: the batch mixes a custom repository's results with other sources: one `--repository` applies to all.
+    public static let batchMixesRepositories =
+        "Results from a custom repository can only be added together with results from the same repository."
     /// Invented: the link under one skill of a GitHub result to the repository's other skills (D72).
     public static func allSkillsOf(_ package: String) -> String {
         "Show all skills of \(package)"

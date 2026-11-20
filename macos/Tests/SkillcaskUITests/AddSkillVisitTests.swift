@@ -134,6 +134,26 @@ import Testing
         #expect(visit.focusAfterRun == .field, "there is no list to return to")
     }
 
+    @Test(.timeLimit(.minutes(1))) func severalResultsAreOneRunAndCountedEach() async throws {
+        let visit = visit(capabilities: Self.capable)
+        visit.search.selections = [Self.cli.package, Self.markdown.package]
+        #expect(visit.canAdd, "a batch has no preview to wait for")
+        let command = try #require(visit.search.command)
+        await client.lines(
+            command, in: scope,
+            [#"added \#(Self.cli.package) = "^2" (2.1.0)"#, #"added \#(Self.markdown.package) = "^0.9" (0.9.0)"#])
+        await scriptRefresh([Self.cli, Self.markdown])
+        await visit.add(runner: runner)?.value
+        let commands = await client.commands
+        #expect(await adds().isEmpty && commands.contains(command), "one add with both specs")
+        #expect(runner.activity.first?.title == "Adding 2 skills…")
+        #expect(visit.added.map(\.package) == [Self.cli.package, Self.markdown.package])
+        #expect(visit.skillCount == 2 && visit.focusAfterRun == .results)
+        #expect(!visit.canAdd, "the same batch is not offered again")
+        visit.cancelOrClose(runner: runner)
+        #expect(runner.toast?.text == "Added 2 skills to add-visit-tests")
+    }
+
     // MARK: - One run at a time
 
     @Test(.timeLimit(.minutes(1))) func theNextAddWaitsForTheRunToEnd() async throws {

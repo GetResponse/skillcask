@@ -51,6 +51,7 @@ import SkillcaskDomain
     /// built from them, which also reads `info` and the scope's snapshot and so can change under the same choices.
     struct Choices: Hashable {
         let selection: String?
+        let batch: [String]
         /// The chosen rule, a branch with its name; nil while the CLI's default stands.
         let rule: VersionRule?
         let excludedSkills: Set<String>
@@ -91,6 +92,25 @@ import SkillcaskDomain
             if selection != oldValue, !isPreloading {
                 selectionChanged()
             }
+        }
+    }
+    /// Several results selected at once (D72), in the list's order: added together, each with the CLI's defaults.
+    /// Empty for none or one, which is `selection`.
+    private(set) var batch: [String] = []
+    /// The list's selection: `batch`, or `selection` alone. Several names make a batch only where the CLI takes
+    /// several specs; otherwise the newly selected one is kept.
+    var selections: Set<String> {
+        get { batch.isEmpty ? Set(selection.map { [$0] } ?? []) : Set(batch) }
+        set {
+            let names = filteredResults.map(\.name).filter(newValue.contains)
+            guard names.count > 1, store.capabilities.supports(.addSpecs) else {
+                let picked = newValue.subtracting(selections).first ?? newValue.first
+                batch = []
+                selection = picked
+                return
+            }
+            batch = names
+            selection = nil
         }
     }
     /// The results' source filter: a chip's `name`, nil for All. A new query keeps it; a filter that hides the
@@ -573,6 +593,9 @@ import SkillcaskDomain
     /// The `add` command of the current choices; nil while nothing addable is selected (no spec, every provided
     /// skill unticked, an empty rename).
     var command: Invocation.Command? {
+        if !batch.isEmpty {
+            return batchCommand
+        }
         guard let spec = selectedSpec, !hasBranchProblem else { return nil }
         let all = providedSkills.map(\.name)
         let chosen = chosenSkills
@@ -594,10 +617,25 @@ import SkillcaskDomain
             skills: skills)
     }
 
+    /// `add` of every result in `batch`, nil when one has no spec shape or they need different `--repository`
+    /// values (`batchMixesRepositories`).
+    private var batchCommand: Invocation.Command? {
+        let specs = batch.compactMap(PackageSpec.parse)
+        guard specs.count == batch.count, !batchMixesRepositories else { return nil }
+        return .addMany(
+            specs: specs.map { $0.text(constraint: nil) }, repository: repository(for: specs[0], from: batch[0]))
+    }
+
+    /// The batch holds results of a custom repository and results of another source: `--repository` would apply
+    /// to all of them (D72), so they cannot be added together.
+    var batchMixesRepositories: Bool {
+        Set(batch.map { name in PackageSpec.parse(name).flatMap { repository(for: $0, from: name) } }).count > 1
+    }
+
     /// The choices as they stand.
     var choices: Choices {
         Choices(
-            selection: selection, rule: rule == nil ? nil : effectiveRule, excludedSkills: excludedSkills,
+            selection: selection, batch: batch, rule: rule == nil ? nil : effectiveRule, excludedSkills: excludedSkills,
             renameTo: renameTo.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
@@ -615,18 +653,20 @@ import SkillcaskDomain
     /// again when its row is next selected.
     func added(_ choices: Choices) {
         justAdded = choices
-        guard let selection else { return }
-        let package = PackageSpec.packageName(of: selection)
-        if selectedSpec?.kind == .github {
-            addedFromGitHub.insert(package)
+        for name in choices.batch + (choices.selection.map { [$0] } ?? []) {
+            let package = PackageSpec.packageName(of: name)
+            if PackageSpec.parse(name)?.kind == .github {
+                addedFromGitHub.insert(package)
+            }
+            staleInfos.formUnion(infos.keys.filter { PackageSpec.packageName(of: $0) == package })
         }
-        staleInfos.formUnion(infos.keys.filter { PackageSpec.packageName(of: $0) == package })
     }
 
     /// `--repository <name>` when the result came from a custom repository of the scope: what the user picked,
     /// not whichever repository the CLI tries first. Packagist, GitHub and git sources take no flag.
-    private func repository(for spec: PackageSpec) -> String? {
-        guard spec.kind == .registry, let source = selectedResult?.source,
+    private func repository(for spec: PackageSpec, from name: String? = nil) -> String? {
+        let result = name.map { name in filteredResults.first { $0.name == name } } ?? selectedResult
+        guard spec.kind == .registry, let source = result?.source,
             case .custom = SourceKind(parsing: source)
         else { return nil }
         return source
@@ -677,6 +717,7 @@ import SkillcaskDomain
     }
 
     private func queryChanged() {
+        batch = []
         selection = nil
         rule = nil
         excludedSkills = []
@@ -776,9 +817,13 @@ import SkillcaskDomain
     /// Drops a selected result the filter or a new document no longer shows; never selects one. A typed source
     /// (`results == .idle`) is left alone.
     private func clearHiddenSelection() {
-        guard case .loaded = results, let selection, !filteredResults.contains(where: { $0.name == selection })
-        else { return }
-        self.selection = nil
+        guard case .loaded = results else { return }
+        let shown = Set(filteredResults.map(\.name))
+        if !batch.allSatisfy(shown.contains) {
+            selections = Set(batch).intersection(shown)
+        } else if let selection, !shown.contains(selection) {
+            self.selection = nil
+        }
     }
 
     private func prefillRename() {
@@ -802,7 +847,7 @@ import SkillcaskDomain
     /// Previews and the render tool: a state without running anything.
     func preload(
         query: String, results: Results = .idle, skillsSh: SearchDocument.SkillsSh = .unknown,
-        consentAnswered: Bool = false, selection: String? = nil, info: InfoDocument? = nil,
+        consentAnswered: Bool = false, selection: String? = nil, batch: [String] = [], info: InfoDocument? = nil,
         infoError: UserMessage? = nil
     ) {
         isPreloading = true
@@ -815,6 +860,7 @@ import SkillcaskDomain
         self.skillsSh = skillsSh
         self.consentAnswered = consentAnswered
         self.selection = selection
+        self.batch = batch
         if let selection {
             infos[selection] = info
             infoErrors[selection] = infoError

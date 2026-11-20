@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import SkillcaskCore
+import SkillcaskDomain
 
 /// One visit to the Add Skill sheet (S8, S11): its search, its run, and what it added. The sheet stays open after
 /// an add that exits 0, so several skills can be added without searching again:
@@ -68,8 +69,9 @@ import SkillcaskCore
     @ObservationIgnored private var runs: [Task<Void, Never>] = []
     /// The selection an add made after the sheet was gone; that add's task ends with it.
     @ObservationIgnored private var lateSelection: Task<Void, Never>?
-    /// Where in `added` each run that exited 0 stands, until its refresh has landed (`settle`).
-    @ObservationIgnored private var unsettled: [UUID: Int] = [:]
+    /// Where in `added` each run that exited 0 stands (several places for a batch), until its refresh has landed
+    /// (`settle`).
+    @ObservationIgnored private var unsettled: [UUID: Range<Int>] = [:]
 
     init(search: SearchStore, onClose: @escaping () -> Void = {}) {
         self.search = search
@@ -78,11 +80,12 @@ import SkillcaskCore
 
     // MARK: - Derived
 
-    /// Add needs a loaded preview and a buildable command, nothing running, and not the add that just succeeded
-    /// for this selection (`SearchStore.isRepeat`).
+    /// Add needs a loaded preview (or a batch, which has none) and a buildable command, nothing running, and not
+    /// the add that just succeeded for this selection (`SearchStore.isRepeat`).
     var canAdd: Bool {
         guard !run.isRunning, search.command != nil, !search.isRepeat else { return false }
         if case .loaded = search.preview { return true }
+        if !search.batch.isEmpty { return true }
         return false
     }
 
@@ -122,10 +125,17 @@ import SkillcaskCore
     /// and the add is counted. Returns nil when Add is not available (`canAdd`) or the app runs something else;
     /// else the task that ends when the scope's refresh after the run has landed.
     @discardableResult func add(runner: ActionRunner) -> Task<Void, Never>? {
-        guard canAdd, let command = search.command, let spec = search.selectedSpec else { return nil }
-        let skills = addedNames
-        let package = spec.base
-        let lockName = spec.package
+        guard canAdd, let command = search.command else { return nil }
+        let items: [(spec: PackageSpec, skills: [String])]
+        if search.batch.isEmpty {
+            guard let spec = search.selectedSpec else { return nil }
+            items = [(spec, addedNames)]
+        } else {
+            // A batch result's skills are not read before the add: only one that names its skill knows it.
+            items = search.batch.compactMap(PackageSpec.parse).map { ($0, $0.skill.map { [$0] } ?? []) }
+        }
+        let skills = items.flatMap(\.skills)
+        let package = items.count == 1 ? items[0].spec.base : AddSkillCopy.skillCount(items.count)
         let choices = search.choices
         let ticket = UUID()
         focusAfterRun = .field
@@ -136,13 +146,14 @@ import SkillcaskCore
             report: { _, transcript in AddSkillCopy.added(package: package, skills: skills, transcript: transcript) },
             emphasis: skills, announce: false, in: search.store, runner: runner,
             onSuccess: {
-                self.succeeded(choices, package: package, skills: skills, runner: runner)
-                self.unsettled[ticket] = self.added.count - 1
+                let start = self.added.count
+                self.succeeded(choices, items: items, runner: runner)
+                self.unsettled[ticket] = start..<self.added.count
             })
         guard let run else { return nil }
         let settled = Task {
             await run.value
-            settle(ticket, package: lockName)
+            settle(ticket, packages: items.map(\.spec.package))
         }
         runs.append(settled)
         return Task {
@@ -155,27 +166,36 @@ import SkillcaskCore
     /// package. When some are missing (skills.toml renames the skill, so `status` knows another name and the add
     /// changed nothing), its words fall back to the source as it was typed, and with none left it counts for
     /// nothing. A refresh that failed says nothing, and the add's words stand.
-    private func settle(_ ticket: UUID, package: String) {
+    private func settle(_ ticket: UUID, packages: [String]) {
         let store = search.store
-        guard let index = unsettled.removeValue(forKey: ticket), store.refreshError == nil,
+        guard let indices = unsettled.removeValue(forKey: ticket), store.refreshError == nil,
             let entries = store.snapshot?.entries
         else { return }
-        let present = Set(entries.filter { $0.package?.lowercased() == package }.map(\.name))
-        let named = added[index].skills
-        let found = named.filter(present.contains)
-        guard found != named else { return }
-        added[index].skills = found
-        added[index].text = AddSkillCopy.added(package: added[index].package)
-        added[index].addedNothing = found.isEmpty
+        for (index, package) in zip(indices, packages) {
+            let present = Set(entries.filter { $0.package?.lowercased() == package }.map(\.name))
+            let named = added[index].skills
+            let found = named.filter(present.contains)
+            guard found != named else { continue }
+            added[index].skills = found
+            added[index].text = AddSkillCopy.added(package: added[index].package)
+            added[index].addedNothing = found.isEmpty
+        }
     }
 
-    private func succeeded(_ choices: SearchStore.Choices, package: String, skills: [String], runner: ActionRunner) {
-        added.append(
-            Added(
-                package: package, skills: skills, text: run.headline ?? AddSkillCopy.added(package: package),
-                runID: run.runID))
+    /// One `Added` per spec: a batch's are worded by their package, the CLI's line naming only one of them.
+    private func succeeded(
+        _ choices: SearchStore.Choices, items: [(spec: PackageSpec, skills: [String])], runner: ActionRunner
+    ) {
+        for item in items {
+            let package = item.spec.base
+            let text = items.count == 1 ? run.headline : nil
+            added.append(
+                Added(
+                    package: package, skills: item.skills, text: text ?? AddSkillCopy.added(package: package),
+                    runID: run.runID))
+        }
         search.added(choices)
-        focusAfterRun = search.selectedResult == nil ? .field : .results
+        focusAfterRun = search.selectedResult == nil && search.batch.isEmpty ? .field : .results
         announcementAfterRun = status
         // The sheet went away under the run (its scope left the sidebar): nothing will close it again, so the
         // visit's toast and selection are done over, with this add in them.

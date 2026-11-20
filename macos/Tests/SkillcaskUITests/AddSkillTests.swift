@@ -322,6 +322,42 @@ import Testing
         #expect(old.skillsNote == AddSkillCopy.allSkillsAdded)
     }
 
+    // D72: several selected results are one `add`, in the list's order, each spec as the CLI's default takes it.
+    @Test func severalSelectedResultsAreAddedTogether() throws {
+        let search = search(capabilities: Self.capable)
+        search.preload(query: "jira", results: .loaded(DesignFixtures.jiraSearch), skillsSh: .disabled)
+        search.selections = ["github:ankit/jira-helper", "atlassian/jira-cli-skill"]
+        #expect(search.batch == ["atlassian/jira-cli-skill", "github:ankit/jira-helper"] && search.selection == nil)
+        #expect(search.preview == .none && !search.batchMixesRepositories)
+        let command = try #require(search.command)
+        #expect(command == .addMany(specs: ["atlassian/jira-cli-skill", "github:ankit/jira-helper"], repository: nil))
+        #expect(
+            try Invocation(command, in: scope, capabilities: Self.capable).argv == [
+                "add", "--", "atlassian/jira-cli-skill", "github:ankit/jira-helper",
+            ])
+
+        search.selections = ["atlassian/jira-cli-skill"]
+        #expect(search.batch.isEmpty && search.selection == "atlassian/jira-cli-skill", "one is a selection again")
+    }
+
+    @Test func aBatchTakesOneRepositoryForAll() {
+        let search = search(capabilities: Self.capable)
+        search.preload(query: "jira", results: .loaded(DesignFixtures.jiraSearch), skillsSh: .disabled)
+        search.selections = ["acme/jira-triage", "atlassian/jira-cli-skill"]
+        #expect(search.batchMixesRepositories && search.command == nil, "--repository acme would apply to both")
+        search.sourceFilter = "acme"
+        #expect(search.batch.isEmpty && search.selection == "acme/jira-triage", "the filter hides the other one")
+    }
+
+    @Test func withoutSeveralSpecsTheListKeepsOneSelection() {
+        let search = search()
+        search.preload(
+            query: "jira", results: .loaded(DesignFixtures.jiraSearch), skillsSh: .disabled,
+            selection: "atlassian/jira-cli-skill")
+        search.selections = ["atlassian/jira-cli-skill", "kolya/jira-to-md"]
+        #expect(search.batch.isEmpty && search.selection == "kolya/jira-to-md", "the newly clicked row wins")
+    }
+
     @Test func withAddRenameAClashIsPrefilledVendorDashName() throws {
         let search = search(capabilities: Self.capable)
         search.preload(
