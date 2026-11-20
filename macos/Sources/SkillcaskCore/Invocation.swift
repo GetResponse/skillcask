@@ -282,7 +282,10 @@ public struct Invocation: Hashable, Sendable {
             if !skills.isEmpty {
                 try feature(.addSpecs, capabilities, "add with several specs")
                 let repo = spec.hasPrefix("github:") ? spec.dropFirst(7).split(separator: "@", maxSplits: 1).first : nil
-                try require(repo?.split(separator: "/").count == 2, "chosen skills need a github:owner/repo spec")
+                let parts = repo?.split(separator: "/", omittingEmptySubsequences: false)
+                try require(
+                    parts?.count == 2 && parts?.allSatisfy { !$0.isEmpty } == true,
+                    "chosen skills need a github:owner/repo spec")
                 try require(skills.allSatisfy { !$0.isEmpty }, "add needs a skill name")
             }
         case .remove(let packages):

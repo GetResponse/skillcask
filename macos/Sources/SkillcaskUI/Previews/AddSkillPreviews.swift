@@ -7,7 +7,8 @@ extension PreviewRegistry {
     /// The Add Skill sheet (S8) at its board size over the api scope, in the states of the AddSkill and
     /// AddSkill-States boards. `preview` is the AddSkill board ("jira", consent card, the selected package's
     /// preview); `name-clash` is the 0.9.4 path (the CLI's error after Add); `capable-name-clash` and
-    /// `capable-skills` run against a CLI with the planned `add --rename` and `add --skill` (not shipped at 0.9.4).
+    /// `capable-skills` run against a CLI with `add --rename` and several specs (0.15.0): a GitHub repository with one
+    /// skill unticked; `whole-repository` is one skill of a GitHub repository, with the link to the repository.
     /// `added` is the sheet after an add, still open: the added row selected and marked Installed, the footer saying
     /// what was added, Done in place of Cancel. `success` is the window after that sheet closed: the toast in the
     /// list column, the new skill selected.
@@ -62,9 +63,14 @@ extension PreviewRegistry {
         },
         sheet("capable-skills", capable: true, boardScope: true) {
             $0.preload(
-                query: DesignFixtures.jiraQuery, results: .loaded(DesignFixtures.jiraSearch), skillsSh: .disabled,
-                selection: AddSkillSamples.jiraPackage, info: AddSkillSamples.jiraInfo)
+                query: AddSkillSamples.githubJira, selection: AddSkillSamples.githubJira,
+                info: AddSkillSamples.jiraInfo)
             $0.excludedSkills = ["jira-communication"]
+        },
+        sheet("whole-repository", capable: true, boardScope: true) {
+            $0.preload(
+                query: AddSkillSamples.githubJiraSyntax, selection: AddSkillSamples.githubJiraSyntax,
+                info: AddSkillSamples.jiraInfo)
         },
         sheet("empty") {
             $0.preload(
@@ -187,6 +193,8 @@ enum AddSkillSamples {
     static let pocockSelection = "github:mattpocock/skills/improve-codebase-architecture"
     /// A GitHub source for the Branch rule.
     static let githubJira = "github:netresearch/agent-jira-skill"
+    /// One skill of `githubJira`, as skills.sh lists it.
+    static let githubJiraSyntax = "github:netresearch/agent-jira-skill/jira-syntax"
 
     /// `info` of netresearch/agent-jira-skill as Add sees it before it is locked: 4.3.0 is the newest, but `info`
     /// picks 4.2.0 because 4.3.0 is inside the 72h minimum release age (AddSkill board). The fixture file is the

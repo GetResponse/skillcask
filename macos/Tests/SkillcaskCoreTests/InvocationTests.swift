@@ -112,7 +112,7 @@ import Testing
         #expect(throws: CLIError.unsupported(feature: "add with several specs")) {
             try Invocation(skill, in: project, capabilities: caps)
         }
-        for spec in ["a/b", "github:o/r/s"] {
+        for spec in ["a/b", "github:o/r/s", "github:o/r/", "github:o//r"] {
             let notRepo = Invocation.Command.add(spec: spec, repository: nil, adopt: false, rename: [:], skills: ["s"])
             #expect(throws: CLIError.self) { try Invocation(notRepo, in: project, capabilities: all) }
         }

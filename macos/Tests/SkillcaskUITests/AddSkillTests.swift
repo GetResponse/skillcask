@@ -14,6 +14,13 @@ import Testing
     let scope = Scope.project(URL(fileURLWithPath: "/tmp/add-tests"))
     static let jira = "netresearch/agent-jira-skill"
     static let searchJira = Invocation.Command.search(query: "jira", skillsSh: nil, remember: false)
+    /// A GitHub repository the api scope has no entry for.
+    static let freshRepository = "github:acme/jira-kit"
+    static let freshInfo = DesignFixtures.decode(
+        InfoDocument.self,
+        json:
+            #"{"package":"acme/jira-kit","version":"1.0.0","locked":false,"skills":[{"name":"alpha"},{"name":"beta"}],"versions":["1.0.0"]}"#
+    )
     static let capable = Capabilities(version: Capabilities.minimum, features: [.addSpecs, .addRename])
 
     /// A store over the api board's snapshot (its lock, policy and repositories) in the test scope.
@@ -236,18 +243,18 @@ import Testing
         registry.preload(query: Self.jira, selection: Self.jira, info: AddSkillSamples.jiraInfo)
         #expect(!registry.canChooseSkills)
 
-        let github = AddSkillSamples.githubJira
+        let github = Self.freshRepository
         let search = search(capabilities: Self.capable)
-        search.preload(query: github, selection: github, info: AddSkillSamples.jiraInfo)
+        search.preload(query: github, selection: github, info: Self.freshInfo)
         #expect(search.canChooseSkills)
         #expect(
             try #require(search.command) == .add(spec: github, repository: nil, adopt: false, rename: [:], skills: []))
-        search.excludedSkills = ["jira-communication"]
+        search.excludedSkills = ["beta"]
         let command = try #require(search.command)
-        #expect(command == .add(spec: github, repository: nil, adopt: false, rename: [:], skills: ["jira-syntax"]))
+        #expect(command == .add(spec: github, repository: nil, adopt: false, rename: [:], skills: ["alpha"]))
         let argv = try Invocation(command, in: scope, capabilities: Self.capable).argv
-        #expect(argv.suffix(2) == ["--", "\(github)/jira-syntax"] && !argv.contains("--skill"))
-        search.excludedSkills = ["jira-syntax", "jira-communication"]
+        #expect(argv.suffix(2) == ["--", "\(github)/alpha"] && !argv.contains("--skill"))
+        search.excludedSkills = ["alpha", "beta"]
         #expect(search.command == nil, "nothing to add")
     }
 
@@ -258,6 +265,61 @@ import Testing
         #expect(search.wholeRepository == "github:anthropics/skills@^1")
         search.preload(query: Self.jira, selection: Self.jira, info: AddSkillSamples.jiraInfo)
         #expect(search.wholeRepository == nil)
+        search.preload(query: "github:o/r", selection: "github:o/r", info: AddSkillSamples.jiraInfo)
+        #expect(search.wholeRepository == nil, "the whole repository does not link to itself")
+    }
+
+    // Review of #90: once the package is locked, `info` lists only the lock's skills, so the link and the boxes
+    // would show the installed skills as the whole repository and offer unticks that remove nothing.
+    @Test func aLockedGitHubRepositoryKeepsItsSkillsAndHasNoLink() {
+        let search = search(capabilities: Self.capable)
+        search.preload(
+            query: "github:netresearch/agent-jira-skill/jira-syntax",
+            selection: "github:netresearch/agent-jira-skill/jira-syntax", info: DesignFixtures.jiraPackageInfo)
+        #expect(search.wholeRepository == nil)
+        search.preload(
+            query: AddSkillSamples.githubJira, selection: AddSkillSamples.githubJira,
+            info: DesignFixtures.jiraPackageInfo)
+        #expect(!search.canChooseSkills)
+        #expect(
+            search.command
+                == .add(spec: AddSkillSamples.githubJira, repository: nil, adopt: false, rename: [:], skills: []))
+    }
+
+    // Review of #90: for a bare `github:owner/repo` `add` keeps the entry's selection, so ticking the skill left out
+    // of the first add must name every skill, or it is never installed.
+    @Test func afterAPartialAddEveryTickedSkillIsNamed() throws {
+        let github = Self.freshRepository
+        let search = search(capabilities: Self.capable)
+        search.preload(query: github, selection: github, info: Self.freshInfo)
+        search.excludedSkills = ["beta"]
+        search.added(search.choices)
+        search.excludedSkills = []
+        let command = try #require(search.command)
+        #expect(
+            command
+                == .add(
+                    spec: github, repository: nil, adopt: false, rename: [:],
+                    skills: ["alpha", "beta"]))
+    }
+
+    @Test func aChosenRuleGoesWithEverySkillSpec() throws {
+        let github = AddSkillSamples.githubJira
+        let search = search(capabilities: Self.capable)
+        search.preload(query: github, selection: github, info: AddSkillSamples.jiraInfo)
+        search.excludedSkills = ["jira-communication"]
+        search.rule = .exact
+        let argv = try Invocation(try #require(search.command), in: scope, capabilities: Self.capable).argv
+        #expect(argv.suffix(2) == ["--", "\(github)/jira-syntax@4.2.0"])
+    }
+
+    @Test func aRegistryPackageOnANewCLISaysEverySkillIsAdded() {
+        let search = search(capabilities: Self.capable)
+        search.preload(query: Self.jira, selection: Self.jira, info: AddSkillSamples.jiraInfo)
+        #expect(search.skillsNote == AddSkillCopy.everySkillAdded)
+        let old = self.search()
+        old.preload(query: Self.jira, selection: Self.jira, info: AddSkillSamples.jiraInfo)
+        #expect(old.skillsNote == AddSkillCopy.allSkillsAdded)
     }
 
     @Test func withAddRenameAClashIsPrefilledVendorDashName() throws {

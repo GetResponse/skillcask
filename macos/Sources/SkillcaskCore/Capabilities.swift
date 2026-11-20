@@ -24,7 +24,8 @@ public struct Capabilities: Hashable, Sendable {
     public static let minimum = Version(0, 9, 4)
 
     /// The release that shipped each feature beyond `minimum`. A feature that is only planned has no entry, so it
-    /// stays off.
+    /// stays off. A pre-release of that version sorts before it (SemVer) and so has the feature off too: an `rc`
+    /// may have been cut before the feature landed.
     static let shipped: [Feature: Version] = [.selfCheck: Version(0, 10, 2), .addSpecs: Version(0, 15, 0)]
 
     public let version: Version
