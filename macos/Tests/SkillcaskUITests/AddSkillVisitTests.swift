@@ -155,6 +155,32 @@ import Testing
         #expect(runner.toast?.text == "Added 2 skills to add-visit-tests")
     }
 
+    // Review after #91: the footer and the closing toast counted each batch result as one skill, and no test
+    // pinned the batch headline for results that name their skills.
+    @Test(.timeLimit(.minutes(1))) func aBatchCountsTheSkillsItsResultsInstalled() async throws {
+        let visit = visit(capabilities: Self.capable)
+        let found = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"github:vendor/tool/a","source":"github"},{"name":"github:vendor/tool/b","source":"github"},
+                {"name":"vendor/kit","source":"packagist"}]}
+                """#)
+        visit.search.sourceFilter = nil
+        visit.search.preload(query: "tool", results: .loaded(found), skillsSh: .disabled)
+        visit.search.selections = Set(found.results.map(\.name))
+        let command = try #require(visit.search.command)
+        await client.lines(
+            command, in: scope, [#"added vendor/tool = "*" (1.0.0)"#, #"added vendor/kit = "^1" (1.0.0)"#])
+        let installed = [("vendor/tool", "a"), ("vendor/tool", "b"), ("vendor/kit", "k1"), ("vendor/kit", "k2")]
+        await scriptRefresh(installed.map { Added(package: $0.0, skill: $0.1, version: "1.0.0") })
+        await visit.add(runner: runner)?.value
+        #expect(runner.activity.first?.headline == "Added 3 results", "not a skill and one result's version")
+        #expect(visit.added.map(\.skills) == [["a"], ["b"], ["k1", "k2"]], "the package's skills, after the refresh")
+        #expect(visit.skillCount == 4)
+        visit.cancelOrClose(runner: runner)
+        #expect(runner.toast?.text == "Added 4 skills to add-visit-tests")
+    }
+
     // Review of #91: Add stayed off for every later batch once one had run.
     @Test(.timeLimit(.minutes(1))) func aDifferentBatchAfterOneRanCanBeAdded() async throws {
         let visit = visit(capabilities: Self.capable)
