@@ -1444,18 +1444,49 @@ pub fn init(ctx: &Ctx) -> Result<()> {
     Ok(())
 }
 
-pub fn add(ctx: &Ctx, spec: &str, repository: Option<String>) -> Result<()> {
+/// What one spec of `add` resolves to, before anything is written.
+struct Planned {
+    req: SkillReq,
+    repo: Repository,
+    c: Candidate,
+    /// Skills named on the command line, checked also when the entry selects all.
+    must_have: Vec<String>,
+}
+
+/// `add` of one or more specs (D72): all resolve and pass the checks, or nothing is written.
+pub fn add(ctx: &Ctx, specs: &[String], repository: Option<String>) -> Result<()> {
+    let m = ctx.manifest_or_default()?;
+    // Each spec is planned against the manifest holding the ones before it, so specs of one
+    // repository merge as consecutive `add` runs would.
+    let mut view = m.clone();
+    let mut plans: Vec<Planned> = Vec::new();
+    for spec in specs {
+        let mut p = plan_add(ctx, &view, spec, repository.clone())?;
+        view.skills.retain(|r| r.name != p.req.name);
+        view.skills.push(p.req.clone());
+        match plans.iter().position(|q| q.req.name == p.req.name) {
+            Some(i) => {
+                p.must_have.extend(std::mem::take(&mut plans[i].must_have));
+                plans[i] = p;
+            }
+            None => plans.push(p),
+        }
+    }
+    finish_add(ctx, &m, &plans)
+}
+
+fn plan_add(ctx: &Ctx, m: &Manifest, spec: &str, repository: Option<String>) -> Result<Planned> {
     if let Some(rest) = spec.strip_prefix("github:") {
         if repository.is_some() {
             bail!(MANIFEST, "--repository does not apply to github: sources");
         }
-        return add_github(ctx, rest);
+        return add_github(ctx, m, rest);
     }
     if let Some(rest) = spec.strip_prefix("git:") {
         if repository.is_some() {
             bail!(MANIFEST, "--repository does not apply to git: sources");
         }
-        return add_git(ctx, rest);
+        return add_git(ctx, m, rest);
     }
     let (name, constraint) = match spec.split_once('@') {
         Some((n, c)) => (n.to_string(), Some(c.to_string())),
@@ -1464,7 +1495,6 @@ pub fn add(ctx: &Ctx, spec: &str, repository: Option<String>) -> Result<()> {
     if !manifest::valid_package_name(&name) {
         bail!(MANIFEST, "{name:?} is not a valid package name (vendor/name, lowercase)");
     }
-    let m = ctx.manifest_or_default()?;
     if let Some(r) = &repository
         && m.repository(r).is_none()
     {
@@ -1474,8 +1504,8 @@ pub fn add(ctx: &Ctx, spec: &str, repository: Option<String>) -> Result<()> {
     // Before the constraint check: `@main` is a valid ref for a GitHub entry.
     if let Some(e) = existing.as_ref().filter(|e| e.github.is_some() && repository.is_none()) {
         return match &e.git {
-            Some(url) => add_vcs(ctx, name.clone(), Some(url.clone()), Vec::new(), constraint),
-            None => add_github(ctx, spec),
+            Some(url) => add_vcs(ctx, m, name.clone(), Some(url.clone()), Vec::new(), constraint),
+            None => add_github(ctx, m, spec),
         };
     }
     if let Some(c) = &constraint {
@@ -1489,16 +1519,16 @@ pub fn add(ctx: &Ctx, spec: &str, repository: Option<String>) -> Result<()> {
 
     let lock = Lock::load(&ctx.s.config)?;
     let probe = SkillReq { name: name.clone(), repository: repository.clone(), ..Default::default() };
-    let (repo, cands) = find(&Registry::new(ctx.http()?), &m, &probe, lock.get(&name))?;
+    let (repo, cands) = find(&Registry::new(ctx.http()?), m, &probe, lock.get(&name))?;
     let c = registry::select(&cands, &name, constraint.as_deref().unwrap_or("*"), m.min_release_age(&repo), Timestamp::now())?;
     let constraint = constraint.unwrap_or_else(|| default_constraint(&c, m.policy.allow_ranges));
     let (skills, rename) = existing.map(|e| (e.skills, e.rename)).unwrap_or_default();
     let req = SkillReq { name, constraint, repository, skills, rename, ..Default::default() };
-    finish_add(ctx, &m, &req, &repo, &c, &[])
+    Ok(Planned { req, repo, c, must_have: Vec::new() })
 }
 
 /// `owner/repo[/skill][@constraint-or-ref]`, the form skills.sh shows as `owner/repo/skill`.
-fn add_github(ctx: &Ctx, spec: &str) -> Result<()> {
+fn add_github(ctx: &Ctx, m: &Manifest, spec: &str) -> Result<Planned> {
     let (path, at) = match spec.split_once('@') {
         Some((p, a)) => (p, Some(a.to_string())),
         None => (spec, None),
@@ -1512,7 +1542,7 @@ fn add_github(ctx: &Ctx, spec: &str) -> Result<()> {
     if let Some(s) = skill.iter().find(|s| !skill::valid_name(s)) {
         bail!(MANIFEST, "{s:?} is not a valid skill name ([a-z0-9][a-z0-9-]*)");
     }
-    add_vcs(ctx, name, None, skill, at)
+    add_vcs(ctx, m, name, None, skill, at)
 }
 
 /// `https://host/owner/repo[.git][@constraint-or-ref]` as (URL, `@` part, entry name `owner/repo`).
@@ -1531,21 +1561,20 @@ fn git_spec(spec: &str) -> Result<(String, Option<String>, String)> {
 }
 
 /// `https://host/owner/repo[.git][@constraint-or-ref]`; the entry is named `owner/repo`.
-fn add_git(ctx: &Ctx, spec: &str) -> Result<()> {
+fn add_git(ctx: &Ctx, m: &Manifest, spec: &str) -> Result<Planned> {
     let (url, at, name) = git_spec(spec)?;
     let url = url.as_str();
-    if let Some(e) = ctx.manifest_or_default()?.skill(&name).filter(|e| e.git.as_deref() != Some(url)) {
+    if let Some(e) = m.skill(&name).filter(|e| e.git.as_deref() != Some(url)) {
         let had = e.git.as_deref().map_or("another source", |_| "another git URL");
         bail!(MANIFEST, "{name} is already in {} from {had}; remove it first", manifest::FILE);
     }
-    add_vcs(ctx, name, Some(url.to_string()), Vec::new(), at)
+    add_vcs(ctx, m, name, Some(url.to_string()), Vec::new(), at)
 }
 
 /// Adds a GitHub (`git` = `None`) or plain git entry. `skills`: the skills to select, none for
 /// the entry's current selection.
-fn add_vcs(ctx: &Ctx, name: String, git: Option<String>, skills: Vec<String>, at: Option<String>) -> Result<()> {
+fn add_vcs(ctx: &Ctx, m: &Manifest, name: String, git: Option<String>, skills: Vec<String>, at: Option<String>) -> Result<Planned> {
     let must_have = skills.clone();
-    let m = ctx.manifest_or_default()?;
     let probe = SkillReq { name: name.clone(), git: git.clone(), ..Default::default() };
     m.check_source(&probe)?;
     let existing = m.skill(&name).filter(|e| e.github.is_some()).cloned();
@@ -1590,42 +1619,55 @@ fn add_vcs(ctx: &Ctx, name: String, git: Option<String>, skills: Vec<String>, at
             (GitHub::Ref, false) => c.dist.reference.clone().expect("GitHub candidates carry their sha"),
         };
     }
-    finish_add(ctx, &m, &req, &github::repository_of(&req), &c, &must_have)
+    let repo = github::repository_of(&req);
+    Ok(Planned { req, repo, c, must_have })
 }
 
-/// `must_have`: skills named on the command line, checked also when the entry selects all.
-fn finish_add(ctx: &Ctx, m: &Manifest, req: &SkillReq, repo: &Repository, c: &Candidate, must_have: &[String]) -> Result<()> {
+/// Locks, checks and installs `plans` (of `m`) together: one failure writes nothing.
+fn finish_add(ctx: &Ctx, m: &Manifest, plans: &[Planned]) -> Result<()> {
     let mut prepared = HashMap::new();
-    let pkg = ctx.lock_candidate(m, req, repo, c, None, &mut prepared)?;
-    scan_new(&prepared[&pkg.name], &pkg, Some(&m.policy))?;
-    let have: Vec<&str> = pkg.skills.iter().map(|k| k.from.as_deref().unwrap_or(&k.name)).collect();
-    if let Some(s) = must_have.iter().find(|s| !have.contains(&s.as_str())) {
-        bail!(MANIFEST, "{}: no skill {s:?} in {} (it has: {})", req.name, c.version, have.join(", "));
-    }
     let mut lock = Lock::load(&ctx.s.config)?;
     let old = lock.clone();
-    lock.upsert(pkg);
-    // skills.toml is written only after the checks pass; the prompt still needs to see the entry.
+    // skills.toml is written only after the checks pass; the prompt still needs to see the entries.
     let mut view = m.clone();
-    view.skills.retain(|r| r.name != req.name);
-    view.skills.push(req.clone());
-    let moved = if ctx.adopt { adopt(&ctx.s, &view, &lock, &req.name)? } else { Vec::new() };
+    for Planned { req, repo, c, must_have } in plans {
+        let pkg = ctx.lock_candidate(m, req, repo, c, None, &mut prepared)?;
+        scan_new(&prepared[&pkg.name], &pkg, Some(&m.policy))?;
+        let have: Vec<&str> = pkg.skills.iter().map(|k| k.from.as_deref().unwrap_or(&k.name)).collect();
+        if let Some(s) = must_have.iter().find(|s| !have.contains(&s.as_str())) {
+            bail!(MANIFEST, "{}: no skill {s:?} in {} (it has: {})", req.name, c.version, have.join(", "));
+        }
+        lock.upsert(pkg);
+        view.skills.retain(|r| r.name != req.name);
+        view.skills.push(req.clone());
+    }
+    let names: BTreeSet<String> = plans.iter().map(|p| p.req.name.clone()).collect();
+    let mut moved = Vec::new();
+    if ctx.adopt {
+        for n in &names {
+            moved.extend(adopt(&ctx.s, &view, &lock, n).inspect_err(|_| unadopt(&moved))?);
+        }
+    }
     let checked = (|| -> Result<_> {
         let mut skip = drifted(m, &old);
-        skip.remove(&req.name);
-        let mut newcomers = BTreeSet::from([req.name.clone()]);
+        skip.retain(|n| !names.contains(n));
+        let mut newcomers = names.clone();
         let report = settle_deps(ctx, &view, &mut lock, &mut prepared, &mut newcomers, &skip)?;
         let changed = ctx.settle_conflicts(&view, &mut lock, &old, &prepared, &newcomers, true)?;
-        let req = changed.into_iter().find(|r| r.name == req.name).unwrap_or_else(|| req.clone());
+        let reqs: Vec<SkillReq> =
+            plans.iter().map(|p| changed.iter().find(|r| r.name == p.req.name).cloned().unwrap_or_else(|| p.req.clone())).collect();
         ctx.preflight(&view, &lock, &old)?;
-        Ok((report, req))
+        Ok((report, reqs))
     })();
-    let (report, req) = checked.inspect_err(|_| unadopt(&moved))?;
-    let req = &req;
+    let (report, reqs) = checked.inspect_err(|_| unadopt(&moved))?;
 
-    manifest::write_skill(&ctx.s.config, ctx.s.global, req)?;
+    for req in &reqs {
+        manifest::write_skill(&ctx.s.config, ctx.s.global, req)?;
+    }
     lock.save(&ctx.s.config)?;
-    crate::ui::done("added", format!("{} = {:?} ({})", req.name, req.constraint, c.version));
+    for (req, p) in reqs.iter().zip(plans) {
+        crate::ui::done("added", format!("{} = {:?} ({})", req.name, req.constraint, p.c.version));
+    }
     for r in report {
         say(&r);
     }
@@ -1651,7 +1693,12 @@ pub fn adopt_all(ctx: &Ctx) -> Result<()> {
     }
     let mut failed = 0;
     for (repo, skills) in repos {
-        if let Err(e) = add_vcs(ctx, repo, None, skills, None) {
+        let one = || -> Result<()> {
+            let m = ctx.manifest_or_default()?;
+            let p = add_vcs(ctx, &m, repo, None, skills, None)?;
+            finish_add(ctx, &m, &[p])
+        };
+        if let Err(e) = one() {
             ui::error(&e.msg, e.hint.as_deref());
             failed += 1;
         }

@@ -9,6 +9,7 @@
 skillcask add github:mattpocock/skills/grill-me   # one skill
 skillcask add github:mattpocock/skills/tdd        # a second one from the same repository
 skillcask add github:anthropics/skills            # every skill in the repository
+skillcask add github:mattpocock/skills/tdd github:mattpocock/skills/grill-me   # several at once
 ```
 
 All skills of one repository share one entry in `skills.toml`:
