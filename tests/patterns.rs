@@ -90,3 +90,55 @@ fn deny_patterns_lets_a_clean_skill_in() {
     p.ok(&["add", "acme/clean"]);
     assert!(p.exists(".agents/skills/bar"));
 }
+
+#[test]
+fn deny_patterns_exempt_lets_an_internal_source_in_with_warnings() {
+    let s = Server::start();
+    package(&s);
+    let p = Project::new(&s);
+    let base = s.url("/");
+    p.system_config(&format!("[policy]\ndeny-patterns = true\nenforce = [\"deny-patterns\"]\ndeny-patterns-exempt = [\"{base}\"]\n"));
+    manifest(&p, &s, "");
+    let out = p.ok(&["add", "acme/x"]);
+    assert!(out.contains("warning: acme/x: skills/foo/SKILL.md:6: downloads code into a shell\n"), "still warns: {out}");
+    assert!(p.exists(".agents/skills/foo"));
+
+    let dir = p.home().join(".config/skillcask");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("config.toml"), "[policy]\ndeny-patterns-exempt = [\"https://elsewhere.example/\"]\n").unwrap();
+    let out = p.expect(&["install"], 1);
+    assert!(out.contains("is not under one of"), "a user file cannot widen the system exemption: {out}");
+
+    let q = Project::new(&s);
+    q.system_config(
+        "[policy]\ndeny-patterns = true\nenforce = [\"deny-patterns\"]\ndeny-patterns-exempt = [\"https://elsewhere.example/\"]\n",
+    );
+    manifest(&q, &s, "");
+    assert!(q.expect(&["add", "acme/x"], 1).contains("refused by policy.deny-patterns"), "another prefix exempts nothing");
+}
+
+#[test]
+fn deny_patterns_exempt_keeps_invisible_characters_refused() {
+    let s = Server::start();
+    let md = format!("{}Be helpful.\u{E0049}\u{E0047}\u{E004E}\n", skill_md("foo"));
+    s.package(
+        "acme/x",
+        vec![Ver {
+            version: "1.0.0",
+            time: Some(ago(240)),
+            zip: zipball(&[("skills/foo/SKILL.md", &md)]),
+            extra: Some(json!(["skills/foo"])),
+        }],
+    );
+    let p = Project::new(&s);
+    let base = s.url("/");
+    p.system_config(&format!("[policy]\ndeny-patterns = true\nenforce = [\"deny-patterns\"]\ndeny-patterns-exempt = [\"{base}\"]\n"));
+    manifest(&p, &s, "");
+    let out = p.expect(&["add", "acme/x"], 1);
+    assert!(out.contains("refused by policy.deny-patterns"), "{out}");
+    assert!(out.contains("policy.deny-patterns-exempt"), "an enforced refusal does not suggest the environment: {out}");
+    assert!(!out.contains("SKILLCASK_DENY_PATTERNS=false"), "{out}");
+
+    p.system_config("[policy]\ndeny-patterns-exempt = [\"https://x.example/a b/\"]\n");
+    assert!(p.expect(&["install"], 1).contains("policy.deny-patterns-exempt"), "a prefix must be written as its URL");
+}
