@@ -46,12 +46,13 @@ public struct AgentTarget: Hashable, Sendable, Identifiable {
         isGlobal ? "~/\(readsFrom)" : readsFrom
     }
 
-    /// The presets that get a link directory of their own (`PRESETS` in `src/manifest.rs`: `claude` and `kiro`);
-    /// every other preset reads the store.
-    public static func ownDirectory(of preset: String) -> String? {
+    /// The presets that get a link directory of their own (`PRESETS` in `src/manifest.rs`: `claude` and `kiro` in
+    /// both scopes, `junie` in the global scope only); every other preset reads the store.
+    public static func ownDirectory(of preset: String, isGlobal: Bool) -> String? {
         switch preset {
         case "claude": ".claude/skills"
         case "kiro": ".kiro/skills"
+        case "junie": isGlobal ? ".junie/skills" : nil
         default: nil
         }
     }
@@ -86,7 +87,7 @@ public struct AgentTarget: Hashable, Sendable, Identifiable {
                 }
                 directory = path.hasPrefix("./") ? String(path.dropFirst(2)) : path
             } else {
-                directory = ownDirectory(of: entry)
+                directory = ownDirectory(of: entry, isGlobal: isGlobal)
             }
             return AgentTarget(entry: entry, directory: directory, isGlobal: isGlobal)
         }

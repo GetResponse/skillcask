@@ -212,8 +212,9 @@ them by number; the numbers have gaps.
 - **Q19** The app reads each agent's directory from `status.targets.agents: [{entry, dir}]` (CLI
   0.10.3, `dir: null` for the store). An older CLI prints only `entries` (as written) and `dirs`
   (resolved), two lists that are not parallel: store agents get no directory and duplicates collapse.
-  For it the app pairs them by convention (a path entry is its own directory; `claude` and `kiro`
-  take their preset directory, which `resolve_targets` always lists in `dirs`; every other entry reads the store `.agents/skills`; a repeated entry counts once). A
+  For it the app pairs them by convention (a path entry is its own directory; `claude`, `kiro` and,
+  in the global scope, `junie` take their preset directory, which `resolve_targets` always lists in
+  `dirs`; every other entry reads the store `.agents/skills`; a repeated entry counts once). A
   per-skill `links` map in `status` entries would replace parsing `doctor`'s link lines.
 - **Q18** No command compares installed files with the lock: Review changes and the changed-file
   list are hidden; Reinstall is the only action.

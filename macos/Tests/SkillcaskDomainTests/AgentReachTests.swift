@@ -74,11 +74,11 @@ import Testing
         // `cursor` reads the store even when a path target names `.cursor/skills`.
         let cursor = try Self.targets(["cursor", "./.cursor/skills"], [".cursor/skills"])
         #expect(cursor.map(\.directory) == [nil, ".cursor/skills"])
-        // `junie` reads the store in both scopes (D73).
+        // `junie` links only in the global scope.
         #expect(try Self.targets(["junie"], []).map(\.directory) == [nil])
-        let global = try Self.targets(["junie", "claude"], [".claude/skills"], isGlobal: true)
-        #expect(global.map(\.directory) == [nil, ".claude/skills"])
-        #expect(global.map(\.shownPath) == ["~/.agents/skills", "~/.claude/skills"])
+        let global = try Self.targets(["junie", "claude"], [".junie/skills", ".claude/skills"], isGlobal: true)
+        #expect(global.map(\.directory) == [".junie/skills", ".claude/skills"])
+        #expect(global.map(\.shownPath) == ["~/.junie/skills", "~/.claude/skills"])
         #expect(try Self.targets(["codex"], []).map(\.shownPath) == [".agents/skills"])
     }
 
