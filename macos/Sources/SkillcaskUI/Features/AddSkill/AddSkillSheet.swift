@@ -130,6 +130,7 @@ struct AddSkillSheet: View {
         .onChange(of: search.query) { failedSpec = nil }
         .onChange(of: search.selection) { failedSpec = nil }
         .onChange(of: search.batch) { failedSpec = nil }
+        .onChange(of: search.store.snapshot) { search.snapshotChanged() }
     }
 
     // MARK: - Derived

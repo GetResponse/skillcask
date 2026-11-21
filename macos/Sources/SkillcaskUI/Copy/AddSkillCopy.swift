@@ -7,7 +7,7 @@ import SkillcaskDomain
 ///
 /// Invented (no board draws them): `searching`, `loadingPreview`, `idleTitle`, `idleBody`, `noSelection`,
 /// `resultCount`, `addResults`, `batchHeading`, `batchNote`, `batchMixesRepositories`, `batchSamePackage`,
-/// `batchHasEntry`, `batchChecking`,
+/// `batchHasEntry`, `batchEntryUnread`, `batchChecking`,
 /// `allSkillsAdded`, `everySkillAdded`, `selectionKept`, `oneSkillAdded`, `otherSkillsIn`, `addOne`, `showOutput`, `waitingForOutput`,
 /// `couldNotAdd`, `added(package:)`, `addedSoFar`, `status(_:count:)`, `summary(done:scope:)`, `done`,
 /// `footerPersonal`,
@@ -233,6 +233,13 @@ public enum AddSkillCopy {
         packages.count == 1
             ? "\(packages[0]) is already in skills.toml, and Add may replace its entry. Select it on its own to see what Add changes."
             : "\(OutcomeCopy.list(packages)) are already in skills.toml, and Add may replace their entries. Select each on its own to see what Add changes."
+    }
+    /// Invented: the skills.toml entries of selected GitHub results could not be read, so whether Add replaces them
+    /// is not known.
+    public static func batchEntryUnread(_ packages: [String]) -> String {
+        packages.count == 1
+            ? "Couldn’t read the skills.toml entry of \(packages[0]). Select it on its own to see what Add changes."
+            : "Couldn’t read the skills.toml entries of \(OutcomeCopy.list(packages)). Select each on its own to see what Add changes."
     }
     /// Invented: under the selected results while the skills.toml entries of their GitHub repositories are read.
     public static let batchChecking = "Checking skills.toml…"

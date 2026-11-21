@@ -181,8 +181,10 @@ Code comments cite these by number.
   repository with results of another source (`--repository` applies to every spec), two results
   of one package other than different skills of one GitHub repository, and results whose
   skills.toml entry `add` may replace, all named: a `github:` result of a package skills.toml
-  names waits for `info` of that entry and is refused unless it is a GitHub one, a custom
-  repository's result of a named package is refused (`--repository` may move it), and this sheet's
+  names waits for `info` of that entry (read again when the snapshot names a new one) and is
+  refused unless it is a GitHub one, or, when the read failed, refused as not read until the next
+  batch or snapshot reads it again; a custom repository's result of a named package is refused
+  (`--repository` may move it) unless this sheet added it from that repository, and this sheet's
   own adds count with the kind of source they came from. Each spec counts as one add; once the
   refresh lands, a result that named no skill counts the skills of its package in the footer and
   the closing summary. The run's headline names no version. With an older CLI the list keeps one

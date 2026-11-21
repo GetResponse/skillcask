@@ -455,6 +455,68 @@ import Testing
         search.added(search.choices)
         search.selections = ["github:other/kit/t", "vendor/tool"]
         #expect(search.batchProblem == nil, "another skill of a GitHub entry this sheet added, and a re-add")
+
+        // Review of #93: an add from Packagist let a custom repository's result move the entry (`--repository`).
+        let acme = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"{"results":[{"name":"vendor/tool","source":"acme"},{"name":"acme/b","source":"acme"}]}"#)
+        search.preload(query: "acme", results: .loaded(acme), skillsSh: .disabled)
+        search.selections = ["vendor/tool", "acme/b"]
+        #expect(search.batchProblem == AddSkillCopy.batchHasEntry(["vendor/tool"]), "added from Packagist, not acme")
+        search.selections = ["vendor/tool"]
+        search.added(search.choices)
+        search.selections = ["vendor/tool", "acme/b"]
+        #expect(search.batchProblem == nil, "a re-add from the repository this sheet added it from")
+    }
+
+    // Review of #93: a batch selected before the scope's skills.toml named its repository showed "Checking
+    // skills.toml…" for good, since nothing read the entry the new snapshot called for.
+    @Test(.timeLimit(.minutes(1))) func aSnapshotThatNamesARepositoryLaterReadsItsEntry() async throws {
+        let store = store(capabilities: Self.capable)
+        let search = SearchStore(store: store, debounce: .zero)
+        let tool = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"github:vendor/tool/a","source":"github"},{"name":"kolya/jira-to-md","source":"packagist"}]}
+                """#)
+        search.preload(query: "tool", results: .loaded(tool), skillsSh: .disabled)
+        search.selections = ["github:vendor/tool/a", "kolya/jira-to-md"]
+        #expect(!search.isCheckingBatch && search.command != nil, "vendor/tool has no entry")
+
+        await client.json(.info(.package("vendor/tool")), in: scope, #"{"package":"vendor/tool","source":"github"}"#)
+        store.preload(
+            snapshot: AddSkillSamples.apiSnapshot { entries in
+                entries + [["package": "vendor/tool", "skill": "z", "version": "1.0.0", "state": "ok", "ok": true]]
+            })
+        #expect(!search.isCheckingBatch && search.command == nil, "not read yet: nothing is pending, and Add waits")
+        search.snapshotChanged()
+        #expect(search.isCheckingBatch)
+        await search.batchTask?.value
+        #expect(!search.isCheckingBatch && search.batchProblem == nil && search.command != nil)
+    }
+
+    // Review of #93: one failed read refused the batch for the rest of the sheet, saying Add would replace the
+    // entry.
+    @Test(.timeLimit(.minutes(1))) func aFailedEntryReadSaysSoAndIsReadAgain() async throws {
+        await client.script(
+            .info(.package("anthropics/skills")), in: scope,
+            .error(.failed(code: .network, message: "Couldn’t reach github.com.", hint: nil, stderr: "")))
+        await client.json(
+            .info(.package("anthropics/skills")), in: scope, #"{"package":"anthropics/skills","source":"github"}"#)
+        let search = search(capabilities: Self.capable)
+        let pdf = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"github:anthropics/skills/pdf","source":"github"},{"name":"kolya/jira-to-md","source":"packagist"},
+                {"name":"netresearch/jira-skill","source":"packagist"}]}
+                """#)
+        search.preload(query: "pdf", results: .loaded(pdf), skillsSh: .disabled)
+        search.selections = ["github:anthropics/skills/pdf", "kolya/jira-to-md"]
+        await search.batchTask?.value
+        #expect(search.batchProblem == AddSkillCopy.batchEntryUnread(["anthropics/skills"]) && search.command == nil)
+        search.selections = ["github:anthropics/skills/pdf", "kolya/jira-to-md", "netresearch/jira-skill"]
+        await search.batchTask?.value
+        #expect(search.batchProblem == nil && search.command != nil, "read again on the next batch")
     }
 
     // Review after #91: no test failed when a reload kept the batch in its old order, or when Add ran while the
