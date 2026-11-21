@@ -74,7 +74,7 @@ import Testing
         // `cursor` reads the store even when a path target names `.cursor/skills`.
         let cursor = try Self.targets(["cursor", "./.cursor/skills"], [".cursor/skills"])
         #expect(cursor.map(\.directory) == [nil, ".cursor/skills"])
-        // `junie` links only in the global scope.
+        // A CLI before 0.10.3 links `junie` only in the global scope.
         #expect(try Self.targets(["junie"], []).map(\.directory) == [nil])
         let global = try Self.targets(["junie", "claude"], [".junie/skills", ".claude/skills"], isGlobal: true)
         #expect(global.map(\.directory) == [".junie/skills", ".claude/skills"])

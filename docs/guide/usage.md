@@ -68,8 +68,13 @@ Junie, Devin/Windsurf, Roo Code, Cline, Goose, Factory, Mistral Vibe), so they n
 |---|---|---|
 | `claude` | `.claude/skills` | `~/.claude/skills` |
 | `kiro` | `.kiro/skills` | `~/.kiro/skills` |
-| `junie` | store | `~/.junie/skills` |
-| `codex`, `copilot`, `cursor`, `gemini`, `opencode`, `amp`, `devin`, `roo`, `cline`, `goose`, `factory`, `vibe` | store | store |
+| `codex`, `junie`, `copilot`, `cursor`, `gemini`, `opencode`, `amp`, `devin`, `roo`, `cline`, `goose`, `factory`, `vibe` | store | store |
+
+`junie` used to link `~/.junie/skills`. Junie reads `~/.agents/skills` itself, so the next global
+`install`, `add`, `update`, `remove` or `doctor --fix` removes the links skillcask made there,
+without a message. Until then `skillcask -g doctor` reports them as links in directories that are
+no longer targets; that is expected, also with `junie` set by an administrator. To keep them for a tool that reads only `~/.junie/skills`, use the path
+`"./.junie/skills"` instead of `"junie"`.
 
 Set the list once in `config.toml` next to the global manifest; a `skills.toml` that sets
 `targets` replaces it. Manifests from before 0.6.0 carry an explicit list: delete the line to

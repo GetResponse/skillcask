@@ -17,7 +17,7 @@ pub const DEFAULT_TARGETS: [&str; 1] = ["claude"];
 pub const PRESETS: [(&str, Option<&str>, Option<&str>); 15] = [
     ("claude", Some(".claude/skills"), Some(".claude/skills")),
     ("kiro", Some(".kiro/skills"), Some(".kiro/skills")),
-    ("junie", None, Some(".junie/skills")),
+    ("junie", None, None),
     ("codex", None, None),
     ("copilot", None, None),
     ("cursor", None, None),
@@ -1315,7 +1315,7 @@ min-release-age = "12h"
             [".claude/skills", ".kiro/skills", "tools/skills"]
         );
         assert_eq!(targets(r#"["junie", "copilot"]"#, false).unwrap(), Vec::<String>::new(), "both read the store");
-        assert_eq!(targets(r#"["junie"]"#, true).unwrap(), [".junie/skills"]);
+        assert_eq!(targets(r#"["junie"]"#, true).unwrap(), Vec::<String>::new(), "Junie reads ~/.agents/skills too (D73)");
         assert_eq!(targets(r#"["claude", ".claude/skills"]"#, false).unwrap(), [".claude/skills"], "one link per directory");
         let e = targets(r#"["cusor"]"#, false).unwrap_err().msg;
         assert!(

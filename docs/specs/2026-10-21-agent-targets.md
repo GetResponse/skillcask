@@ -1,6 +1,6 @@
 # Spec: agent presets and default targets
 
-Date: 2026-10-21. Status: implemented, for 0.6.0.
+Date: 2026-10-21. Status: implemented, for 0.6.0; amended by D73.
 
 ## Problem
 
@@ -41,7 +41,7 @@ agent reads `.agents/skills` or `~/.agents/skills` and gets no link.
 |---|---|---|---|
 | `claude` | `.claude/skills` | `.claude/skills` | code.claude.com/docs/en/skills; `.agents` support is an open request (anthropics/claude-code#31005) |
 | `kiro` | `.kiro/skills` | `.kiro/skills` | kiro.dev/docs/skills; no `.agents` support documented |
-| `junie` | store | `.junie/skills` | junie.jetbrains.com/docs/agent-skills.html lists `.agents/skills` for projects only |
+| `junie` | store | store | junie.jetbrains.com/docs/agent-skills.html lists `.agents/skills` in the project and in home as of 2026-11-19 (D73) |
 | `codex` | store | store | learn.chatgpt.com/docs/build-skills |
 | `copilot` | store | store | docs.github.com (Copilot CLI, coding agent), code.visualstudio.com (VS Code) |
 | `cursor` | store | store | cursor.com/docs/context/skills |
@@ -87,7 +87,8 @@ overrides `config.toml`; the README says to delete the line to follow the config
 prints `agents.targets = [<as written>] (<layer>): <directories>`, or `.agents/skills only`.
 
 The built-in default changes from `[".claude/skills", ".junie/skills"]` to `["claude"]`. In the
-global scope that drops `~/.junie/skills`; a Junie user adds `"junie"` to `config.toml`.
+global scope that drops `~/.junie/skills`; a Junie user added `"junie"` to `config.toml` until
+D73, after which that preset links nothing in home either.
 
 ## Stale links
 
@@ -119,5 +120,6 @@ targets. To check before release: Copilot CLI and Cursor with one skill in both 
   resolving to one directory.
 - Integration: `config.toml` targets apply to a project without `targets`; a project list
   overrides; removing `claude` from `config.toml` removes `.claude/skills/<name>` links on the
-  next `install` and leaves foreign entries; `--global` with `junie` links `~/.junie/skills`.
+  next `install` and leaves foreign entries; `--global` with `junie` links nothing
+  and removes earlier links in `~/.junie/skills` (D73).
 - Windows: a preset target follows the existing copy fallback.
