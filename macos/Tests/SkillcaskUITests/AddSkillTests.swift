@@ -322,7 +322,6 @@ import Testing
         #expect(old.skillsNote == AddSkillCopy.allSkillsAdded)
     }
 
-    // D72: several selected results are one `add`, in the list's order, each spec as the CLI's default takes it.
     // D72: several selected results are one `add`, in the list's order (by installs, not by name), each spec as
     // the CLI's default takes it.
     @Test func severalSelectedResultsAreAddedTogether() throws {
@@ -365,25 +364,182 @@ import Testing
         search.preload(query: "acme", results: .loaded(acme), skillsSh: .disabled)
         search.selections = ["acme/a", "acme/b"]
         #expect(try #require(search.command) == .addMany(specs: ["acme/a", "acme/b"], repository: "acme"))
+
+        let named = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"{"results":[{"name":"acme/lint","source":"acme"},{"name":"acme/b","source":"acme"}]}"#)
+        search.preload(query: "acme", results: .loaded(named), skillsSh: .disabled)
+        search.selections = ["acme/lint", "acme/b"]
+        #expect(search.batchProblem == AddSkillCopy.batchHasEntry(["acme/lint"]), "--repository may move its entry")
     }
 
-    // Review of #91: a batch reads no `info`, so what the single preview warns about is refused.
-    @Test func aBatchRefusesWhatOnlyAPreviewCouldExplain() {
+    // Review after #91: two skills of one GitHub repository were refused as "selected more than once"; `add`
+    // merges them into one entry (D72).
+    @Test func aBatchTakesSeveralSkillsOfOneRepositoryButNotTheSamePackageTwice() throws {
         let search = search(capabilities: Self.capable)
-        let twice = DesignFixtures.decode(
+        let tool = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"github:vendor/tool/a","source":"github"},{"name":"github:vendor/tool/b","source":"github"},
+                {"name":"github:vendor/tool","source":"github"},{"name":"vendor/tool","source":"packagist"}]}
+                """#)
+        search.preload(query: "tool", results: .loaded(tool), skillsSh: .disabled)
+        search.selections = ["github:vendor/tool/a", "github:vendor/tool/b"]
+        #expect(search.batchProblem == nil)
+        #expect(
+            try #require(search.command)
+                == .addMany(specs: ["github:vendor/tool/a", "github:vendor/tool/b"], repository: nil))
+        for pair: Set<String> in [
+            ["vendor/tool", "github:vendor/tool/a"], ["github:vendor/tool", "github:vendor/tool/a"],
+        ] {
+            search.selections = pair
+            #expect(search.batchProblem == AddSkillCopy.batchSamePackage("vendor/tool") && search.command == nil)
+        }
+    }
+
+    // Review after #91: every result already in skills.toml refused the whole batch, and only the first was named.
+    // Now only an entry `add` may replace is refused: a `github:` result's entry is read for its source.
+    @Test(.timeLimit(.minutes(1))) func aBatchRefusesOnlyTheEntriesAddMayReplace() async throws {
+        await client.json(
+            .info(.package(Self.jira)), in: scope, #"{"package":"netresearch/agent-jira-skill","source":"composer"}"#)
+        await client.json(
+            .info(.package("anthropics/skills")), in: scope, #"{"package":"anthropics/skills","source":"github"}"#)
+        await client.json(.info(.package("acme/lint")), in: scope, #"{"package":"acme/lint","source":"git"}"#)
+        let search = search(capabilities: Self.capable)
+        let named = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"netresearch/agent-jira-skill","source":"packagist"},
+                {"name":"github:anthropics/skills/pdf","source":"github"},
+                {"name":"github:netresearch/agent-jira-skill/jira-syntax","source":"github"},
+                {"name":"github:acme/lint","source":"github"}]}
+                """#)
+        search.preload(query: "jira", results: .loaded(named), skillsSh: .disabled)
+        search.selections = ["netresearch/agent-jira-skill", "github:anthropics/skills/pdf"]
+        #expect(
+            search.isCheckingBatch && search.command == nil && search.batchProblem == nil, "Add waits for the entry")
+        await search.batchTask?.value
+        #expect(!search.isCheckingBatch && search.batchProblem == nil, "a re-add, and a skill joining a GitHub entry")
+        #expect(search.command != nil)
+
+        search.selections = Set(search.filteredResults.map(\.name).dropFirst())
+        await search.batchTask?.value
+        #expect(
+            search.batchProblem == AddSkillCopy.batchHasEntry(["netresearch/agent-jira-skill", "acme/lint"]),
+            "a Packagist and a git entry are replaced, and both are named")
+        #expect(search.command == nil)
+        #expect(
+            await client.commands == [
+                .info(.package("anthropics/skills")), .info(.package(Self.jira)), .info(.package("acme/lint")),
+            ],
+            "each entry is read once")
+    }
+
+    // Review after #91: a `github:` result of a package this sheet just added from Packagist went through before
+    // the refresh named it in skills.toml.
+    @Test func aBatchKnowsTheKindOfWhatThisSheetAdded() {
+        let search = search(capabilities: Self.capable)
+        let tool = DesignFixtures.decode(
             SearchDocument.self,
             json: #"""
                 {"results":[{"name":"vendor/tool","source":"packagist"},{"name":"github:vendor/tool/s","source":"github"},
-                {"name":"kolya/jira-to-md","source":"packagist"},{"name":"github:netresearch/agent-jira-skill/jira-syntax","source":"github"}]}
+                {"name":"github:other/kit/s","source":"github"},{"name":"github:other/kit/t","source":"github"}]}
                 """#)
-        search.preload(query: "tool", results: .loaded(twice), skillsSh: .disabled)
-        search.selections = ["vendor/tool", "github:vendor/tool/s"]
-        #expect(search.batchProblem == AddSkillCopy.batchSamePackage("vendor/tool") && search.command == nil)
-        search.selections = ["kolya/jira-to-md", "github:netresearch/agent-jira-skill/jira-syntax"]
-        #expect(
-            search.batchProblem == AddSkillCopy.batchHasEntry("netresearch/agent-jira-skill"),
-            "skills.toml has it, maybe from Packagist: add would replace that entry")
-        #expect(search.command == nil)
+        search.preload(query: "tool", results: .loaded(tool), skillsSh: .disabled, selection: "vendor/tool")
+        search.added(search.choices)
+        search.selections = ["github:vendor/tool/s", "github:other/kit/s"]
+        #expect(search.batchProblem == AddSkillCopy.batchHasEntry(["vendor/tool"]) && search.command == nil)
+        #expect(!search.isCheckingBatch, "nothing to read: the sheet knows the entry")
+
+        search.selections = ["github:other/kit/s"]
+        search.added(search.choices)
+        search.selections = ["github:other/kit/t", "vendor/tool"]
+        #expect(search.batchProblem == nil, "another skill of a GitHub entry this sheet added, and a re-add")
+
+        // Review of #93: an add from Packagist let a custom repository's result move the entry (`--repository`).
+        let acme = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"{"results":[{"name":"vendor/tool","source":"acme"},{"name":"acme/b","source":"acme"}]}"#)
+        search.preload(query: "acme", results: .loaded(acme), skillsSh: .disabled)
+        search.selections = ["vendor/tool", "acme/b"]
+        #expect(search.batchProblem == AddSkillCopy.batchHasEntry(["vendor/tool"]), "added from Packagist, not acme")
+        search.selections = ["vendor/tool"]
+        search.added(search.choices)
+        search.selections = ["vendor/tool", "acme/b"]
+        #expect(search.batchProblem == nil, "a re-add from the repository this sheet added it from")
+    }
+
+    // Review of #93: a batch selected before the scope's skills.toml named its repository showed "Checking
+    // skills.toml…" for good, since nothing read the entry the new snapshot called for.
+    @Test(.timeLimit(.minutes(1))) func aSnapshotThatNamesARepositoryLaterReadsItsEntry() async throws {
+        let store = store(capabilities: Self.capable)
+        let search = SearchStore(store: store, debounce: .zero)
+        let tool = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"github:vendor/tool/a","source":"github"},{"name":"kolya/jira-to-md","source":"packagist"}]}
+                """#)
+        search.preload(query: "tool", results: .loaded(tool), skillsSh: .disabled)
+        search.selections = ["github:vendor/tool/a", "kolya/jira-to-md"]
+        #expect(!search.isCheckingBatch && search.command != nil, "vendor/tool has no entry")
+
+        await client.json(.info(.package("vendor/tool")), in: scope, #"{"package":"vendor/tool","source":"github"}"#)
+        store.preload(
+            snapshot: AddSkillSamples.apiSnapshot { entries in
+                entries + [["package": "vendor/tool", "skill": "z", "version": "1.0.0", "state": "ok", "ok": true]]
+            })
+        #expect(!search.isCheckingBatch && search.command == nil, "not read yet: nothing is pending, and Add waits")
+        search.snapshotChanged()
+        #expect(search.isCheckingBatch)
+        await search.batchTask?.value
+        #expect(!search.isCheckingBatch && search.batchProblem == nil && search.command != nil)
+    }
+
+    // Review of #93: one failed read refused the batch for the rest of the sheet, saying Add would replace the
+    // entry.
+    @Test(.timeLimit(.minutes(1))) func aFailedEntryReadSaysSoAndIsReadAgain() async throws {
+        await client.script(
+            .info(.package("anthropics/skills")), in: scope,
+            .error(.failed(code: .network, message: "Couldn’t reach github.com.", hint: nil, stderr: "")))
+        await client.json(
+            .info(.package("anthropics/skills")), in: scope, #"{"package":"anthropics/skills","source":"github"}"#)
+        let search = search(capabilities: Self.capable)
+        let pdf = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"github:anthropics/skills/pdf","source":"github"},{"name":"kolya/jira-to-md","source":"packagist"},
+                {"name":"netresearch/jira-skill","source":"packagist"}]}
+                """#)
+        search.preload(query: "pdf", results: .loaded(pdf), skillsSh: .disabled)
+        search.selections = ["github:anthropics/skills/pdf", "kolya/jira-to-md"]
+        await search.batchTask?.value
+        #expect(search.batchProblem == AddSkillCopy.batchEntryUnread(["anthropics/skills"]) && search.command == nil)
+        search.selections = ["github:anthropics/skills/pdf", "kolya/jira-to-md", "netresearch/jira-skill"]
+        await search.batchTask?.value
+        #expect(search.batchProblem == nil && search.command != nil, "read again on the next batch")
+    }
+
+    // Review after #91: no test failed when a reload kept the batch in its old order, or when Add ran while the
+    // reloading list showed none of its rows (a hidden row's `--repository` is not known).
+    @Test(.timeLimit(.minutes(1))) func aReloadReordersTheBatchAndHoldsAddMeanwhile() async throws {
+        let command = Invocation.Command.search(query: "vendor", skillsSh: nil, remember: false)
+        let a = #"{"name":"vendor/a","source":"packagist"}"#
+        let b = #"{"name":"vendor/b","source":"packagist"}"#
+        await client.json(command, in: scope, #"{"results":[\#(a),\#(b)],"skills-sh":false}"#)
+        let gate = Gate()
+        await client.json(command, in: scope, #"{"results":[\#(b),\#(a)],"skills-sh":false}"#, gate: gate)
+        let search = search(capabilities: Self.capable)
+        search.query = "vendor"
+        await search.searchTask?.value
+        search.selections = ["vendor/a", "vendor/b"]
+        #expect(search.batch == ["vendor/a", "vendor/b"] && search.command != nil)
+        search.retry()
+        await gate.arrived()
+        #expect(search.batch.count == 2 && search.command == nil, "no row is shown while the list reloads")
+        await gate.open()
+        await search.searchTask?.value
+        #expect(search.batch == ["vendor/b", "vendor/a"])
+        #expect(try #require(search.command) == .addMany(specs: ["vendor/b", "vendor/a"], repository: nil))
     }
 
     // Review of #91: ⇧-click and ⌘A with an older CLI kept an arbitrary row of the set.

@@ -100,6 +100,9 @@ import SkillcaskDomain
         didSet {
             if batch != oldValue {
                 justAdded = nil
+                if !isPreloading {
+                    readBatchEntries()
+                }
             }
         }
     }
@@ -146,6 +149,7 @@ import SkillcaskDomain
 
     @ObservationIgnored private(set) var searchTask: Task<Void, Never>?
     @ObservationIgnored private(set) var infoTask: Task<Void, Never>?
+    @ObservationIgnored private(set) var batchTask: Task<Void, Never>?
     /// The consent answer's run: never cancelled, so `--remember` reaches config.toml.
     @ObservationIgnored private(set) var consentTask: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
@@ -164,6 +168,13 @@ import SkillcaskDomain
     }
     /// The kind of source each package (lock name) was last added from in this sheet: its entry is that kind's.
     private var addedKinds: [String: PackageSpec.Kind] = [:]
+    /// The custom repository each package was last added from in this sheet; none for Packagist and VCS sources.
+    private var addedRepositories: [String: String] = [:]
+    /// The source `info` names for the skills.toml entry of a batch's `github:` result (`entryTarget(for:)`), by
+    /// package. A failed read leaves none, and the next batch or snapshot reads it again.
+    private var entrySources: [String: String] = [:]
+    /// The entries `readBatchEntries` is reading.
+    private var readingEntries: Set<String> = []
 
     /// A store for `scope`'s sheet, with the field pre-filled (`AppStore.Sheet.addSkill(query:)`). Runs nothing
     /// until `begin()`: a view's `init` may build it more than once.
@@ -629,40 +640,93 @@ import SkillcaskDomain
     }
 
     /// `add` of every result in `batch`, nil while one is not shown (a reload would lose its `--repository`), has
-    /// no spec shape, or `batchProblem` stands.
+    /// no spec shape, an entry is still being read (`isCheckingBatch`), or `batchProblem` stands.
     private var batchCommand: Invocation.Command? {
         let shown = Set(filteredResults.map(\.name))
         let specs = batch.compactMap(PackageSpec.parse)
-        guard specs.count == batch.count, batch.allSatisfy(shown.contains), batchProblem == nil else { return nil }
+        guard specs.count == batch.count, batch.allSatisfy(shown.contains), !isCheckingBatch, batchProblem == nil
+        else { return nil }
         return .addMany(
             specs: specs.map { $0.text(constraint: nil) }, repository: repository(for: specs[0], from: batch[0]))
     }
 
-    /// Why the batch cannot be added together; nil when it can. A batch reads no `info`, so what the single
-    /// preview warns about is refused instead:
+    /// Why the batch cannot be added together; nil when it can. What the single preview warns about is refused:
     /// - a custom repository's results with results of another source: `--repository` applies to every spec (D72);
-    /// - two results of one package: `add` merges or replaces them into one entry, and counts would claim two;
-    /// - a package skills.toml already names, unless this sheet added it from the same kind of source: `add` may
-    ///   replace that entry (`entryWarning`), which only its own preview can tell.
+    /// - two results of one package, other than different skills of one GitHub repository (which `add` merges
+    ///   into one entry): `add` would keep one of them, and counts would claim two;
+    /// - results whose skills.toml entry `add` may replace (`replacesEntry`), all of them named.
     var batchProblem: String? {
         let specs = batch.compactMap { name in PackageSpec.parse(name).map { (name, $0) } }
         if Set(specs.map { repository(for: $0.1, from: $0.0) }).count > 1 {
             return AddSkillCopy.batchMixesRepositories
         }
-        var seen: Set<String> = []
-        for (_, spec) in specs where !seen.insert(spec.package).inserted {
+        let groups = Dictionary(grouping: specs.map(\.1), by: \.package)
+        if let spec = specs.map(\.1).first(where: { !Self.merges(groups[$0.package] ?? []) }) {
             return AddSkillCopy.batchSamePackage(spec.package)
         }
-        let named = Set(
+        var replaced: [String] = []
+        for (name, spec) in specs
+        where replacesEntry(spec, repository: repository(for: spec, from: name)) && !replaced.contains(spec.package) {
+            replaced.append(spec.package)
+        }
+        if !replaced.isEmpty {
+            return AddSkillCopy.batchHasEntry(replaced)
+        }
+        let unread = unreadEntries.filter { !readingEntries.contains($0) }
+        return unread.isEmpty ? nil : AddSkillCopy.batchEntryUnread(unread)
+    }
+
+    /// The skills.toml entries of the batch's `github:` results are being read: Add waits for them.
+    var isCheckingBatch: Bool {
+        unreadEntries.contains(where: readingEntries.contains)
+    }
+
+    /// The entries of the batch's `github:` results whose source is not known yet (`readBatchEntries`), in batch
+    /// order: what this sheet added is known without them.
+    private var unreadEntries: [String] {
+        var targets: [String] = []
+        for spec in batch.compactMap(PackageSpec.parse) where addedKinds[spec.package] == nil {
+            if let target = entryTarget(for: spec), entrySources[target] == nil, !targets.contains(target) {
+                targets.append(target)
+            }
+        }
+        return targets
+    }
+
+    /// One result of a package, or different skills of one GitHub repository.
+    private static func merges(_ specs: [PackageSpec]) -> Bool {
+        let skills = specs.compactMap { $0.kind == .github ? $0.skill : nil }
+        return specs.count == 1 || (skills.count == specs.count && Set(skills).count == skills.count)
+    }
+
+    /// `add` of `spec` may replace the package's skills.toml entry (`src/commands.rs` `plan_add`, `add_vcs`,
+    /// `add_git`); this sheet's own adds count as entries before the refresh shows them.
+    /// - A registry name keeps any entry, unless `--repository` moves it to another repository: only a re-add from
+    ///   the repository this sheet added it from is known not to.
+    /// - `github:` merges only into a GitHub entry; its kind is read by `readBatchEntries` (one not read yet is
+    ///   `unreadEntries`), and a pinned spec, whose entry is not asked, counts as replaced.
+    /// - `git:` fails on an entry of another source.
+    private func replacesEntry(_ spec: PackageSpec, repository: String?) -> Bool {
+        let added = addedKinds[spec.package]
+        guard added != nil || namedPackages.contains(spec.package) else { return false }
+        switch spec.kind {
+        case .registry:
+            return repository != nil && (added != .registry || addedRepositories[spec.package] != repository)
+        case .github:
+            if let added { return added != .github }
+            guard let target = entryTarget(for: spec) else { return true }
+            return entrySources[target].map { $0 != "github" } ?? false
+        case .git: return added != .git
+        }
+    }
+
+    /// The packages this scope's skills.toml names.
+    private var namedPackages: Set<String> {
+        Set(
             store.snapshot?.entries
                 .compactMap { entry -> String? in
                     if case .package(let package) = entry.kind { package.lowercased() } else { nil }
                 } ?? [])
-        for (_, spec) in specs
-        where named.contains(spec.package) && addedKinds[spec.package] != spec.kind {
-            return AddSkillCopy.batchHasEntry(spec.package)
-        }
-        return nil
     }
 
     /// The choices as they stand.
@@ -688,7 +752,9 @@ import SkillcaskDomain
         justAdded = choices
         for name in choices.batch + (choices.selection.map { [$0] } ?? []) {
             let package = PackageSpec.packageName(of: name)
-            addedKinds[package] = PackageSpec.parse(name)?.kind
+            let spec = PackageSpec.parse(name)
+            addedKinds[package] = spec?.kind
+            addedRepositories[package] = spec.flatMap { repository(for: $0, from: name) }
             staleInfos.formUnion(infos.keys.filter { PackageSpec.packageName(of: $0) == package })
         }
     }
@@ -735,6 +801,7 @@ import SkillcaskDomain
         generation += 1
         searchTask?.cancel()
         infoTask?.cancel()
+        batchTask?.cancel()
     }
 
     /// Runs the current search again now (Retry after a network failure).
@@ -842,6 +909,33 @@ import SkillcaskDomain
                     error, spec: selectedSpec, source: selectedResult?.source.map(SourceKind.init(parsing:)),
                     personal: store.scope.isPersonal)
             }
+        }
+    }
+
+    /// Reads, one at a time, the `unreadEntries` for their source (`replacesEntry`). A read answers for its
+    /// package in later batches too; a failed one is read again on the next call.
+    private func readBatchEntries() {
+        batchTask?.cancel()
+        let targets = isEnded ? [] : unreadEntries
+        readingEntries = Set(targets)
+        guard !targets.isEmpty else { return }
+        batchTask = Task { [weak self] in
+            for target in targets {
+                guard let outcome = await self?.read(InfoDocument.self, .info(.package(target))), let self,
+                    !Task.isCancelled
+                else { return }
+                if case .success(let document) = outcome {
+                    entrySources[target] = document.source ?? ""
+                }
+                readingEntries.remove(target)
+            }
+        }
+    }
+
+    /// The scope's snapshot changed under the open sheet: skills.toml may name a batch result's package now.
+    func snapshotChanged() {
+        if !batch.isEmpty {
+            readBatchEntries()
         }
     }
 
