@@ -72,7 +72,8 @@ Junie, Devin/Windsurf, Roo Code, Cline, Goose, Factory, Mistral Vibe), so they n
 
 `junie` used to link `~/.junie/skills`. Junie reads `~/.agents/skills` itself, so the next global
 `install`, `add`, `update`, `remove` or `doctor --fix` removes the links skillcask made there,
-without a message. To keep them for a tool that reads only `~/.junie/skills`, use the path
+without a message. Until then `skillcask -g doctor` reports them as links in directories that are
+no longer targets; that is expected, also with `junie` set by an administrator. To keep them for a tool that reads only `~/.junie/skills`, use the path
 `"./.junie/skills"` instead of `"junie"`.
 
 Set the list once in `config.toml` next to the global manifest; a `skills.toml` that sets

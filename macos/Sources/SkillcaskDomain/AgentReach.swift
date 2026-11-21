@@ -46,8 +46,9 @@ public struct AgentTarget: Hashable, Sendable, Identifiable {
         isGlobal ? "~/\(readsFrom)" : readsFrom
     }
 
-    /// The presets that get a link directory of their own (`PRESETS` in `src/manifest.rs`: `claude` and `kiro` in
-    /// both scopes, `junie` in the global scope only); every other preset reads the store.
+    /// The presets that get a link directory of their own in a CLI before 0.10.3, the only one this fallback serves:
+    /// `claude` and `kiro` in both scopes, `junie` in the global scope only (dropped in D73); every other preset reads
+    /// the store.
     public static func ownDirectory(of preset: String, isGlobal: Bool) -> String? {
         switch preset {
         case "claude": ".claude/skills"
