@@ -131,6 +131,11 @@ struct AddSkillSheet: View {
         .onChange(of: search.selection) { failedSpec = nil }
         .onChange(of: search.batch) { failedSpec = nil }
         .onChange(of: search.store.snapshot) { search.snapshotChanged() }
+        .onChange(of: search.isCheckingBatch) { _, checking in
+            if checking {
+                AccessibilityNotification.Announcement(AddSkillCopy.batchChecking).post()
+            }
+        }
     }
 
     // MARK: - Derived

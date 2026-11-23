@@ -6,7 +6,7 @@ import SkillcaskDomain
 /// where noted; versions carry no `v` prefix (the `DesignFixtures` decision).
 ///
 /// Invented (no board draws them): `searching`, `loadingPreview`, `idleTitle`, `idleBody`, `noSelection`,
-/// `resultCount`, `addResults`, `batchHeading`, `batchNote`, `batchMixesRepositories`, `batchSamePackage`,
+/// `resultCount`, `addResults`, `batchHeading`, `batchNote`, `batchUpdates`, `batchMixesRepositories`, `batchSamePackage`,
 /// `batchHasEntry`, `batchEntryUnread`, `batchChecking`,
 /// `allSkillsAdded`, `everySkillAdded`, `selectionKept`, `oneSkillAdded`, `otherSkillsIn`, `addOne`, `showOutput`, `waitingForOutput`,
 /// `couldNotAdd`, `added(package:)`, `addedSoFar`, `status(_:count:)`, `summary(done:scope:)`, `done`,
@@ -221,31 +221,56 @@ public enum AddSkillCopy {
     public static func batchHeading(_ count: Int) -> String {
         "\(resultCount(count)) selected"
     }
-    /// Invented: under the selected results: they are added in one go, each as `add` takes a result by default.
+    /// Invented: under the selected results: they are added in one go, each as `add` takes a result by default
+    /// (`src/commands.rs` `add`, `add_vcs`).
     public static let batchNote =
-        "Each result is added with all its skills, and with the version rule skills.toml has for it or the default one. If one cannot be added, none is."
-    /// Invented: two selected results are the same package, other than skills of one GitHub repository.
-    public static func batchSamePackage(_ package: String) -> String {
-        "\(package) is selected more than once. Keep one of its results."
-    }
-    /// Invented: selected results whose skills.toml entries Add may replace; their own previews say what changes.
-    public static func batchHasEntry(_ packages: [String]) -> String {
+        "A new package is added with all its skills, a result that names a skill with that skill alone. A package already in skills.toml keeps its skills and version rule. If one cannot be added, none is."
+    /// Invented: under the selected results that are already installed: `add` resolves their entries again, which
+    /// may move their locks (`^1.0` locked at 1.0.0 moves to 1.1.0).
+    public static func batchUpdates(_ packages: [String]) -> String {
         packages.count == 1
-            ? "\(packages[0]) is already in skills.toml, and Add may replace its entry. Select it on its own to see what Add changes."
-            : "\(OutcomeCopy.list(packages)) are already in skills.toml, and Add may replace their entries. Select each on its own to see what Add changes."
+            ? "\(packages[0]) is already installed: Add updates it to the newest version its rule allows."
+            : "\(OutcomeCopy.list(packages)) are already installed: Add updates each to the newest version its rule allows."
+    }
+    /// Invented: selected results of one package, other than skills of one GitHub repository, each package named.
+    public static func batchSamePackage(_ packages: [String]) -> UserMessage {
+        packages.count == 1
+            ? UserMessage(
+                title: "\(packages[0]) is selected more than once.", reason: "Keep one of its results.",
+                severity: .warning)
+            : UserMessage(
+                title: "\(OutcomeCopy.list(packages)) are each selected more than once.",
+                reason: "Keep one result of each.", severity: .warning)
+    }
+    /// Invented: selected results whose skills.toml entries Add may replace.
+    public static func batchHasEntry(_ packages: [String]) -> UserMessage {
+        packages.count == 1
+            ? UserMessage(
+                title: "\(packages[0]) is already in skills.toml, and Add may replace its entry.",
+                reason: "Deselect it to add the others.", severity: .warning)
+            : UserMessage(
+                title: "\(OutcomeCopy.list(packages)) are already in skills.toml, and Add may replace their entries.",
+                reason: "Deselect them to add the others.", severity: .warning)
     }
     /// Invented: the skills.toml entries of selected GitHub results could not be read, so whether Add replaces them
-    /// is not known.
-    public static func batchEntryUnread(_ packages: [String]) -> String {
+    /// is not known; Retry reads them again.
+    public static func batchEntryUnread(_ packages: [String]) -> UserMessage {
         packages.count == 1
-            ? "Couldn’t read the skills.toml entry of \(packages[0]). Select it on its own to see what Add changes."
-            : "Couldn’t read the skills.toml entries of \(OutcomeCopy.list(packages)). Select each on its own to see what Add changes."
+            ? UserMessage(
+                title: "Couldn’t read the skills.toml entry of \(packages[0]).",
+                reason: "Without it, Add can’t tell whether it replaces that entry.", severity: .warning,
+                remedy: .retry)
+            : UserMessage(
+                title: "Couldn’t read the skills.toml entries of \(OutcomeCopy.list(packages)).",
+                reason: "Without them, Add can’t tell whether it replaces those entries.", severity: .warning,
+                remedy: .retry)
     }
-    /// Invented: under the selected results while the skills.toml entries of their GitHub repositories are read.
+    /// Invented: in the refusal's place while the skills.toml entries of selected GitHub results are read.
     public static let batchChecking = "Checking skills.toml…"
     /// Invented: the batch mixes a custom repository's results with other sources: one `--repository` applies to all.
-    public static let batchMixesRepositories =
-        "Results from a custom repository can only be added together with results from the same repository."
+    public static let batchMixesRepositories = UserMessage(
+        title: "Results from a custom repository can’t be added with results from other sources.",
+        reason: "Select results from one source, or add them separately.", severity: .warning)
     /// Invented: the link under one skill of a GitHub result to the repository's other skills (D72).
     public static func allSkillsOf(_ package: String) -> String {
         "Show all skills of \(package)"
@@ -402,9 +427,10 @@ public enum AddSkillCopy {
     }
 
     /// Invented: the one toast of a sheet that added more than once, when it closes: `Added 3 skills to api`
-    /// (as Adopt's batch: `AdoptCopy.summary(done:scope:)`).
-    public static func summary(done: Int, scope: String) -> String {
-        done == 1 ? "Added 1 skill to \(scope)" : "Added \(done) skills to \(scope)"
+    /// (as Adopt's batch: `AdoptCopy.summary(done:scope:)`); `Added skills to api` while the count is not known.
+    public static func summary(done: Int?, scope: String) -> String {
+        guard let done else { return "Added skills to \(scope)" }
+        return done == 1 ? "Added 1 skill to \(scope)" : "Added \(done) skills to \(scope)"
     }
 
     /// `Couldn’t find acme/jira-triage-v2.`

@@ -30,8 +30,16 @@ import SkillcaskDomain
         var text: String
         /// The run's `ActivityEntry`, for the toast's "Show details".
         let runID: UUID?
-        /// The scope's refresh after the add has none of the skills it named: it counts for nothing.
+        /// The scope's refresh after the add has none of the skills it named, or none at all of its package when it
+        /// named none: it counts for nothing.
         var addedNothing = false
+
+        /// Not known until the scope's refresh after the add has landed: it named no skill, and nothing settled it.
+        var isUncounted: Bool { skills.isEmpty && !addedNothing }
+
+        /// The skills to emphasize in `text`: none where the text names the package, not its skills, since a skill
+        /// named like its repository would be bolded inside the package's name.
+        var emphasis: [String] { text == AddSkillCopy.added(package: package) ? [] : skills }
     }
 
     /// What takes the keyboard: the header's field, or the results list.
@@ -89,15 +97,17 @@ import SkillcaskDomain
         return false
     }
 
-    /// The skills added in this visit, each counted once however often its package was added; a package whose
-    /// skills are not known counts as one, an add that added nothing as none.
-    var skillCount: Int {
-        Set(added.filter { !$0.addedNothing }.flatMap { $0.skills.isEmpty ? [$0.package] : $0.skills }).count
+    /// The skills added in this visit, each counted once however often its package was added; nil while an add
+    /// that named no skill is not settled (`settle`), or its refresh failed: no count is stated then.
+    var skillCount: Int? {
+        guard !added.contains(where: \.isUncounted) else { return nil }
+        return Set(added.filter { !$0.addedNothing }.flatMap(\.skills)).count
     }
 
     /// The count beside the last add's words, from the second add on, while there is something to count.
     private var countNote: String? {
-        added.count > 1 && skillCount > 0 ? AddSkillCopy.addedSoFar(skillCount) : nil
+        guard added.count > 1, let skillCount, skillCount > 0 else { return nil }
+        return AddSkillCopy.addedSoFar(skillCount)
     }
 
     /// What the visit added, in one sentence: the footer's accessibility label and VoiceOver's announcement after
@@ -111,7 +121,7 @@ import SkillcaskDomain
         guard let last = added.last else {
             return .note(search.store.scope.isPersonal ? AddSkillCopy.footerPersonal : AddSkillCopy.footerProject)
         }
-        return .added(text: last.text, emphasis: last.skills, count: countNote)
+        return .added(text: last.text, emphasis: last.emphasis, count: countNote)
     }
 
     /// The footer's close button: Cancel (it stops a run in flight), Done once something was added.
@@ -170,19 +180,26 @@ import SkillcaskDomain
     /// The scope's refresh after an add landed: the add keeps the skills it named that the scope has under its
     /// package. When some are missing (skills.toml renames the skill, so `status` knows another name and the add
     /// changed nothing), its words fall back to the source as it was typed, and with none left it counts for
-    /// nothing. An add that named none (a batch result) takes the skills its package has. A refresh that failed
-    /// says nothing, and the add's words stand.
+    /// nothing. An add that named none (a batch result) takes the skills its package has, and with none counts for
+    /// nothing too. Rows about the package itself (`.packageOnly`) are no skill. A refresh that failed says
+    /// nothing, and the add's words stand.
     private func settle(_ ticket: UUID, packages: [String]) {
         let store = search.store
         guard let indices = unsettled.removeValue(forKey: ticket), store.refreshError == nil,
             let entries = store.snapshot?.entries
         else { return }
         for (index, package) in zip(indices, packages) {
-            let skills = entries.filter { $0.package?.lowercased() == package }.map(\.name)
+            let skills =
+                entries.filter { entry in
+                    if case .packageOnly = entry.kind { return false }
+                    return entry.package?.lowercased() == package
+                }
+                .map(\.name)
             let present = Set(skills)
             let named = added[index].skills
             if named.isEmpty {
                 added[index].skills = skills
+                added[index].addedNothing = skills.isEmpty
                 continue
             }
             let found = named.filter(present.contains)
@@ -250,7 +267,7 @@ import SkillcaskDomain
     private func conclude(runner: ActionRunner) -> Task<Void, Never>? {
         guard let last = added.last else { return nil }
         if added.count == 1 || skillCount == 0 {
-            runner.announce(last.text, emphasis: last.skills, id: last.runID ?? UUID())
+            runner.announce(last.text, emphasis: last.emphasis, id: last.runID ?? UUID())
         } else {
             runner.announce(AddSkillCopy.summary(done: skillCount, scope: ShellCopy.name(of: search.store.scope)))
         }

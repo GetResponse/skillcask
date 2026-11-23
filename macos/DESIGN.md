@@ -176,18 +176,23 @@ Code comments cite these by number.
 - **G19** No board draws several selected results. With a CLI that takes several specs (D72), the
   results list selects several (⌘- and ⇧-click); the preview pane then lists their names and
   sources instead of one `info`, and Add (`Add 3 Results`: a result is a package or one skill) runs
-  one `add` of all of them with the CLI's defaults: no rule, skills or rename to choose. What the
-  single preview would warn about is refused instead, with a warning: results of a custom
-  repository with results of another source (`--repository` applies to every spec), two results
-  of one package other than different skills of one GitHub repository, and results whose
-  skills.toml entry `add` may replace, all named: a `github:` result of a package skills.toml
-  names waits for `info` of that entry (read again when the snapshot names a new one) and is
-  refused unless it is a GitHub one, or, when the read failed, refused as not read until the next
-  batch or snapshot reads it again; a custom repository's result of a named package is refused
-  (`--repository` may move it) unless this sheet added it from that repository, and this sheet's
-  own adds count with the kind of source they came from. Each spec counts as one add; once the
-  refresh lands, a result that named no skill counts the skills of its package in the footer and
-  the closing summary. The run's headline names no version. With an older CLI the list keeps one
+  one `add` of all of them with the CLI's defaults: no rule, skills or rename to choose. Installed
+  results are named under the note: `add` resolves their entries again, which may move their locks.
+  What the single preview would warn about is refused instead, as a warning with a title and a
+  reason: results of a custom repository with results of another source (`--repository` applies
+  to every spec), two results of one package other than different skills of one GitHub repository,
+  and results whose skills.toml entry `add` may replace, all named. An entry is one `status` shows
+  as a package row, or as a package row only (drifted, not in the lock yet). A `github:` result of
+  such a package waits for `info` of that entry, with a spinner where the refusal would stand, and
+  is refused unless it is a GitHub one. The read in flight is never restarted; an entry is read again
+  when a snapshot names a new one or shows skills.toml changed; a failed read is refused as not
+  read, with Retry. A custom repository's result of a named package is refused (`--repository`
+  may move it) unless this sheet added it from that repository, and this sheet's own adds count
+  with the kind of source they came from (a registry name without `--repository` keeps the entry's).
+  Each spec counts as one add; once the refresh lands, a result that named no skill counts the
+  skills of its package (not its package rows) in the footer and the closing summary, and none
+  when it has none. Until then, or when the refresh failed, no count is stated: the summary reads
+  `Added skills to api`. The run's headline names no version. With an older CLI the list keeps one
   selection, the first newly selected row in list order.
 - The toast's shadow (`0 8pt 24pt`, black at 0.16 light / 0.5 dark) lives in `Toast.Shadow`; no
   shadow token exists yet. Cards never have a shadow.

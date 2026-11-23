@@ -84,13 +84,16 @@ struct ResultPreview: View {
 
     // MARK: - Batch
 
-    /// Several selected results (D72): their names and sources, and how Add treats them.
+    /// Several selected results (D72): their names and sources, and how Add treats them. While skills.toml is read,
+    /// the spinner stands where a refusal would, next to the disabled Add's reason.
     private var batch: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.m) {
                 failureBlock
-                if let problem = search.batchProblem {
-                    FailureBanner(UserMessage(title: problem, severity: .warning))
+                if search.isCheckingBatch {
+                    Spinner(label: AddSkillCopy.batchChecking)
+                } else if let problem = search.batchProblem {
+                    FailureBanner(problem, onRetry: search.retryBatchEntries)
                 }
                 Text(AddSkillCopy.batchHeading(search.batch.count))
                     .font(Font.Token.calloutSemibold)
@@ -110,10 +113,12 @@ struct ResultPreview: View {
                 Text(AddSkillCopy.batchNote)
                     .font(Font.Token.caption)
                     .foregroundStyle(Color.textSecondary)
-                if search.isCheckingBatch {
-                    Text(AddSkillCopy.batchChecking)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !search.batchUpdates.isEmpty {
+                    Text(AddSkillCopy.batchUpdates(search.batchUpdates))
                         .font(Font.Token.caption)
-                        .foregroundStyle(Color.textSecondary)
+                        .foregroundStyle(Color.statusWarningText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(.vertical, Size.cardPaddingH)
