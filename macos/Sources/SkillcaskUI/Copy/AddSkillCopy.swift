@@ -7,7 +7,7 @@ import SkillcaskDomain
 ///
 /// Invented (no board draws them): `searching`, `loadingPreview`, `idleTitle`, `idleBody`, `noSelection`,
 /// `resultCount`, `addResults`, `batchHeading`, `batchNote`, `batchMixesRepositories`, `batchSamePackage`,
-/// `batchHasEntry`,
+/// `batchHasEntry`, `batchEntryUnread`, `batchChecking`,
 /// `allSkillsAdded`, `everySkillAdded`, `selectionKept`, `oneSkillAdded`, `otherSkillsIn`, `addOne`, `showOutput`, `waitingForOutput`,
 /// `couldNotAdd`, `added(package:)`, `addedSoFar`, `status(_:count:)`, `summary(done:scope:)`, `done`,
 /// `footerPersonal`,
@@ -224,14 +224,25 @@ public enum AddSkillCopy {
     /// Invented: under the selected results: they are added in one go, each as `add` takes a result by default.
     public static let batchNote =
         "Each result is added with all its skills, and with the version rule skills.toml has for it or the default one. If one cannot be added, none is."
-    /// Invented: two selected results are the same package.
+    /// Invented: two selected results are the same package, other than skills of one GitHub repository.
     public static func batchSamePackage(_ package: String) -> String {
         "\(package) is selected more than once. Keep one of its results."
     }
-    /// Invented: a selected result's package is already in skills.toml; its own preview says what Add changes.
-    public static func batchHasEntry(_ package: String) -> String {
-        "\(package) is already in skills.toml. Select it on its own to see what Add changes."
+    /// Invented: selected results whose skills.toml entries Add may replace; their own previews say what changes.
+    public static func batchHasEntry(_ packages: [String]) -> String {
+        packages.count == 1
+            ? "\(packages[0]) is already in skills.toml, and Add may replace its entry. Select it on its own to see what Add changes."
+            : "\(OutcomeCopy.list(packages)) are already in skills.toml, and Add may replace their entries. Select each on its own to see what Add changes."
     }
+    /// Invented: the skills.toml entries of selected GitHub results could not be read, so whether Add replaces them
+    /// is not known.
+    public static func batchEntryUnread(_ packages: [String]) -> String {
+        packages.count == 1
+            ? "Couldn’t read the skills.toml entry of \(packages[0]). Select it on its own to see what Add changes."
+            : "Couldn’t read the skills.toml entries of \(OutcomeCopy.list(packages)). Select each on its own to see what Add changes."
+    }
+    /// Invented: under the selected results while the skills.toml entries of their GitHub repositories are read.
+    public static let batchChecking = "Checking skills.toml…"
     /// Invented: the batch mixes a custom repository's results with other sources: one `--repository` applies to all.
     public static let batchMixesRepositories =
         "Results from a custom repository can only be added together with results from the same repository."

@@ -110,6 +110,11 @@ struct ResultPreview: View {
                 Text(AddSkillCopy.batchNote)
                     .font(Font.Token.caption)
                     .foregroundStyle(Color.textSecondary)
+                if search.isCheckingBatch {
+                    Text(AddSkillCopy.batchChecking)
+                        .font(Font.Token.caption)
+                        .foregroundStyle(Color.textSecondary)
+                }
             }
             .padding(.vertical, Size.cardPaddingH)
             .padding(.horizontal, Spacing.l)
