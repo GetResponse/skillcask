@@ -620,6 +620,60 @@ import Testing
         #expect(search.batchProblem == AddSkillCopy.batchHasEntry(["anthropics/skills"]))
     }
 
+    // Review of #95: a read that started before skills.toml changed was stored as current: an entry that had become
+    // a registry one was read as `github`, and Add would have replaced it.
+    @Test(.timeLimit(.minutes(1))) func aReadFromBeforeSkillsTomlChangedIsReadAgain() async throws {
+        let gate = Gate()
+        await client.json(
+            .info(.package("anthropics/skills")), in: scope, #"{"package":"anthropics/skills","source":"github"}"#,
+            gate: gate)
+        await client.json(
+            .info(.package("anthropics/skills")), in: scope, #"{"package":"anthropics/skills","source":"composer"}"#)
+        let store = store(capabilities: Self.capable)
+        let search = SearchStore(store: store, debounce: .zero)
+        let pdf = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"github:anthropics/skills/pdf","source":"github"},{"name":"kolya/jira-to-md","source":"packagist"}]}
+                """#)
+        search.preload(query: "pdf", results: .loaded(pdf), skillsSh: .disabled)
+        search.selections = ["github:anthropics/skills/pdf", "kolya/jira-to-md"]
+        await gate.arrived()
+        store.preload(
+            snapshot: AddSkillSamples.apiSnapshot { entries in
+                entries + [["package": "anthropics/skills", "state": "repository changed", "ok": false]]
+            })
+        search.snapshotChanged()
+        await gate.open()
+        await search.batchTask?.value
+        #expect(search.batchProblem == AddSkillCopy.batchHasEntry(["anthropics/skills"]) && search.command == nil)
+        #expect(await client.commands.count == 2, "read again for the new entry")
+    }
+
+    // Review of #95: the line about installed packages missed a result joining a skill to an installed entry.
+    @Test(.timeLimit(.minutes(1))) func aBatchSaysWhichPackagesAddResolvesAgain() async throws {
+        await client.json(
+            .info(.package("anthropics/skills")), in: scope, #"{"package":"anthropics/skills","source":"github"}"#)
+        let store = store(capabilities: Self.capable)
+        store.preload(
+            snapshot: AddSkillSamples.apiSnapshot { entries in
+                entries + [
+                    ["package": "anthropics/skills", "skill": "pdf", "version": "1.0.0", "state": "ok", "ok": true]
+                ]
+            })
+        let search = SearchStore(store: store, debounce: .zero)
+        let docx = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"github:anthropics/skills/docx","source":"github"},{"name":"github:anthropics/skills/xlsx","source":"github"},
+                {"name":"kolya/jira-to-md","source":"packagist"}]}
+                """#)
+        search.preload(query: "docx", results: .loaded(docx), skillsSh: .disabled)
+        search.selections = Set(docx.results.map(\.name))
+        await search.batchTask?.value
+        #expect(search.batchProblem == nil && search.batchUpdates == ["anthropics/skills"], "named once, a join")
+    }
+
     // Review of #93: a failed read had no retry while the selection stayed.
     @Test(.timeLimit(.minutes(1))) func aFailedEntryReadIsRetried() async throws {
         await client.script(

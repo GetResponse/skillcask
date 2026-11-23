@@ -225,12 +225,13 @@ public enum AddSkillCopy {
     /// (`src/commands.rs` `add`, `add_vcs`).
     public static let batchNote =
         "A new package is added with all its skills, a result that names a skill with that skill alone. A package already in skills.toml keeps its skills and version rule. If one cannot be added, none is."
-    /// Invented: under the selected results that are already installed: `add` resolves their entries again, which
-    /// may move their locks (`^1.0` locked at 1.0.0 moves to 1.1.0).
+    /// Invented: under the selected results whose package the scope already has: `add` resolves it again, which
+    /// may move its lock (`^1.0` locked at 1.0.0 moves to 1.1.0). Also true of an entry not locked yet and of a
+    /// dependency, which has no rule of its own.
     public static func batchUpdates(_ packages: [String]) -> String {
         packages.count == 1
-            ? "\(packages[0]) is already installed: Add updates it to the newest version its rule allows."
-            : "\(OutcomeCopy.list(packages)) are already installed: Add updates each to the newest version its rule allows."
+            ? "\(packages[0]) is already in skills.toml or skills.lock: Add resolves it again, which may move it to a newer version."
+            : "\(OutcomeCopy.list(packages)) are already in skills.toml or skills.lock: Add resolves each again, which may move it to a newer version."
     }
     /// Invented: selected results of one package, other than skills of one GitHub repository, each package named.
     public static func batchSamePackage(_ packages: [String]) -> UserMessage {

@@ -173,10 +173,12 @@ import SkillcaskDomain
     /// The source `info` names for the skills.toml entry of a batch's `github:` result (`entryTarget(for:)`), by
     /// package. A failed read leaves none, and the next batch or snapshot reads it again.
     private var entrySources: [String: String] = [:]
-    /// The entries `readBatchEntries` still has to read, in batch order; the first is the one in flight.
+    /// The entries `readBatchEntries` still has to read, in batch order.
     private var entryQueue: [String] = []
     /// The skills.toml entries as the last snapshot showed them (`manifestKey`): `entrySources` holds for them.
     @ObservationIgnored private var manifestKey: Set<String>
+    /// Bumped whenever `manifestKey` changes: a read that started before answers for an entry no longer there.
+    @ObservationIgnored private var manifestGeneration = 0
 
     /// A store for `scope`'s sheet, with the field pre-filled (`AppStore.Sheet.addSkill(query:)`). Runs nothing
     /// until `begin()`: a view's `init` may build it more than once.
@@ -685,14 +687,15 @@ import SkillcaskDomain
         unreadEntries.contains(where: entryQueue.contains)
     }
 
-    /// The packages of the batch that are already installed, in batch order: `add` resolves their entries again,
-    /// which may move their locks to a newer version their rule allows.
+    /// The packages of the batch that skills.toml already names or the scope already has, in batch order: `add`
+    /// resolves their entries again, also when a result joins another skill to one (`add_vcs`), which may move
+    /// their locks to a newer version.
     var batchUpdates: [String] {
+        let known = namedPackages.union(installedPackages)
         var packages: [String] = []
         for name in batch {
-            guard let result = filteredResults.first(where: { $0.name == name }), isInstalled(result) else { continue }
             let package = PackageSpec.packageName(of: name)
-            if !packages.contains(package) {
+            if known.contains(package), !packages.contains(package) {
                 packages.append(package)
             }
         }
@@ -955,10 +958,13 @@ import SkillcaskDomain
         entryQueue = isEnded ? [] : unreadEntries
         guard batchTask == nil, !entryQueue.isEmpty else { return }
         batchTask = Task { [weak self] in
-            while let target = self?.entryQueue.first {
+            while let target = self?.entryQueue.first, let generation = self?.manifestGeneration {
                 guard let outcome = await self?.read(InfoDocument.self, .info(.package(target))), let self,
                     !Task.isCancelled
                 else { return }
+                // skills.toml changed while `info` ran: the answer may be the old entry's, and `snapshotChanged`
+                // queued the entry again.
+                guard generation == manifestGeneration else { continue }
                 if case .success(let document) = outcome {
                     entrySources[target] = document.source ?? ""
                 }
@@ -979,6 +985,7 @@ import SkillcaskDomain
         let key = Self.manifestKey(store.snapshot)
         if key != manifestKey {
             manifestKey = key
+            manifestGeneration += 1
             entrySources = [:]
         }
         if !batch.isEmpty {

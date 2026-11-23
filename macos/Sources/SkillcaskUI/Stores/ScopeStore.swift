@@ -114,7 +114,11 @@ import SkillcaskDomain
     public private(set) var detail: SkillDetail?
     public private(set) var isLoadingDetail = false
 
-    @ObservationIgnored private var generation = 0
+    /// The last refresh started; `landedRefresh` compares to it.
+    @ObservationIgnored private(set) var generation = 0
+    /// The `generation` of the last refresh whose `status` answered: a snapshot newer than every refresh started
+    /// before it.
+    @ObservationIgnored private(set) var landedRefresh = 0
     /// The trio is in flight, quiet or not (`isRefreshing` is only the one the list shows).
     @ObservationIgnored private(set) var isReading = false
     /// How many `refreshAfterMutation` are in flight, and when the last one ended: quiet refreshes wait them out.
@@ -302,6 +306,7 @@ import SkillcaskDomain
             }
             documents.repair = repair
             refreshError = nil
+            landedRefresh = mine
             partialFailure = firstError.map { PartialFailure(failed: failed, kept: kept, error: $0) }
             rebuild()
             checkedAt = snapshot?.checkedAt

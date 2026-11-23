@@ -114,7 +114,8 @@ struct ResultPreview: View {
                     .font(Font.Token.caption)
                     .foregroundStyle(Color.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                if !search.batchUpdates.isEmpty {
+                // Not under a refusal, which may name the same package, nor while one may still come.
+                if search.batchProblem == nil, !search.isCheckingBatch, !search.batchUpdates.isEmpty {
                     Text(AddSkillCopy.batchUpdates(search.batchUpdates))
                         .font(Font.Token.caption)
                         .foregroundStyle(Color.statusWarningText)

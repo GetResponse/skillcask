@@ -77,9 +77,9 @@ import SkillcaskDomain
     @ObservationIgnored private var runs: [Task<Void, Never>] = []
     /// The selection an add made after the sheet was gone; that add's task ends with it.
     @ObservationIgnored private var lateSelection: Task<Void, Never>?
-    /// Where in `added` each run that exited 0 stands (several places for a batch), until its refresh has landed
-    /// (`settle`).
-    @ObservationIgnored private var unsettled: [UUID: Range<Int>] = [:]
+    /// Each run that exited 0 until a refresh started after it has landed (`settle`): where in `added` it stands
+    /// (several places for a batch), its packages, and the scope's refresh generation when it exited.
+    @ObservationIgnored private var unsettled: [UUID: (indices: Range<Int>, packages: [String], after: Int)] = [:]
 
     init(search: SearchStore, onClose: @escaping () -> Void = {}) {
         self.search = search
@@ -163,12 +163,14 @@ import SkillcaskDomain
             onSuccess: {
                 let start = self.added.count
                 self.succeeded(choices, items: items, runner: runner)
-                self.unsettled[ticket] = start..<self.added.count
+                self.unsettled[ticket] = (
+                    start..<self.added.count, items.map(\.spec.package), self.search.store.generation
+                )
             })
         guard let run else { return nil }
         let settled = Task {
             await run.value
-            settle(ticket, packages: items.map(\.spec.package))
+            settle()
         }
         runs.append(settled)
         return Task {
@@ -181,13 +183,19 @@ import SkillcaskDomain
     /// package. When some are missing (skills.toml renames the skill, so `status` knows another name and the add
     /// changed nothing), its words fall back to the source as it was typed, and with none left it counts for
     /// nothing. An add that named none (a batch result) takes the skills its package has, and with none counts for
-    /// nothing too. Rows about the package itself (`.packageOnly`) are no skill. A refresh that failed says
-    /// nothing, and the add's words stand.
-    private func settle(_ ticket: UUID, packages: [String]) {
+    /// nothing too. Rows about the package itself (`.packageOnly`) are no skill. Only a refresh started after the
+    /// add settles it: one superseded by another add's refresh, or failed, leaves it waiting for the next one, and
+    /// the add's words stand until then.
+    func settle() {
         let store = search.store
-        guard let indices = unsettled.removeValue(forKey: ticket), store.refreshError == nil,
-            let entries = store.snapshot?.entries
-        else { return }
+        guard let entries = store.snapshot?.entries else { return }
+        for (ticket, run) in unsettled where store.landedRefresh > run.after {
+            unsettled[ticket] = nil
+            settle(run.indices, packages: run.packages, from: entries)
+        }
+    }
+
+    private func settle(_ indices: Range<Int>, packages: [String], from entries: [SkillEntry]) {
         for (index, package) in zip(indices, packages) {
             let skills =
                 entries.filter { entry in

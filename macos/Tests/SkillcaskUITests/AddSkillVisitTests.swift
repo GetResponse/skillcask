@@ -198,6 +198,57 @@ import Testing
         #expect(runner.toast?.text == "Added skills to add-visit-tests")
     }
 
+    // Review of #95: one failed refresh dropped the batch's ticket, so no later refresh settled it and the count was
+    // gone for the rest of the visit.
+    @Test(.timeLimit(.minutes(1))) func aBatchIsSettledByTheRefreshAfterOneThatFailed() async throws {
+        let visit = visit(capabilities: Self.capable)
+        try await add(Self.cli, in: visit, installed: [Self.cli])
+        visit.search.selections = [Self.cli.package, Self.markdown.package]
+        let command = try #require(visit.search.command)
+        await client.lines(command, in: scope, [#"added \#(Self.markdown.package) = "^0.9" (0.9.0)"#])
+        await client.script(.status, in: scope, .error(.noDocument))
+        await client.json(.audit, in: scope, ScopeStoreTests.emptyAudit)
+        await client.json(.doctor(fix: false), in: scope, ScopeStoreTests.cleanDoctor)
+        await visit.add(runner: runner)?.value
+        #expect(visit.skillCount == nil)
+        await scriptRefresh([Self.cli, Self.markdown])
+        await visit.search.store.refresh()
+        visit.settle()
+        #expect(visit.skillCount == 2)
+    }
+
+    // Review of #95: a second add that ended while the batch's refresh still read superseded it, and the batch
+    // settled against the snapshot from before it: "1 skill added" with three in the scope.
+    @Test(.timeLimit(.minutes(1))) func aBatchWhoseRefreshWasSupersededSettlesWithTheNextOne() async throws {
+        let visit = visit(capabilities: Self.capable)
+        visit.search.selections = [Self.cli.package, Self.markdown.package]
+        let command = try #require(visit.search.command)
+        await client.lines(command, in: scope, [#"added \#(Self.markdown.package) = "^0.9" (0.9.0)"#])
+        let first = Gate()
+        await client.json(.status, in: scope, Self.status([Self.cli, Self.markdown]), gate: first)
+        await client.json(.audit, in: scope, ScopeStoreTests.emptyAudit)
+        await client.json(.doctor(fix: false), in: scope, ScopeStoreTests.cleanDoctor)
+        let batch = try #require(visit.add(runner: runner))
+        await first.arrived()
+        visit.search.selections = []
+        await select(Self.german, in: visit)
+        let single = try #require(visit.search.command)
+        await client.lines(single, in: scope, [#"added \#(Self.german.package) = "^1" (1.0.0)"#])
+        let second = Gate()
+        await client.json(.status, in: scope, Self.status([Self.cli, Self.markdown, Self.german]), gate: second)
+        await client.json(.audit, in: scope, ScopeStoreTests.emptyAudit)
+        await client.json(.doctor(fix: false), in: scope, ScopeStoreTests.cleanDoctor)
+        let german = try #require(visit.add(runner: runner))
+        await second.arrived()
+        await first.open()
+        await batch.value
+        #expect(visit.skillCount == nil, "not settled against the snapshot from before the batch")
+        await second.open()
+        await german.value
+        #expect(visit.added.map(\.skills) == [["jira-cli"], ["jira-to-md"], ["german-writing"]])
+        #expect(visit.skillCount == 3)
+    }
+
     // Review of #93: `settle` took the package's own row for a skill, and the footer bolded a skill named like its
     // repository inside the package's name.
     @Test(.timeLimit(.minutes(1))) func aBatchResultTakesOnlyItsPackagesSkills() async throws {
