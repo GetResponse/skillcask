@@ -27,7 +27,7 @@ sha2 = "0.11.1"
 tempfile = "3.27.0"
 toml_edit = "0.25.17"
 ureq = { version = "3.5.2", features = ["platform-verifier"] }
-url = "2.5.8"
+url = "2.5.9"
 zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
 
 [target.'cfg(windows)'.dependencies]
