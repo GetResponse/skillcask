@@ -193,9 +193,25 @@ import Testing
         await client.json(.audit, in: scope, ScopeStoreTests.emptyAudit)
         await client.json(.doctor(fix: false), in: scope, ScopeStoreTests.cleanDoctor)
         await visit.add(runner: runner)?.value
-        #expect(visit.skillCount == nil && visit.status == "Added \(Self.markdown.package)")
+        #expect(visit.skillCount == nil && visit.status == "Added 2 results")
         visit.cancelOrClose(runner: runner)
         #expect(runner.toast?.text == "Added skills to add-visit-tests")
+    }
+
+    // Review of #95: the batch's footer named its last result only ("Added kolya/jira-to-md"), also when that one
+    // added nothing, and a re-added package counted every skill it already had as added.
+    @Test(.timeLimit(.minutes(1))) func aBatchFooterSaysTheBatchAndCountsOnlyNewSkills() async throws {
+        let visit = visit(capabilities: Self.capable)
+        try await add(Self.cli, in: visit, installed: [Self.cli])
+        visit.search.selections = [Self.markdown.package, Self.cli.package]
+        let command = try #require(visit.search.command)
+        await client.lines(command, in: scope, [#"added \#(Self.markdown.package) = "^0.9" (0.9.0)"#])
+        await scriptRefresh([Self.cli, Self.markdown])
+        await visit.add(runner: runner)?.value
+        let batch = Dictionary(uniqueKeysWithValues: visit.added.dropFirst().map { ($0.package, $0.skills) })
+        #expect(batch == [Self.markdown.package: ["jira-to-md"], Self.cli.package: []], "the re-add added no skill")
+        #expect(
+            visit.footer == .added(text: "Added 2 results", emphasis: [], count: AddSkillCopy.addedSoFar(2)))
     }
 
     // Review of #95: one failed refresh dropped the batch's ticket, so no later refresh settled it and the count was
@@ -271,8 +287,8 @@ import Testing
         #expect(visit.skillCount == 2)
         #expect(
             visit.footer
-                == .added(text: "Added \(Self.markdown.package)", emphasis: [], count: "· 2 skills added"),
-            "the text names the package, not jira-to-md")
+                == .added(text: "Added 2 results", emphasis: [], count: "· 2 skills added"),
+            "the batch's words, which emphasize no skill")
     }
 
     // Review of #91: Add stayed off for every later batch once one had run.

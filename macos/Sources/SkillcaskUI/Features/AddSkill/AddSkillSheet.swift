@@ -134,9 +134,13 @@ struct AddSkillSheet: View {
             search.snapshotChanged()
             visit.settle()
         }
-        .onChange(of: search.isCheckingBatch) { _, checking in
-            if checking {
-                AccessibilityNotification.Announcement(AddSkillCopy.batchChecking).post()
+        .onChange(of: search.batchState) { _, state in
+            switch state {
+            case .checking: AccessibilityNotification.Announcement(AddSkillCopy.batchChecking).post()
+            case .refused(let problem):
+                let said = [problem.title, problem.reason].compactMap(\.self).joined(separator: " ")
+                AccessibilityNotification.Announcement(said).post()
+            case .ready: break
             }
         }
     }

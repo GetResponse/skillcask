@@ -74,7 +74,7 @@ extension PreviewRegistry {
         sheet("batch", capable: true, boardScope: true) {
             $0.preload(
                 query: DesignFixtures.jiraQuery, results: .loaded(DesignFixtures.jiraSearch), skillsSh: .disabled,
-                batch: ["atlassian/jira-cli-skill", "kolya/jira-to-md", "github:ankit/jira-helper"])
+                batch: ["atlassian/jira-cli-skill", "kolya/jira-to-md", "netresearch/jira-skill"])
         },
         sheet("batch-problem", capable: true, boardScope: true) {
             $0.preload(

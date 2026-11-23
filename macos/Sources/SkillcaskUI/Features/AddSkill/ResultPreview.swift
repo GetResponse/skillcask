@@ -87,14 +87,11 @@ struct ResultPreview: View {
     /// Several selected results (D72): their names and sources, and how Add treats them. While skills.toml is read,
     /// the spinner stands where a refusal would, next to the disabled Add's reason.
     private var batch: some View {
-        ScrollView {
+        let sources = search.batchSources
+        return ScrollView {
             VStack(alignment: .leading, spacing: Spacing.m) {
                 failureBlock
-                if search.isCheckingBatch {
-                    Spinner(label: AddSkillCopy.batchChecking)
-                } else if let problem = search.batchProblem {
-                    FailureBanner(problem, onRetry: search.retryBatchEntries)
-                }
+                batchSlot
                 Text(AddSkillCopy.batchHeading(search.batch.count))
                     .font(Font.Token.calloutSemibold)
                     .foregroundStyle(Color.textPrimary)
@@ -105,7 +102,7 @@ struct ResultPreview: View {
                             .foregroundStyle(Color.textPrimary)
                             .lineLimit(1)
                             .truncationMode(.middle)
-                        if let source = search.filteredResults.first(where: { $0.name == name })?.source {
+                        if let source = sources[name] ?? nil {
                             Pill(source: SourceKind(parsing: source))
                         }
                     }
@@ -114,17 +111,31 @@ struct ResultPreview: View {
                     .font(Font.Token.caption)
                     .foregroundStyle(Color.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                // Not under a refusal, which may name the same package, nor while one may still come.
-                if search.batchProblem == nil, !search.isCheckingBatch, !search.batchUpdates.isEmpty {
-                    Text(AddSkillCopy.batchUpdates(search.batchUpdates))
-                        .font(Font.Token.caption)
-                        .foregroundStyle(Color.statusWarningText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
             .padding(.vertical, Size.cardPaddingH)
             .padding(.horizontal, Spacing.l)
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// The spinner, the refusal, or which packages Add resolves again, in one slot as tall as a refusal, so the
+    /// list below does not move when a check ends.
+    private var batchSlot: some View {
+        ZStack(alignment: .topLeading) {
+            FailureBanner(AddSkillCopy.batchHasEntry(["vendor/package"])).hidden().accessibilityHidden(true)
+            switch search.batchState {
+            case .ready:
+                if !search.batchUpdates.isEmpty {
+                    Text(AddSkillCopy.batchUpdates(search.batchUpdates))
+                        .font(Font.Token.callout)
+                        .foregroundStyle(Color.statusWarningText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            case .checking:
+                Spinner(label: AddSkillCopy.batchChecking)
+            case .refused(let problem):
+                FailureBanner(problem, onRetry: search.retryBatchEntries)
+            }
         }
     }
 

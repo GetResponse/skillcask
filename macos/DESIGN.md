@@ -167,7 +167,8 @@ Code comments cite these by number.
   (`AddSkillColumns`), so the board-size renders are unchanged.
 - **G17** The Add Skill sheet stays open after an add; Flow-F2 and AddSkill-States "Success" close it
   with the toast and the new rows selected. The footer's note gives way to what was added (an ok dot
-  and the add's words, from the second add on with the count of skills), Cancel reads Done, and the
+  and the add's words, from the second add on with the count of skills once it is known), Cancel
+  reads Done, and the
   toast and the selection of AddSkill-States "Success" follow when the sheet closes (Interaction).
 - **G18** The run's output box in the Add Skill and Adopt sheets (`AddSkillProgress`) spans the
   width and keeps its height from the first frame: the board's 112 pt in the board-size sheet, plus
@@ -177,24 +178,30 @@ Code comments cite these by number.
   results list selects several (⌘- and ⇧-click); the preview pane then lists their names and
   sources instead of one `info`, and Add (`Add 3 Results`: a result is a package or one skill) runs
   one `add` of all of them with the CLI's defaults: no rule, skills or rename to choose. Results
-  whose package skills.toml names or the scope has are named under the note, also one that joins a
-  skill to such an entry: `add` resolves their entries again, which may move their locks. The line
-  is hidden while a refusal stands or a check runs.
-  What the single preview would warn about is refused instead, as a warning with a title and a
-  reason: results of a custom repository with results of another source (`--repository` applies
-  to every spec), two results of one package other than different skills of one GitHub repository,
-  and results whose skills.toml entry `add` may replace, all named. An entry is one `status` shows
+  whose package the scope has are named above the list, also one that joins a skill to such an
+  entry: `add` resolves their entries again, which may move their locks. The line gives way to a
+  refusal or a check.
+  What the single preview would warn about is refused instead, as a warning whose title counts the
+  packages and whose reason names them all: results of a custom repository with results of another
+  source (`--repository` applies to every spec), two results of one package other than different
+  skills of one GitHub repository, and results whose skills.toml entry `add` may replace. Such a
+  refusal stands at once, and nothing is read for a refused batch. That line, the spinner and the
+  refusal share one slot above the list, as tall as a refusal, so the list does not move when a
+  check ends; VoiceOver hears the refusal. An entry is one `status` shows
   as a package row, or as a package row only (drifted, not in the lock yet). A `github:` result of
   such a package waits for `info` of that entry, with a spinner where the refusal would stand, and
-  is refused unless it is a GitHub one. The read in flight is never restarted; an entry is read again
+  is refused unless it is a GitHub one. The read in flight is never restarted, and is cancelled once
+  no batch wants it, so the next read starts at once; an entry is read again
   when a snapshot names a new one or shows skills.toml changed, also when that happens while its read
   is in flight (the answer is dropped); a failed read is refused as not
-  read, with Retry. A custom repository's result of a named package is refused (`--repository`
+  read, with Retry (the warning's triangle, not the network's symbol: the read may have failed
+  otherwise), which reads only the entries not read. A custom repository's result of a named package is refused (`--repository`
   may move it) unless this sheet added it from that repository, and this sheet's own adds count
   with the kind of source they came from (a registry name without `--repository` keeps the entry's).
   Each spec counts as one add; once a refresh started after the add lands, a result that named no
-  skill counts the skills of its package (not its package rows) in the footer and the closing
-  summary, and none when it has none. Until then (the add's own refresh was superseded or failed)
+  skill counts the skills of its package (not its package rows) that it did not have before the add
+  in the footer and the closing summary, and none when it has none. The footer says the batch's
+  words (`Added 3 results`), not its last result's. Until then (the add's own refresh was superseded or failed)
   no count is stated: the summary reads
   `Added skills to api`. The run's headline names no version. With an older CLI the list keeps one
   selection, the first newly selected row in list order.
@@ -264,12 +271,14 @@ them by number; the numbers have gaps.
   succeeded is not offered again while the selection stays on its row and the rule, skills and name
   chosen are the same. Once the selection came back to it, it adds as any installed package does
   (`add` resolves the entry again and keeps its constraint), with its preview read again. The footer
-  says what the last add added, worded and styled as its toast, and from the second add on the count
-  (`· 3 skills added`), which is never truncated; VoiceOver reads them as one element and hears them
+  says what the last add added, worded and styled as its toast (a batch's words: `Added 3 results`),
+  and from the second add on the count (`· 3 skills added`) once every add is settled (G19), which is
+  never truncated; VoiceOver reads them as one element and hears them
   after each add. Cancel reads Done, except while a run is in flight, when it reads Cancel and stops
   that run only. No toast shows over the open sheet. When it closes (Done, Esc, or its scope going
   away): one add leaves its own toast, several leave one summary (`Added 3 skills to api`, each
-  skill counted once), and the skills list selects the last add's first skill, also when a refresh
+  skill counted once; `Added skills to api` while the count is not known), and the skills list
+  selects the last add's first skill, also when a refresh
   from before that add lands afterwards. A failed add stays in the preview pane with the CLI's hint;
   what was added before it stays counted. A skill that skills.toml renames is known to `status` only
   by its new name: its result does not read Installed, and an add that leaves the scope without the

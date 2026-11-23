@@ -52,12 +52,13 @@ public struct FailureBanner: View {
         self.onSignIn = onSignIn
     }
 
-    /// The symbol a message draws: the shield for integrity, the crossed wifi for a network failure, the cross
+    /// The symbol a message draws: the shield for integrity, the crossed wifi for a network error, the cross
     /// for any other error, the triangle for a warning, the circle for anything quieter.
     nonisolated static func symbol(for message: UserMessage) -> String {
         if message.isIntegrity { return integritySymbol }
         if message.isTimeout { return timeoutSymbol }
-        if message.remedy == .retry { return networkSymbol }
+        // Retry on a warning (a skills.toml entry not read) is not known to be the network's.
+        if message.remedy == .retry, message.severity == .error { return networkSymbol }
         switch message.severity {
         case .error: return errorSymbol
         case .warning: return warningSymbol

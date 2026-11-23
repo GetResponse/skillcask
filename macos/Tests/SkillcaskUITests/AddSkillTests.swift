@@ -421,6 +421,25 @@ import Testing
         #expect(search.batchUpdates.isEmpty)
     }
 
+    // Review of #95: no batch had a result whose package the scope has only as a dependency, so nothing held that
+    // `add` resolving it again is said too.
+    @Test func aBatchNamesADependencyAddResolvesAgain() {
+        let store = store(capabilities: Self.capable)
+        store.preload(
+            snapshot: AddSkillSamples.apiSnapshot { entries in
+                entries + [
+                    [
+                        "package": "kolya/jira-to-md", "skill": "jira-to-md", "version": "0.9.0", "state": "ok",
+                        "ok": true, "via": ["atlassian/jira-cli-skill"],
+                    ]
+                ]
+            })
+        let search = SearchStore(store: store, debounce: .zero)
+        search.preload(query: "jira", results: .loaded(DesignFixtures.jiraSearch), skillsSh: .disabled)
+        search.selections = ["kolya/jira-to-md", "netresearch/jira-skill"]
+        #expect(search.batchUpdates == ["kolya/jira-to-md"] && search.command != nil)
+    }
+
     // Review after #91: every result already in skills.toml refused the whole batch, and only the first was named.
     // Now only an entry `add` may replace is refused: a `github:` result's entry is read for its source.
     @Test(.timeLimit(.minutes(1))) func aBatchRefusesOnlyTheEntriesAddMayReplace() async throws {
@@ -681,20 +700,70 @@ import Testing
             .error(.failed(code: .network, message: "Couldn’t reach github.com.", hint: nil, stderr: "")))
         await client.json(
             .info(.package("anthropics/skills")), in: scope, #"{"package":"anthropics/skills","source":"github"}"#)
+        await client.json(.info(.package(Self.jira)), in: scope, #"{"package":"\#(Self.jira)","source":"github"}"#)
         let search = search(capabilities: Self.capable)
         let pdf = DesignFixtures.decode(
             SearchDocument.self,
             json: #"""
-                {"results":[{"name":"github:anthropics/skills/pdf","source":"github"},{"name":"kolya/jira-to-md","source":"packagist"}]}
+                {"results":[{"name":"github:anthropics/skills/pdf","source":"github"},
+                {"name":"github:netresearch/agent-jira-skill/jira-syntax","source":"github"},
+                {"name":"kolya/jira-to-md","source":"packagist"}]}
                 """#)
         search.preload(query: "pdf", results: .loaded(pdf), skillsSh: .disabled)
-        search.selections = ["github:anthropics/skills/pdf", "kolya/jira-to-md"]
+        search.selections = Set(pdf.results.map(\.name))
         await search.batchTask?.value
         let problem = try #require(search.batchProblem)
-        #expect(FailureBanner.showsRetry(problem))
+        #expect(problem == AddSkillCopy.batchEntryUnread(["anthropics/skills"]) && FailureBanner.showsRetry(problem))
+        #expect(FailureBanner.symbol(for: problem) == FailureBanner.warningSymbol, "not known to be the network")
         search.retryBatchEntries()
         await search.batchTask?.value
         #expect(search.batchProblem == nil && search.command != nil)
+        #expect(
+            await client.commands == [
+                .info(.package("anthropics/skills")), .info(.package(Self.jira)), .info(.package("anthropics/skills")),
+            ],
+            "Retry reads only the entry that failed")
+    }
+
+    // Review of #95: a refusal that needs no read waited behind the spinner until every `info` had finished, and the
+    // `info` ran although the batch was refused anyway.
+    @Test func aRefusalThatNeedsNoReadStandsAtOnce() async {
+        let search = search(capabilities: Self.capable)
+        let mixed = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"acme/jira-triage","source":"acme"},{"name":"github:anthropics/skills/pdf","source":"github"}]}
+                """#)
+        search.preload(query: "pdf", results: .loaded(mixed), skillsSh: .disabled)
+        search.selections = Set(mixed.results.map(\.name))
+        #expect(search.batchState == .refused(AddSkillCopy.batchMixesRepositories) && search.batchTask == nil)
+        #expect(search.batchUpdates.isEmpty)
+        #expect(await client.commands.isEmpty, "nothing is read for a batch refused anyway")
+    }
+
+    // Review of #95: changing the selection left a read nobody wanted in flight, and the new entry's read waited
+    // for it to answer.
+    @Test(.timeLimit(.minutes(1))) func aReadNoLongerWantedGivesWayToTheNext() async throws {
+        let gate = Gate()
+        await client.json(
+            .info(.package("anthropics/skills")), in: scope, #"{"package":"anthropics/skills","source":"github"}"#,
+            gate: gate)
+        await client.json(.info(.package("acme/lint")), in: scope, #"{"package":"acme/lint","source":"git"}"#)
+        let search = search(capabilities: Self.capable)
+        let found = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"github:anthropics/skills/pdf","source":"github"},{"name":"github:acme/lint","source":"github"},
+                {"name":"kolya/jira-to-md","source":"packagist"}]}
+                """#)
+        search.preload(query: "pdf", results: .loaded(found), skillsSh: .disabled)
+        search.selections = ["github:anthropics/skills/pdf", "kolya/jira-to-md"]
+        await gate.arrived()
+        search.selections = ["github:acme/lint", "kolya/jira-to-md"]
+        #expect(search.isCheckingBatch)
+        await search.batchTask?.value
+        #expect(search.batchProblem == AddSkillCopy.batchHasEntry(["acme/lint"]), "read without waiting for pdf's")
+        await gate.open()
     }
 
     // Review of #93: a registry re-add over a GitHub entry recorded the entry as a registry one, so the

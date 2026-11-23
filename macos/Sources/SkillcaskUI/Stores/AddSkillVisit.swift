@@ -30,6 +30,11 @@ import SkillcaskDomain
         var text: String
         /// The run's `ActivityEntry`, for the toast's "Show details".
         let runID: UUID?
+        /// A batch result that named no skill: the skills its package had before the add, which it did not add.
+        var before: Set<String> = []
+        /// The batch's words (`Added 3 results`) on every result of a batch, which the footer and VoiceOver say
+        /// instead of the last result's; nil for a single add.
+        var batchText: String?
         /// The scope's refresh after the add has none of the skills it named, or none at all of its package when it
         /// named none: it counts for nothing.
         var addedNothing = false
@@ -114,12 +119,15 @@ import SkillcaskDomain
     /// an add. Nil before the first one.
     var status: String? {
         guard let last = added.last else { return nil }
-        return AddSkillCopy.status(last.text, count: countNote)
+        return AddSkillCopy.status(last.batchText ?? last.text, count: countNote)
     }
 
     var footer: Footer {
         guard let last = added.last else {
             return .note(search.store.scope.isPersonal ? AddSkillCopy.footerPersonal : AddSkillCopy.footerProject)
+        }
+        if let batchText = last.batchText {
+            return .added(text: batchText, emphasis: [], count: countNote)
         }
         return .added(text: last.text, emphasis: last.emphasis, count: countNote)
     }
@@ -182,8 +190,8 @@ import SkillcaskDomain
     /// The scope's refresh after an add landed: the add keeps the skills it named that the scope has under its
     /// package. When some are missing (skills.toml renames the skill, so `status` knows another name and the add
     /// changed nothing), its words fall back to the source as it was typed, and with none left it counts for
-    /// nothing. An add that named none (a batch result) takes the skills its package has, and with none counts for
-    /// nothing too. Rows about the package itself (`.packageOnly`) are no skill. Only a refresh started after the
+    /// nothing. An add that named none (a batch result) takes the skills its package has that it did not have
+    /// before the add, and with none counts for nothing too. Rows about the package itself (`.packageOnly`) are no skill. Only a refresh started after the
     /// add settles it: one superseded by another add's refresh, or failed, leaves it waiting for the next one, and
     /// the add's words stand until then.
     func settle() {
@@ -197,17 +205,13 @@ import SkillcaskDomain
 
     private func settle(_ indices: Range<Int>, packages: [String], from entries: [SkillEntry]) {
         for (index, package) in zip(indices, packages) {
-            let skills =
-                entries.filter { entry in
-                    if case .packageOnly = entry.kind { return false }
-                    return entry.package?.lowercased() == package
-                }
-                .map(\.name)
+            let skills = Self.skills(of: package, in: entries)
             let present = Set(skills)
             let named = added[index].skills
             if named.isEmpty {
-                added[index].skills = skills
-                added[index].addedNothing = skills.isEmpty
+                let new = skills.filter { !added[index].before.contains($0) }
+                added[index].skills = new
+                added[index].addedNothing = new.isEmpty
                 continue
             }
             let found = named.filter(present.contains)
@@ -218,17 +222,29 @@ import SkillcaskDomain
         }
     }
 
+    /// The skills of `package` (a lock name, lowercased) in `entries`, without its rows about the package itself.
+    private static func skills(of package: String, in entries: [SkillEntry]) -> [String] {
+        entries.filter { entry in
+            if case .packageOnly = entry.kind { return false }
+            return entry.package?.lowercased() == package
+        }
+        .map(\.name)
+    }
+
     /// One `Added` per spec: a batch's are worded by their package, the CLI's line naming only one of them.
     private func succeeded(
         _ choices: SearchStore.Choices, items: [(spec: PackageSpec, skills: [String])], runner: ActionRunner
     ) {
+        let entries = search.store.snapshot?.entries ?? []
+        let batchText = items.count == 1 ? nil : AddSkillCopy.added(package: AddSkillCopy.resultCount(items.count))
         for item in items {
             let package = item.spec.base
             let text = items.count == 1 ? run.headline : nil
+            let before = item.skills.isEmpty ? Set(Self.skills(of: item.spec.package, in: entries)) : []
             added.append(
                 Added(
                     package: package, skills: item.skills, text: text ?? AddSkillCopy.added(package: package),
-                    runID: run.runID))
+                    runID: run.runID, before: before, batchText: batchText))
         }
         search.added(choices)
         focusAfterRun = search.selectedResult == nil && search.batch.isEmpty ? .field : .results
@@ -275,7 +291,9 @@ import SkillcaskDomain
     private func conclude(runner: ActionRunner) -> Task<Void, Never>? {
         guard let last = added.last else { return nil }
         if added.count == 1 || skillCount == 0 {
-            runner.announce(last.text, emphasis: last.emphasis, id: last.runID ?? UUID())
+            runner.announce(
+                last.batchText ?? last.text, emphasis: last.batchText == nil ? last.emphasis : [],
+                id: last.runID ?? UUID())
         } else {
             runner.announce(AddSkillCopy.summary(done: skillCount, scope: ShellCopy.name(of: search.store.scope)))
         }
