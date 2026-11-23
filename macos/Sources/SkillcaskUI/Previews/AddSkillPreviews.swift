@@ -9,7 +9,10 @@ extension PreviewRegistry {
     /// preview); `name-clash` is the 0.9.4 path (the CLI's error after Add); `capable-name-clash` and
     /// `capable-skills` run against a CLI with `add --rename` and several specs (0.15.0): a GitHub repository with one
     /// skill unticked; `whole-repository` is one skill of a GitHub repository, with the link to the repository. `batch`
-    /// is three results selected at once (D72), `batch-problem` a custom repository's result with a Packagist one.
+    /// is three results selected at once (D72), `batch-problem` a custom repository's result with a Packagist one,
+    /// `batch-refused` a GitHub skill whose package skills.toml has from Packagist, `batch-checking` the read of a
+    /// GitHub result's skills.toml entry, `batch-unread` that read failed (Retry), and `batch-installed` a batch
+    /// holding an installed package, which Add updates.
     /// `added` is the sheet after an add, still open: the added row selected and marked Installed, the footer saying
     /// what was added, Done in place of Cancel. `success` is the window after that sheet closed: the toast in the
     /// list column, the new skill selected.
@@ -77,6 +80,27 @@ extension PreviewRegistry {
             $0.preload(
                 query: DesignFixtures.jiraQuery, results: .loaded(DesignFixtures.jiraSearch), skillsSh: .disabled,
                 batch: ["acme/jira-triage", "atlassian/jira-cli-skill"])
+        },
+        sheet("batch-refused", capable: true, personal: true) {
+            $0.preload(
+                query: DesignFixtures.jiraQuery, results: .loaded(AddSkillSamples.batchSearch), skillsSh: .disabled,
+                batch: [AddSkillSamples.githubJiraSyntax, "netresearch/jira-skill"],
+                entrySources: [AddSkillSamples.jiraPackage: "composer"])
+        },
+        sheet("batch-checking", capable: true, personal: true) {
+            $0.preload(
+                query: DesignFixtures.jiraQuery, results: .loaded(AddSkillSamples.batchSearch), skillsSh: .disabled,
+                batch: [AddSkillSamples.githubPdf, "netresearch/jira-skill"], checkingEntries: true)
+        },
+        sheet("batch-unread", capable: true, personal: true) {
+            $0.preload(
+                query: DesignFixtures.jiraQuery, results: .loaded(AddSkillSamples.batchSearch), skillsSh: .disabled,
+                batch: [AddSkillSamples.githubPdf, "netresearch/jira-skill"])
+        },
+        sheet("batch-installed", capable: true, personal: true) {
+            $0.preload(
+                query: DesignFixtures.jiraQuery, results: .loaded(AddSkillSamples.batchSearch), skillsSh: .disabled,
+                batch: [AddSkillSamples.jiraPackage, "netresearch/jira-skill"])
         },
         sheet("whole-repository", capable: true, boardScope: true) {
             $0.preload(
@@ -206,6 +230,18 @@ enum AddSkillSamples {
     static let githubJira = "github:netresearch/agent-jira-skill"
     /// One skill of `githubJira`, as skills.sh lists it.
     static let githubJiraSyntax = "github:netresearch/agent-jira-skill/jira-syntax"
+    /// One skill of a GitHub repository My Skills has in skills.toml.
+    static let githubPdf = "github:anthropics/skills/pdf"
+    /// Results of packages My Skills has and has not, from Packagist and GitHub, for the batch states.
+    static let batchSearch = DesignFixtures.decode(
+        SearchDocument.self,
+        json: """
+            {"results": [{"name": "netresearch/agent-jira-skill", "source": "packagist"},
+             {"name": "github:netresearch/agent-jira-skill/jira-syntax", "source": "github"},
+             {"name": "github:anthropics/skills/pdf", "source": "github"},
+             {"name": "netresearch/jira-skill", "source": "packagist"}],
+             "skills-sh": false}
+            """)
 
     /// `info` of netresearch/agent-jira-skill as Add sees it before it is locked: 4.3.0 is the newest, but `info`
     /// picks 4.2.0 because 4.3.0 is inside the 72h minimum release age (AddSkill board). The fixture file is the

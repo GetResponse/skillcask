@@ -393,8 +393,32 @@ import Testing
             ["vendor/tool", "github:vendor/tool/a"], ["github:vendor/tool", "github:vendor/tool/a"],
         ] {
             search.selections = pair
-            #expect(search.batchProblem == AddSkillCopy.batchSamePackage("vendor/tool") && search.command == nil)
+            #expect(search.batchProblem == AddSkillCopy.batchSamePackage(["vendor/tool"]) && search.command == nil)
         }
+    }
+
+    // Review of #93: only the first package selected twice was named.
+    @Test func aBatchNamesEveryPackageSelectedTwice() {
+        let search = search(capabilities: Self.capable)
+        let twice = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"vendor/a","source":"packagist"},{"name":"github:vendor/a","source":"github"},
+                {"name":"vendor/b","source":"packagist"},{"name":"github:vendor/b","source":"github"}]}
+                """#)
+        search.preload(query: "vendor", results: .loaded(twice), skillsSh: .disabled)
+        search.selections = Set(twice.results.map(\.name))
+        #expect(search.batchProblem == AddSkillCopy.batchSamePackage(["vendor/a", "vendor/b"]))
+    }
+
+    // Review of #93: ⌘A over Installed rows updated each of them with no word of it.
+    @Test func aBatchSaysWhichInstalledPackagesAddUpdates() {
+        let search = search(capabilities: Self.capable)
+        search.preload(query: "jira", results: .loaded(DesignFixtures.jiraSearch), skillsSh: .disabled)
+        search.selections = [Self.jira, "kolya/jira-to-md"]
+        #expect(search.batchUpdates == [Self.jira] && search.command != nil)
+        search.selections = ["atlassian/jira-cli-skill", "kolya/jira-to-md"]
+        #expect(search.batchUpdates.isEmpty)
     }
 
     // Review after #91: every result already in skills.toml refused the whole batch, and only the first was named.
@@ -517,6 +541,178 @@ import Testing
         search.selections = ["github:anthropics/skills/pdf", "kolya/jira-to-md", "netresearch/jira-skill"]
         await search.batchTask?.value
         #expect(search.batchProblem == nil && search.command != nil, "read again on the next batch")
+    }
+
+    // Review of #93: every batch change and every refresh cancelled the read in flight and ran `info` again.
+    @Test(.timeLimit(.minutes(1))) func aReadInFlightIsNotRestarted() async throws {
+        let gate = Gate()
+        await client.json(
+            .info(.package("anthropics/skills")), in: scope, #"{"package":"anthropics/skills","source":"github"}"#,
+            gate: gate)
+        let search = search(capabilities: Self.capable)
+        let pdf = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"github:anthropics/skills/pdf","source":"github"},{"name":"kolya/jira-to-md","source":"packagist"},
+                {"name":"netresearch/jira-skill","source":"packagist"}]}
+                """#)
+        search.preload(query: "pdf", results: .loaded(pdf), skillsSh: .disabled)
+        search.selections = ["github:anthropics/skills/pdf", "kolya/jira-to-md"]
+        await gate.arrived()
+        search.selections = ["github:anthropics/skills/pdf", "kolya/jira-to-md", "netresearch/jira-skill"]
+        search.snapshotChanged()
+        #expect(search.isCheckingBatch && search.command == nil)
+        await gate.open()
+        await search.batchTask?.value
+        #expect(!search.isCheckingBatch && search.command != nil)
+        #expect(await client.commands == [.info(.package("anthropics/skills"))], "read once")
+    }
+
+    // Review of #93: an entry `status` shows as a package row only (drifted, or not in the lock yet) was not
+    // named, so a `github:` result went through unread and replaced it.
+    @Test(.timeLimit(.minutes(1))) func aDriftedEntryIsReadToo() async throws {
+        await client.json(.info(.package("vendor/tool")), in: scope, #"{"package":"vendor/tool","source":"composer"}"#)
+        let store = store(capabilities: Self.capable)
+        store.preload(
+            snapshot: AddSkillSamples.apiSnapshot { entries in
+                entries + [
+                    ["package": "vendor/tool", "state": "constraint changed from \"^1\" to \"^2\"", "ok": false]
+                ]
+            })
+        let search = SearchStore(store: store, debounce: .zero)
+        let tool = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"github:vendor/tool/a","source":"github"},{"name":"kolya/jira-to-md","source":"packagist"}]}
+                """#)
+        search.preload(query: "tool", results: .loaded(tool), skillsSh: .disabled)
+        search.selections = ["github:vendor/tool/a", "kolya/jira-to-md"]
+        #expect(search.isCheckingBatch)
+        await search.batchTask?.value
+        #expect(search.batchProblem == AddSkillCopy.batchHasEntry(["vendor/tool"]) && search.command == nil)
+    }
+
+    // Review of #93: an entry read once was trusted for the rest of the sheet, though skills.toml changed outside.
+    @Test(.timeLimit(.minutes(1))) func anEntryIsReadAgainWhenSkillsTomlChanges() async throws {
+        await client.json(
+            .info(.package("anthropics/skills")), in: scope, #"{"package":"anthropics/skills","source":"github"}"#)
+        await client.json(
+            .info(.package("anthropics/skills")), in: scope, #"{"package":"anthropics/skills","source":"composer"}"#)
+        let store = store(capabilities: Self.capable)
+        let search = SearchStore(store: store, debounce: .zero)
+        let pdf = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"github:anthropics/skills/pdf","source":"github"},{"name":"kolya/jira-to-md","source":"packagist"}]}
+                """#)
+        search.preload(query: "pdf", results: .loaded(pdf), skillsSh: .disabled)
+        search.selections = ["github:anthropics/skills/pdf", "kolya/jira-to-md"]
+        await search.batchTask?.value
+        #expect(search.batchProblem == nil)
+        search.snapshotChanged()
+        #expect(!search.isCheckingBatch, "the same skills.toml: nothing to read")
+        store.preload(
+            snapshot: AddSkillSamples.apiSnapshot { entries in
+                entries + [["package": "anthropics/skills", "state": "repository changed", "ok": false]]
+            })
+        search.snapshotChanged()
+        await search.batchTask?.value
+        #expect(search.batchProblem == AddSkillCopy.batchHasEntry(["anthropics/skills"]))
+    }
+
+    // Review of #95: a read that started before skills.toml changed was stored as current: an entry that had become
+    // a registry one was read as `github`, and Add would have replaced it.
+    @Test(.timeLimit(.minutes(1))) func aReadFromBeforeSkillsTomlChangedIsReadAgain() async throws {
+        let gate = Gate()
+        await client.json(
+            .info(.package("anthropics/skills")), in: scope, #"{"package":"anthropics/skills","source":"github"}"#,
+            gate: gate)
+        await client.json(
+            .info(.package("anthropics/skills")), in: scope, #"{"package":"anthropics/skills","source":"composer"}"#)
+        let store = store(capabilities: Self.capable)
+        let search = SearchStore(store: store, debounce: .zero)
+        let pdf = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"github:anthropics/skills/pdf","source":"github"},{"name":"kolya/jira-to-md","source":"packagist"}]}
+                """#)
+        search.preload(query: "pdf", results: .loaded(pdf), skillsSh: .disabled)
+        search.selections = ["github:anthropics/skills/pdf", "kolya/jira-to-md"]
+        await gate.arrived()
+        store.preload(
+            snapshot: AddSkillSamples.apiSnapshot { entries in
+                entries + [["package": "anthropics/skills", "state": "repository changed", "ok": false]]
+            })
+        search.snapshotChanged()
+        await gate.open()
+        await search.batchTask?.value
+        #expect(search.batchProblem == AddSkillCopy.batchHasEntry(["anthropics/skills"]) && search.command == nil)
+        #expect(await client.commands.count == 2, "read again for the new entry")
+    }
+
+    // Review of #95: the line about installed packages missed a result joining a skill to an installed entry.
+    @Test(.timeLimit(.minutes(1))) func aBatchSaysWhichPackagesAddResolvesAgain() async throws {
+        await client.json(
+            .info(.package("anthropics/skills")), in: scope, #"{"package":"anthropics/skills","source":"github"}"#)
+        let store = store(capabilities: Self.capable)
+        store.preload(
+            snapshot: AddSkillSamples.apiSnapshot { entries in
+                entries + [
+                    ["package": "anthropics/skills", "skill": "pdf", "version": "1.0.0", "state": "ok", "ok": true]
+                ]
+            })
+        let search = SearchStore(store: store, debounce: .zero)
+        let docx = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"github:anthropics/skills/docx","source":"github"},{"name":"github:anthropics/skills/xlsx","source":"github"},
+                {"name":"kolya/jira-to-md","source":"packagist"}]}
+                """#)
+        search.preload(query: "docx", results: .loaded(docx), skillsSh: .disabled)
+        search.selections = Set(docx.results.map(\.name))
+        await search.batchTask?.value
+        #expect(search.batchProblem == nil && search.batchUpdates == ["anthropics/skills"], "named once, a join")
+    }
+
+    // Review of #93: a failed read had no retry while the selection stayed.
+    @Test(.timeLimit(.minutes(1))) func aFailedEntryReadIsRetried() async throws {
+        await client.script(
+            .info(.package("anthropics/skills")), in: scope,
+            .error(.failed(code: .network, message: "Couldn’t reach github.com.", hint: nil, stderr: "")))
+        await client.json(
+            .info(.package("anthropics/skills")), in: scope, #"{"package":"anthropics/skills","source":"github"}"#)
+        let search = search(capabilities: Self.capable)
+        let pdf = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"github:anthropics/skills/pdf","source":"github"},{"name":"kolya/jira-to-md","source":"packagist"}]}
+                """#)
+        search.preload(query: "pdf", results: .loaded(pdf), skillsSh: .disabled)
+        search.selections = ["github:anthropics/skills/pdf", "kolya/jira-to-md"]
+        await search.batchTask?.value
+        let problem = try #require(search.batchProblem)
+        #expect(FailureBanner.showsRetry(problem))
+        search.retryBatchEntries()
+        await search.batchTask?.value
+        #expect(search.batchProblem == nil && search.command != nil)
+    }
+
+    // Review of #93: a registry re-add over a GitHub entry recorded the entry as a registry one, so the
+    // repository's other skills were refused for the rest of the sheet.
+    @Test func aRegistryReAddKeepsTheEntrysKind() {
+        let search = search(capabilities: Self.capable)
+        let tool = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"github:vendor/tool/a","source":"github"},{"name":"vendor/tool","source":"packagist"},
+                {"name":"github:vendor/tool/b","source":"github"},{"name":"kolya/jira-to-md","source":"packagist"}]}
+                """#)
+        search.preload(query: "tool", results: .loaded(tool), skillsSh: .disabled, selection: "github:vendor/tool/a")
+        search.added(search.choices)
+        search.selections = ["vendor/tool"]
+        search.added(search.choices)
+        search.selections = ["github:vendor/tool/b", "kolya/jira-to-md"]
+        #expect(search.batchProblem == nil, "b joins the GitHub entry")
     }
 
     // Review after #91: no test failed when a reload kept the batch in its old order, or when Add ran while the

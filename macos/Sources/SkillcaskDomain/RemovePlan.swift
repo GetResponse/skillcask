@@ -214,7 +214,7 @@ public struct RemovePlan: Hashable, Sendable {
     /// row, or a package-only row that `status` prints for a drifted manifest entry (`constraint changed …`,
     /// `not in skills.lock`, …). A `not in skills.toml` row is a lock-only package and a package-only row with a
     /// `via` list is a drifted dependency (`src/commands.rs` status, its `via` key): neither is a root.
-    static func manifestPackage(of entry: SkillEntry) -> String? {
+    public static func manifestPackage(of entry: SkillEntry) -> String? {
         switch entry.kind {
         case .package(let package): return package
         // A drifted dependency (a `via` list and no skill) is no manifest entry either.
