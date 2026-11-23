@@ -780,7 +780,7 @@ import SkillcaskDomain
         for name in choices.batch + (choices.selection.map { [$0] } ?? []) {
             let package = PackageSpec.packageName(of: name)
             let spec = PackageSpec.parse(name)
-            let repository = spec.flatMap { repository(for: $0, from: name) }
+            let repository = spec.flatMap { self.repository(for: $0, from: name) }
             // A registry name without `--repository` keeps any entry: a GitHub one stays GitHub, and one only
             // skills.toml knows stays unknown here.
             let keepsEntry =
