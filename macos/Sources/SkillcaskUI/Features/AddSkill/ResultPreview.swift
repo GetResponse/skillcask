@@ -118,25 +118,49 @@ struct ResultPreview: View {
         }
     }
 
-    /// The spinner, the refusal, or which packages Add resolves again, in one slot as tall as a refusal, so the
-    /// list below does not move when a check ends.
-    private var batchSlot: some View {
-        ZStack(alignment: .topLeading) {
-            FailureBanner(AddSkillCopy.batchHasEntry(["vendor/package"])).hidden().accessibilityHidden(true)
-            switch search.batchState {
-            case .ready:
-                if !search.batchUpdates.isEmpty {
-                    Text(AddSkillCopy.batchUpdates(search.batchUpdates))
-                        .font(Font.Token.callout)
-                        .foregroundStyle(Color.statusWarningText)
-                        .fixedSize(horizontal: false, vertical: true)
+    /// The spinner, the refusal, or which packages Add resolves again. While a `github:` result's skills.toml entry
+    /// is read (`batchReadsEntries`), the state changes with the selection unchanged: the slot then holds room for
+    /// the longest of them at the pane's width, so the list below does not move when the read ends. Otherwise it
+    /// is as tall as what it says, and absent when it says nothing.
+    @ViewBuilder private var batchSlot: some View {
+        let state = search.batchState
+        let updates = search.batchUpdates
+        let reserves = search.batchReadsEntries
+        if reserves || state != .ready || !updates.isEmpty {
+            ZStack(alignment: .topLeading) {
+                if reserves {
+                    batchSlotReserve.hidden().accessibilityHidden(true)
                 }
-            case .checking:
-                Spinner(label: AddSkillCopy.batchChecking)
-            case .refused(let problem):
-                FailureBanner(problem, onRetry: search.retryBatchEntries)
+                switch state {
+                case .ready:
+                    if !updates.isEmpty {
+                        batchUpdatesLine(updates)
+                    }
+                case .checking:
+                    Spinner(label: AddSkillCopy.batchChecking)
+                case .refused(let problem):
+                    FailureBanner(problem, onRetry: search.retryBatchEntries)
+                }
             }
         }
+    }
+
+    /// Everything a read may bring, each naming every package and result it could.
+    private var batchSlotReserve: some View {
+        let known = search.batchKnownPackages
+        return ZStack(alignment: .topLeading) {
+            Spinner(label: AddSkillCopy.batchChecking)
+            FailureBanner(AddSkillCopy.batchHasEntry(known, results: search.batch, all: false))
+            FailureBanner(AddSkillCopy.batchEntryUnread(known), onRetry: {})
+            batchUpdatesLine(known)
+        }
+    }
+
+    private func batchUpdatesLine(_ packages: [String]) -> some View {
+        Text(AddSkillCopy.batchUpdates(packages))
+            .font(Font.Token.callout)
+            .foregroundStyle(Color.statusWarningText)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     // MARK: - Summary

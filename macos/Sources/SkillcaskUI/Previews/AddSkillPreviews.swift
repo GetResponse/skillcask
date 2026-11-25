@@ -9,10 +9,11 @@ extension PreviewRegistry {
     /// preview); `name-clash` is the 0.9.4 path (the CLI's error after Add); `capable-name-clash` and
     /// `capable-skills` run against a CLI with `add --rename` and several specs (0.15.0): a GitHub repository with one
     /// skill unticked; `whole-repository` is one skill of a GitHub repository, with the link to the repository. `batch`
-    /// is three results selected at once (D72), `batch-problem` a custom repository's result with a Packagist one,
-    /// `batch-refused` a GitHub skill whose package skills.toml has from Packagist, `batch-checking` the read of a
-    /// GitHub result's skills.toml entry, `batch-unread` that read failed (Retry), and `batch-installed` a batch
-    /// holding an installed package, which Add updates.
+    /// is three results selected at once (D72), one of them installed, `batch-new` two new packages (no slot above
+    /// the list), `batch-problem` a custom repository's result with a Packagist one, `batch-refused` a GitHub skill
+    /// whose package skills.toml has from Packagist, `batch-refused-several` two of them beside a new package,
+    /// `batch-checking` the read of a GitHub result's skills.toml entry, `batch-unread` that read failed on the
+    /// network (Retry), and `batch-installed` a batch holding an installed package, which Add updates.
     /// `added` is the sheet after an add, still open: the added row selected and marked Installed, the footer saying
     /// what was added, Done in place of Cancel. `success` is the window after that sheet closed: the toast in the
     /// list column, the new skill selected.
@@ -76,6 +77,11 @@ extension PreviewRegistry {
                 query: DesignFixtures.jiraQuery, results: .loaded(DesignFixtures.jiraSearch), skillsSh: .disabled,
                 batch: ["atlassian/jira-cli-skill", "kolya/jira-to-md", "netresearch/jira-skill"])
         },
+        sheet("batch-new", capable: true, boardScope: true) {
+            $0.preload(
+                query: DesignFixtures.jiraQuery, results: .loaded(DesignFixtures.jiraSearch), skillsSh: .disabled,
+                batch: ["kolya/jira-to-md", "netresearch/jira-skill"])
+        },
         sheet("batch-problem", capable: true, boardScope: true) {
             $0.preload(
                 query: DesignFixtures.jiraQuery, results: .loaded(DesignFixtures.jiraSearch), skillsSh: .disabled,
@@ -87,6 +93,12 @@ extension PreviewRegistry {
                 batch: [AddSkillSamples.githubJiraSyntax, "netresearch/jira-skill"],
                 entrySources: [AddSkillSamples.jiraPackage: "composer"])
         },
+        sheet("batch-refused-several", capable: true, personal: true) {
+            $0.preload(
+                query: DesignFixtures.jiraQuery, results: .loaded(AddSkillSamples.batchSearch), skillsSh: .disabled,
+                batch: [AddSkillSamples.githubJiraSyntax, AddSkillSamples.githubPdf, "netresearch/jira-skill"],
+                entrySources: [AddSkillSamples.jiraPackage: "composer", "anthropics/skills": "composer"])
+        },
         sheet("batch-checking", capable: true, personal: true) {
             $0.preload(
                 query: DesignFixtures.jiraQuery, results: .loaded(AddSkillSamples.batchSearch), skillsSh: .disabled,
@@ -95,7 +107,8 @@ extension PreviewRegistry {
         sheet("batch-unread", capable: true, personal: true) {
             $0.preload(
                 query: DesignFixtures.jiraQuery, results: .loaded(AddSkillSamples.batchSearch), skillsSh: .disabled,
-                batch: [AddSkillSamples.githubPdf, "netresearch/jira-skill"])
+                batch: [AddSkillSamples.githubPdf, "netresearch/jira-skill"],
+                failedEntries: .failed(code: .network, message: "Couldn’t reach github.com.", hint: nil, stderr: ""))
         },
         sheet("batch-installed", capable: true, personal: true) {
             $0.preload(

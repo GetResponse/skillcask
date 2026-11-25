@@ -30,8 +30,11 @@ import SkillcaskDomain
         var text: String
         /// The run's `ActivityEntry`, for the toast's "Show details".
         let runID: UUID?
-        /// A batch result that named no skill: the skills its package had before the add, which it did not add.
+        /// A batch result: the skills its package had before the add, which it did not add.
         var before: Set<String> = []
+        /// The package's lock name (`PackageSpec.package`), which ties a batch result to the visit's earlier adds of
+        /// the same package; empty for a single add.
+        var lockName = ""
         /// The batch's words (`Added 3 results`) on every result of a batch, which the footer and VoiceOver say
         /// instead of the last result's; nil for a single add.
         var batchText: String?
@@ -190,14 +193,21 @@ import SkillcaskDomain
     /// The scope's refresh after an add landed: the add keeps the skills it named that the scope has under its
     /// package. When some are missing (skills.toml renames the skill, so `status` knows another name and the add
     /// changed nothing), its words fall back to the source as it was typed, and with none left it counts for
-    /// nothing. An add that named none (a batch result) takes the skills its package has that it did not have
-    /// before the add, and with none counts for nothing too. Rows about the package itself (`.packageOnly`) are no skill. Only a refresh started after the
-    /// add settles it: one superseded by another add's refresh, or failed, leaves it waiting for the next one, and
-    /// the add's words stand until then.
+    /// nothing. An add that named none (a batch result) takes the skills its package has. A batch result keeps
+    /// only skills its package did not have before the add, nor got from an earlier add of this visit (the
+    /// snapshot it took `before` from may not show that add yet), and with none counts for nothing too. Rows about
+    /// the package itself (`.packageOnly`) are no skill. Only a refresh started after the add settles it: one
+    /// superseded by another add's refresh, or failed, leaves it waiting for the next one, and the add's words
+    /// stand until then.
     func settle() {
         let store = search.store
         guard let entries = store.snapshot?.entries else { return }
-        for (ticket, run) in unsettled where store.landedRefresh > run.after {
+        // Oldest first: a batch result reads what the visit's earlier adds of its package settled to.
+        let due = unsettled.filter { store.landedRefresh > $0.value.after }
+            .sorted {
+                $0.value.indices.lowerBound < $1.value.indices.lowerBound
+            }
+        for (ticket, run) in due {
             unsettled[ticket] = nil
             settle(run.indices, packages: run.packages, from: entries)
         }
@@ -208,17 +218,20 @@ import SkillcaskDomain
             let skills = Self.skills(of: package, in: entries)
             let present = Set(skills)
             let named = added[index].skills
-            if named.isEmpty {
-                let new = skills.filter { !added[index].before.contains($0) }
-                added[index].skills = new
-                added[index].addedNothing = new.isEmpty
-                continue
+            var had = added[index].before
+            if added[index].batchText != nil {
+                for earlier in added[..<index] where earlier.lockName == package && !earlier.addedNothing {
+                    had.formUnion(earlier.skills)
+                }
             }
-            let found = named.filter(present.contains)
-            guard found != named else { continue }
-            added[index].skills = found
-            added[index].text = AddSkillCopy.added(package: added[index].package)
-            added[index].addedNothing = found.isEmpty
+            let found = named.isEmpty ? skills : named.filter(present.contains)
+            let new = found.filter { !had.contains($0) }
+            if !named.isEmpty, new == named { continue }
+            added[index].skills = new
+            if !named.isEmpty, found != named {
+                added[index].text = AddSkillCopy.added(package: added[index].package)
+            }
+            added[index].addedNothing = new.isEmpty
         }
     }
 
@@ -236,15 +249,17 @@ import SkillcaskDomain
         _ choices: SearchStore.Choices, items: [(spec: PackageSpec, skills: [String])], runner: ActionRunner
     ) {
         let entries = search.store.snapshot?.entries ?? []
-        let batchText = items.count == 1 ? nil : AddSkillCopy.added(package: AddSkillCopy.resultCount(items.count))
+        let isBatch = items.count > 1
+        let batchText = isBatch ? AddSkillCopy.added(package: AddSkillCopy.resultCount(items.count)) : nil
         for item in items {
             let package = item.spec.base
-            let text = items.count == 1 ? run.headline : nil
-            let before = item.skills.isEmpty ? Set(Self.skills(of: item.spec.package, in: entries)) : []
+            let text = isBatch ? nil : run.headline
+            let before = isBatch ? Set(Self.skills(of: item.spec.package, in: entries)) : []
             added.append(
                 Added(
                     package: package, skills: item.skills, text: text ?? AddSkillCopy.added(package: package),
-                    runID: run.runID, before: before, batchText: batchText))
+                    runID: run.runID, before: before, lockName: isBatch ? item.spec.package : "",
+                    batchText: batchText))
         }
         search.added(choices)
         focusAfterRun = search.selectedResult == nil && search.batch.isEmpty ? .field : .results
@@ -277,7 +292,7 @@ import SkillcaskDomain
     }
 
     /// The sheet closes: after one add, that add's toast; after several, one summary; and the skill list selects
-    /// the last add's first skill (the list is single-selection, `ScopeStore.selection` is one id). Once per
+    /// the first skill of the last add that added one (the list is single-selection, `ScopeStore.selection` is one id). Once per
     /// visit; returns the selection's task, nil when nothing was added or the last add's skills are not known.
     @discardableResult func close(runner: ActionRunner) -> Task<Void, Never>? {
         guard !isClosed else { return nil }
@@ -297,7 +312,7 @@ import SkillcaskDomain
         } else {
             runner.announce(AddSkillCopy.summary(done: skillCount, scope: ShellCopy.name(of: search.store.scope)))
         }
-        guard let skill = last.skills.first else { return nil }
+        guard let skill = lastSkill else { return nil }
         let store = search.store
         let runs = runs
         return Task {
@@ -306,10 +321,15 @@ import SkillcaskDomain
                 await run.value
             }
             // The last add may have settled meanwhile: only a skill it still names is selected.
-            if store.selection == nil, let skill = self.added.last?.skills.first {
+            if store.selection == nil, let skill = self.lastSkill {
                 await store.select(skill)
             }
         }
+    }
+
+    /// The first skill of the last add that has one: a batch's last result may have added none (a re-add).
+    private var lastSkill: String? {
+        added.last { !$0.skills.isEmpty }?.skills.first
     }
 
     /// The skills as agents will see them: the chosen ones, the clashing one under its new name.

@@ -5,6 +5,26 @@ import Testing
 
 @testable import SkillcaskUI
 
+extension SearchStore {
+    /// Why the batch cannot be added together; nil when it can, or while its entries are read.
+    var batchProblem: UserMessage? {
+        if case .refused(let message) = batchState { message } else { nil }
+    }
+
+    var isCheckingBatch: Bool { batchState == .checking }
+}
+
+/// A batch refusal as the user reads it, spelled out so that a change of the copy fails here.
+private func refusal(_ title: String, _ reason: String) -> UserMessage {
+    UserMessage(title: title, reason: reason, severity: .warning)
+}
+
+private let oneEntry = "A selected package is already in skills.toml, and Add may replace its entry."
+
+private func deselect(_ results: String) -> String {
+    "Deselect \(results) to add the others."
+}
+
 /// The Add Skill sheet's logic: the debounced search and its stale answers, the skills.sh consent, the
 /// Installed marker, the spec with its version rule, the gating on `add --skill` and `add --rename`, and Add through
 /// `SheetRun` (failure, cancel; what a success leaves in the open sheet is `AddSkillVisitTests`). Source-shape
@@ -370,7 +390,7 @@ import Testing
             json: #"{"results":[{"name":"acme/lint","source":"acme"},{"name":"acme/b","source":"acme"}]}"#)
         search.preload(query: "acme", results: .loaded(named), skillsSh: .disabled)
         search.selections = ["acme/lint", "acme/b"]
-        #expect(search.batchProblem == AddSkillCopy.batchHasEntry(["acme/lint"]), "--repository may move its entry")
+        #expect(search.batchProblem == refusal(oneEntry, deselect("acme/lint")), "--repository may move its entry")
     }
 
     // Review after #91: two skills of one GitHub repository were refused as "selected more than once"; `add`
@@ -393,7 +413,10 @@ import Testing
             ["vendor/tool", "github:vendor/tool/a"], ["github:vendor/tool", "github:vendor/tool/a"],
         ] {
             search.selections = pair
-            #expect(search.batchProblem == AddSkillCopy.batchSamePackage(["vendor/tool"]) && search.command == nil)
+            #expect(
+                search.batchProblem
+                    == refusal("A package is selected more than once.", "Keep one result of vendor/tool.")
+                    && search.command == nil)
         }
     }
 
@@ -408,7 +431,10 @@ import Testing
                 """#)
         search.preload(query: "vendor", results: .loaded(twice), skillsSh: .disabled)
         search.selections = Set(twice.results.map(\.name))
-        #expect(search.batchProblem == AddSkillCopy.batchSamePackage(["vendor/a", "vendor/b"]))
+        #expect(
+            search.batchProblem
+                == refusal(
+                    "2 packages are each selected more than once.", "Keep one result each of vendor/a and vendor/b."))
     }
 
     // Review of #93: ⌘A over Installed rows updated each of them with no word of it.
@@ -468,9 +494,14 @@ import Testing
         search.selections = Set(search.filteredResults.map(\.name).dropFirst())
         await search.batchTask?.value
         #expect(
-            search.batchProblem == AddSkillCopy.batchHasEntry(["netresearch/agent-jira-skill", "acme/lint"]),
-            "a Packagist and a git entry are replaced, and both are named")
+            search.batchProblem == refusal(oneEntry, deselect("github:netresearch/agent-jira-skill/jira-syntax")),
+            "a Packagist entry is replaced")
         #expect(search.command == nil)
+        // Review of #97: the reads went on after an answer had refused the batch.
+        #expect(await client.commands.count == 2, "acme/lint is not read for a batch refused anyway")
+        search.selections = ["github:anthropics/skills/pdf", "github:acme/lint"]
+        await search.batchTask?.value
+        #expect(search.batchProblem == refusal(oneEntry, deselect("github:acme/lint")), "a git entry is replaced")
         #expect(
             await client.commands == [
                 .info(.package("anthropics/skills")), .info(.package(Self.jira)), .info(.package("acme/lint")),
@@ -491,7 +522,7 @@ import Testing
         search.preload(query: "tool", results: .loaded(tool), skillsSh: .disabled, selection: "vendor/tool")
         search.added(search.choices)
         search.selections = ["github:vendor/tool/s", "github:other/kit/s"]
-        #expect(search.batchProblem == AddSkillCopy.batchHasEntry(["vendor/tool"]) && search.command == nil)
+        #expect(search.batchProblem == refusal(oneEntry, deselect("github:vendor/tool/s")) && search.command == nil)
         #expect(!search.isCheckingBatch, "nothing to read: the sheet knows the entry")
 
         search.selections = ["github:other/kit/s"]
@@ -505,7 +536,7 @@ import Testing
             json: #"{"results":[{"name":"vendor/tool","source":"acme"},{"name":"acme/b","source":"acme"}]}"#)
         search.preload(query: "acme", results: .loaded(acme), skillsSh: .disabled)
         search.selections = ["vendor/tool", "acme/b"]
-        #expect(search.batchProblem == AddSkillCopy.batchHasEntry(["vendor/tool"]), "added from Packagist, not acme")
+        #expect(search.batchProblem == refusal(oneEntry, deselect("vendor/tool")), "added from Packagist, not acme")
         search.selections = ["vendor/tool"]
         search.added(search.choices)
         search.selections = ["vendor/tool", "acme/b"]
@@ -531,7 +562,7 @@ import Testing
             snapshot: AddSkillSamples.apiSnapshot { entries in
                 entries + [["package": "vendor/tool", "skill": "z", "version": "1.0.0", "state": "ok", "ok": true]]
             })
-        #expect(!search.isCheckingBatch && search.command == nil, "not read yet: nothing is pending, and Add waits")
+        #expect(search.isCheckingBatch && search.command == nil, "not read yet: Add waits, and no failure is claimed")
         search.snapshotChanged()
         #expect(search.isCheckingBatch)
         await search.batchTask?.value
@@ -556,7 +587,7 @@ import Testing
         search.preload(query: "pdf", results: .loaded(pdf), skillsSh: .disabled)
         search.selections = ["github:anthropics/skills/pdf", "kolya/jira-to-md"]
         await search.batchTask?.value
-        #expect(search.batchProblem == AddSkillCopy.batchEntryUnread(["anthropics/skills"]) && search.command == nil)
+        #expect(search.batchProblem?.title == "Couldn’t read a skills.toml entry." && search.command == nil)
         search.selections = ["github:anthropics/skills/pdf", "kolya/jira-to-md", "netresearch/jira-skill"]
         await search.batchTask?.value
         #expect(search.batchProblem == nil && search.command != nil, "read again on the next batch")
@@ -608,7 +639,7 @@ import Testing
         search.selections = ["github:vendor/tool/a", "kolya/jira-to-md"]
         #expect(search.isCheckingBatch)
         await search.batchTask?.value
-        #expect(search.batchProblem == AddSkillCopy.batchHasEntry(["vendor/tool"]) && search.command == nil)
+        #expect(search.batchProblem == refusal(oneEntry, deselect("github:vendor/tool/a")) && search.command == nil)
     }
 
     // Review of #93: an entry read once was trusted for the rest of the sheet, though skills.toml changed outside.
@@ -636,7 +667,7 @@ import Testing
             })
         search.snapshotChanged()
         await search.batchTask?.value
-        #expect(search.batchProblem == AddSkillCopy.batchHasEntry(["anthropics/skills"]))
+        #expect(search.batchProblem == refusal(oneEntry, deselect("github:anthropics/skills/pdf")))
     }
 
     // Review of #95: a read that started before skills.toml changed was stored as current: an entry that had become
@@ -665,7 +696,8 @@ import Testing
         search.snapshotChanged()
         await gate.open()
         await search.batchTask?.value
-        #expect(search.batchProblem == AddSkillCopy.batchHasEntry(["anthropics/skills"]) && search.command == nil)
+        #expect(
+            search.batchProblem == refusal(oneEntry, deselect("github:anthropics/skills/pdf")) && search.command == nil)
         #expect(await client.commands.count == 2, "read again for the new entry")
     }
 
@@ -713,8 +745,11 @@ import Testing
         search.selections = Set(pdf.results.map(\.name))
         await search.batchTask?.value
         let problem = try #require(search.batchProblem)
-        #expect(problem == AddSkillCopy.batchEntryUnread(["anthropics/skills"]) && FailureBanner.showsRetry(problem))
-        #expect(FailureBanner.symbol(for: problem) == FailureBanner.warningSymbol, "not known to be the network")
+        #expect(problem.title == "Couldn’t read a skills.toml entry." && FailureBanner.showsRetry(problem))
+        #expect(
+            problem.reason
+                == "Without reading the entry of anthropics/skills, Add can’t tell whether it would replace it.")
+        #expect(FailureBanner.symbol(for: problem) == FailureBanner.networkSymbol, "the read failed on the network")
         search.retryBatchEntries()
         await search.batchTask?.value
         #expect(search.batchProblem == nil && search.command != nil)
@@ -759,11 +794,103 @@ import Testing
         search.preload(query: "pdf", results: .loaded(found), skillsSh: .disabled)
         search.selections = ["github:anthropics/skills/pdf", "kolya/jira-to-md"]
         await gate.arrived()
+        let unwanted = try #require(search.batchTask)
         search.selections = ["github:acme/lint", "kolya/jira-to-md"]
         #expect(search.isCheckingBatch)
-        await search.batchTask?.value
-        #expect(search.batchProblem == AddSkillCopy.batchHasEntry(["acme/lint"]), "read without waiting for pdf's")
+        #expect(unwanted.isCancelled, "the read nobody wants is cancelled")
+        // Review of #97: awaiting the old task here hung the run, with no time limit firing, when the cancel was gone.
+        let next = try #require(search.batchTask)
+        try #require(next != unwanted, "the next read runs in a task of its own")
+        await next.value
+        #expect(search.batchProblem == refusal(oneEntry, deselect("github:acme/lint")), "read without waiting")
         await gate.open()
+    }
+
+    // Review of #97: a refusal that came and went cancelled the read the batch wanted all along, and `info` ran
+    // again.
+    @Test(.timeLimit(.minutes(1))) func aRefusalThatComesAndGoesKeepsTheReadInFlight() async throws {
+        let gate = Gate()
+        await client.json(
+            .info(.package("anthropics/skills")), in: scope, #"{"package":"anthropics/skills","source":"github"}"#,
+            gate: gate)
+        let search = search(capabilities: Self.capable)
+        let found = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"github:anthropics/skills/pdf","source":"github"},{"name":"kolya/jira-to-md","source":"packagist"},
+                {"name":"acme/jira-triage","source":"acme"}]}
+                """#)
+        search.preload(query: "pdf", results: .loaded(found), skillsSh: .disabled)
+        search.selections = ["github:anthropics/skills/pdf", "kolya/jira-to-md"]
+        await gate.arrived()
+        let read = try #require(search.batchTask)
+        search.selections = ["github:anthropics/skills/pdf", "kolya/jira-to-md", "acme/jira-triage"]
+        #expect(search.batchState == .refused(AddSkillCopy.batchMixesRepositories), "the refusal stands over the read")
+        search.selections = ["github:anthropics/skills/pdf", "kolya/jira-to-md"]
+        #expect(search.isCheckingBatch && !read.isCancelled && search.batchTask == read)
+        await gate.open()
+        await read.value
+        #expect(search.batchState == .ready && search.command != nil)
+        #expect(await client.commands == [.info(.package("anthropics/skills"))], "read once")
+    }
+
+    // Review of #97: while the consent answer's search ran, the list showed no sources, the mixed-repositories
+    // refusal lifted, and the entry no read had been started for was called unreadable, with Retry.
+    @Test(.timeLimit(.minutes(1))) func anEntryNotReadYetIsNoFailure() async throws {
+        let mixed = #"""
+            {"results":[{"name":"acme/jira-triage","source":"acme"},{"name":"github:anthropics/skills/pdf","source":"github"}],"skills-sh":true}
+            """#
+        let gate = Gate()
+        await client.json(
+            .search(query: "pdf", skillsSh: .include, remember: true), in: scope, mixed, gate: gate)
+        let search = search(capabilities: Self.capable)
+        search.preload(
+            query: "pdf", results: .loaded(DesignFixtures.decode(SearchDocument.self, json: mixed)),
+            skillsSh: .undecided)
+        search.selections = ["acme/jira-triage", "github:anthropics/skills/pdf"]
+        #expect(search.batchState == .refused(AddSkillCopy.batchMixesRepositories))
+        search.answerConsent(include: true)
+        #expect(search.batchState == .checking && search.command == nil, "Add waits; nothing failed")
+        await gate.open()
+        await search.consentTask?.value
+        #expect(search.batchState == .refused(AddSkillCopy.batchMixesRepositories))
+        #expect(
+            await client.commands == [.search(query: "pdf", skillsSh: .include, remember: true)],
+            "nothing is read for a batch refused anyway")
+    }
+
+    // Review of #97: "Deselect it to add the others." when every selected result was refused.
+    @Test func aBatchOfOnlyRefusedResultsSaysToAddEachOnItsOwn() {
+        let search = search(capabilities: Self.capable)
+        let tool = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"vendor/tool","source":"packagist"},{"name":"github:vendor/tool/a","source":"github"},
+                {"name":"github:vendor/tool/b","source":"github"}]}
+                """#)
+        search.preload(query: "tool", results: .loaded(tool), skillsSh: .disabled, selection: "vendor/tool")
+        search.added(search.choices)
+        search.selections = ["github:vendor/tool/a", "github:vendor/tool/b"]
+        #expect(
+            search.batchProblem
+                == refusal(oneEntry, "Add each result on its own: its preview says what Add would replace."))
+    }
+
+    // Review of #97: an unread entry drew the triangle whatever the cause; only the network's failure is the
+    // network's.
+    @Test(.timeLimit(.minutes(1))) func anUnreadEntryDrawsTheSymbolOfItsFailure() async throws {
+        await client.script(.info(.package("anthropics/skills")), in: scope, .error(.noDocument))
+        let search = search(capabilities: Self.capable)
+        let pdf = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"github:anthropics/skills/pdf","source":"github"},{"name":"kolya/jira-to-md","source":"packagist"}]}
+                """#)
+        search.preload(query: "pdf", results: .loaded(pdf), skillsSh: .disabled)
+        search.selections = Set(pdf.results.map(\.name))
+        await search.batchTask?.value
+        let problem = try #require(search.batchProblem)
+        #expect(FailureBanner.symbol(for: problem) == FailureBanner.warningSymbol && FailureBanner.showsRetry(problem))
     }
 
     // Review of #93: a registry re-add over a GitHub entry recorded the entry as a registry one, so the

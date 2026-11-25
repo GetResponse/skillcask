@@ -244,30 +244,37 @@ public enum AddSkillCopy {
                 title: "\(packages.count) packages are each selected more than once.",
                 reason: "Keep one result each of \(OutcomeCopy.list(packages)).", severity: .warning)
     }
-    /// Invented: selected results whose skills.toml entries Add may replace, named in the reason.
-    public static func batchHasEntry(_ packages: [String]) -> UserMessage {
-        packages.count == 1
-            ? UserMessage(
-                title: "A selected package is already in skills.toml, and Add may replace its entry.",
-                reason: "Deselect \(packages[0]) to add the others.", severity: .warning)
-            : UserMessage(
-                title:
-                    "\(packages.count) selected packages are already in skills.toml, and Add may replace their entries.",
-                reason: "Deselect \(OutcomeCopy.list(packages)) to add the others.", severity: .warning)
+    /// Invented: selected results whose skills.toml entries Add may replace. The title counts the packages, the
+    /// reason names the results as the list shows them; when every selected result is one, there are no others to
+    /// add, and the single preview says what Add replaces.
+    public static func batchHasEntry(_ packages: [String], results: [String], all: Bool) -> UserMessage {
+        let title =
+            packages.count == 1
+            ? "A selected package is already in skills.toml, and Add may replace its entry."
+            : "\(packages.count) selected packages are already in skills.toml, and Add may replace their entries."
+        let reason =
+            all
+            ? "Add each result on its own: its preview says what Add would replace."
+            : "Deselect \(OutcomeCopy.list(results)) to add the others."
+        return UserMessage(title: title, reason: reason, severity: .warning)
     }
     /// Invented: the skills.toml entries of selected GitHub results could not be read, so whether Add replaces them
-    /// is not known; Retry reads them again.
-    public static func batchEntryUnread(_ packages: [String]) -> UserMessage {
-        packages.count == 1
+    /// is not known; Retry reads them again. The banner's symbol follows `cause`, the read's failure.
+    public static func batchEntryUnread(_ packages: [String], cause: UserMessage? = nil) -> UserMessage {
+        var message =
+            packages.count == 1
             ? UserMessage(
                 title: "Couldn’t read a skills.toml entry.",
-                reason: "Without the entry of \(packages[0]), Add can’t tell whether it replaces it.",
+                reason: "Without reading the entry of \(packages[0]), Add can’t tell whether it would replace it.",
                 severity: .warning, remedy: .retry)
             : UserMessage(
                 title: "Couldn’t read \(packages.count) skills.toml entries.",
                 reason:
-                    "Without the entries of \(OutcomeCopy.list(packages)), Add can’t tell whether it replaces them.",
+                    "Without reading the entries of \(OutcomeCopy.list(packages)), Add can’t tell whether it would replace them.",
                 severity: .warning, remedy: .retry)
+        message.isNetwork = cause?.isNetwork ?? false
+        message.isTimeout = cause?.isTimeout ?? false
+        return message
     }
     /// Invented: in the refusal's place while the skills.toml entries of selected GitHub results are read.
     public static let batchChecking = "Checking skills.toml…"

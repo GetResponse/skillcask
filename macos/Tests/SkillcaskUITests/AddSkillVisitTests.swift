@@ -214,6 +214,84 @@ import Testing
             visit.footer == .added(text: "Added 2 results", emphasis: [], count: AddSkillCopy.addedSoFar(2)))
     }
 
+    // Review of #97: a result that named a skill its package already had counted that skill as added.
+    @Test(.timeLimit(.minutes(1))) func aBatchResultNamingAnInstalledSkillAddsNothing() async throws {
+        let alpha = Added(package: "acme/tools", skill: "alpha", version: "1.0.0")
+        let beta = Added(package: "acme/tools", skill: "beta", version: "1.0.0")
+        let visit = visit(capabilities: Self.capable)
+        visit.search.store.preload(
+            snapshot: AddSkillSamples.apiSnapshot { entries in
+                entries + [["package": "acme/tools", "skill": "alpha", "version": "1.0.0", "state": "ok", "ok": true]]
+            })
+        await client.json(.info(.package("acme/tools")), in: scope, #"{"package":"acme/tools","source":"github"}"#)
+        let tools = DesignFixtures.decode(
+            SearchDocument.self,
+            json: #"""
+                {"results":[{"name":"github:acme/tools/alpha","source":"github"},{"name":"github:acme/tools/beta","source":"github"}]}
+                """#)
+        visit.search.sourceFilter = nil
+        visit.search.preload(query: "tools", results: .loaded(tools), skillsSh: .disabled)
+        visit.search.selections = Set(tools.results.map(\.name))
+        await visit.search.batchTask?.value
+        let command = try #require(visit.search.command)
+        await client.lines(command, in: scope, [#"added github:acme/tools = "dev-main" (dev-main)"#])
+        await scriptRefresh([alpha, beta])
+        await visit.add(runner: runner)?.value
+        #expect(visit.added.map(\.skills) == [[], ["beta"]], "alpha was there before the add")
+        #expect(visit.footer == .added(text: "Added 2 results", emphasis: [], count: AddSkillCopy.addedSoFar(1)))
+    }
+
+    // Review of #97: a re-add in a second batch, while the first batch's refresh had not landed, took the skills the
+    // first batch added as its own.
+    @Test(.timeLimit(.minutes(1))) func aReAddBeforeTheEarlierAddWasRefreshedAddsNothing() async throws {
+        let visit = visit(capabilities: Self.capable)
+        visit.search.selections = [Self.cli.package, Self.markdown.package]
+        let first = try #require(visit.search.command)
+        await client.lines(first, in: scope, [#"added \#(Self.markdown.package) = "^0.9" (0.9.0)"#])
+        await client.script(.status, in: scope, .error(.noDocument))
+        await client.json(.audit, in: scope, ScopeStoreTests.emptyAudit)
+        await client.json(.doctor(fix: false), in: scope, ScopeStoreTests.cleanDoctor)
+        await visit.add(runner: runner)?.value
+        visit.search.selections = [Self.cli.package, Self.german.package]
+        let second = try #require(visit.search.command)
+        await client.lines(second, in: scope, [#"added \#(Self.german.package) = "^1" (1.0.0)"#])
+        await scriptRefresh([Self.cli, Self.markdown, Self.german])
+        await visit.add(runner: runner)?.value
+        let reAdd = try #require(visit.added.dropFirst(2).first { $0.package == Self.cli.package })
+        #expect(reAdd.addedNothing, "the first batch added jira-cli")
+        #expect(visit.skillCount == 3)
+    }
+
+    // Review of #97: the sheet closed after a batch that added nothing new announced the last result's words.
+    @Test(.timeLimit(.minutes(1))) func closingAfterABatchThatAddedNothingSaysTheBatch() async throws {
+        let visit = visit(capabilities: Self.capable)
+        await scriptRefresh([Self.cli, Self.markdown])
+        await visit.search.store.refresh()
+        visit.search.selections = [Self.cli.package, Self.markdown.package]
+        let command = try #require(visit.search.command)
+        await client.lines(command, in: scope, [#"added \#(Self.markdown.package) = "^0.9" (0.9.0)"#])
+        await scriptRefresh([Self.cli, Self.markdown])
+        await visit.add(runner: runner)?.value
+        #expect(visit.skillCount == 0)
+        await visit.close(runner: runner)?.value
+        #expect(runner.toast?.text == "Added 2 results")
+    }
+
+    // Review of #97: after a batch whose last result was a re-add, closing selected no skill.
+    @Test(.timeLimit(.minutes(1))) func closingAfterABatchEndingInAReAddSelectsANewSkill() async throws {
+        let visit = visit(capabilities: Self.capable)
+        try await add(Self.german, in: visit, installed: [Self.german])
+        visit.search.selections = [Self.markdown.package, Self.german.package]
+        try #require(visit.search.batch.last == Self.german.package)
+        let command = try #require(visit.search.command)
+        await client.lines(command, in: scope, [#"added \#(Self.markdown.package) = "^0.9" (0.9.0)"#])
+        await scriptRefresh([Self.german, Self.markdown])
+        await visit.add(runner: runner)?.value
+        #expect(visit.added.last?.addedNothing == true)
+        await visit.close(runner: runner)?.value
+        #expect(visit.search.store.selection == "jira-to-md")
+    }
+
     // Review of #95: one failed refresh dropped the batch's ticket, so no later refresh settled it and the count was
     // gone for the rest of the visit.
     @Test(.timeLimit(.minutes(1))) func aBatchIsSettledByTheRefreshAfterOneThatFailed() async throws {
@@ -983,7 +1061,7 @@ import Testing
         #expect(visit.status == "Added github:acme/tools/alpha · 1 skill added" && visit.skillCount == 1)
         await visit.cancelOrClose(runner: runner)?.value
         #expect(runner.toast?.text == "Added 1 skill to add-visit-tests")
-        #expect(visit.search.store.selection == nil, "the last add named no skill of the scope")
+        #expect(visit.search.store.selection == "beta", "the last add that added a skill, as the summary counts it")
     }
 
     /// A refresh that failed says nothing about what the add did: its words stand.
