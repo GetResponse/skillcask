@@ -58,6 +58,15 @@ import SkillcaskDomain
         let renameTo: String
     }
 
+    /// What the batch pane says above the selected results, and whether Add can run.
+    enum BatchState: Hashable {
+        case ready
+        /// The skills.toml entries of `github:` results are being read: Add waits for them.
+        case checking
+        /// The batch cannot be added together.
+        case refused(UserMessage)
+    }
+
     /// A source the results can be narrowed to, and how many of the loaded results it has.
     struct SourceChip: Hashable {
         /// The repository or source name, the value of `sourceFilter`.
@@ -173,8 +182,11 @@ import SkillcaskDomain
     /// The source `info` names for the skills.toml entry of a batch's `github:` result (`entryTarget(for:)`), by
     /// package. A failed read leaves none, and the next batch or snapshot reads it again.
     private var entrySources: [String: String] = [:]
-    /// The entries `readBatchEntries` still has to read, in batch order.
+    /// The entries `readBatchEntries` still has to read, in batch order; the one in flight is `entryInFlight`.
     private var entryQueue: [String] = []
+    @ObservationIgnored private var entryInFlight: String?
+    /// The entries whose last read failed, with the failure; an entry not read yet is not one of them.
+    private var entryFailures: [String: CLIError] = [:]
     /// The skills.toml entries as the last snapshot showed them (`manifestKey`): `entrySources` holds for them.
     @ObservationIgnored private var manifestKey: Set<String>
     /// Bumped whenever `manifestKey` changes: a read that started before answers for an entry no longer there.
@@ -506,9 +518,9 @@ import SkillcaskDomain
     /// `add github:…` merges only into a GitHub entry: one from a registry is replaced (`src/commands.rs` `info`,
     /// `add_vcs`). Asked by its name, `info` answers from the entry and says its source; for a GitHub entry the
     /// document is the same. A typed `@` pin is left to the repository's `info`, which a registry would refuse.
-    private func entryTarget(for spec: PackageSpec) -> String? {
+    private func entryTarget(for spec: PackageSpec, named: Set<String>) -> String? {
         guard spec.kind == .github, spec.pinned == nil else { return nil }
-        return namedPackages.contains(spec.package) ? spec.package : nil
+        return named.contains(spec.package) ? spec.package : nil
     }
 
     /// The source (`composer`, `git`) of the skills.toml entry that `add` of the selected `github:` spec replaces
@@ -642,56 +654,102 @@ import SkillcaskDomain
     }
 
     /// `add` of every result in `batch`, nil while one is not shown (a reload would lose its `--repository`), has
-    /// no spec shape, an entry is still being read (`isCheckingBatch`), or `batchProblem` stands.
+    /// no spec shape, or `batchState` is not `.ready`.
     private var batchCommand: Invocation.Command? {
-        let shown = Set(filteredResults.map(\.name))
+        let sources = batchSources
         let specs = batch.compactMap(PackageSpec.parse)
-        guard specs.count == batch.count, batch.allSatisfy(shown.contains), !isCheckingBatch, batchProblem == nil
+        guard specs.count == batch.count, batch.allSatisfy({ sources[$0] != nil }), batchState == .ready
         else { return nil }
         return .addMany(
-            specs: specs.map { $0.text(constraint: nil) }, repository: repository(for: specs[0], from: batch[0]))
+            specs: specs.map { $0.text(constraint: nil) },
+            repository: repository(for: specs[0], source: sources[batch[0]] ?? nil))
     }
 
-    /// Why the batch cannot be added together; nil when it can. What the single preview warns about is refused:
+    /// The batch's state: a refusal that needs no read stands at once, before and instead of any read; then the
+    /// reads of skills.toml entries; then an entry whose read failed. An entry not read yet (the results are
+    /// reloading, so no read was started) keeps Add waiting as a read does.
+    var batchState: BatchState {
+        let named = namedPackages
+        if let refusal = batchRefusal(named: named) {
+            return .refused(refusal)
+        }
+        let unread = unreadEntries(named: named)
+        if unread.contains(where: entryQueue.contains) {
+            return .checking
+        }
+        let failed = unread.filter { entryFailures[$0] != nil }
+        if let first = failed.first, let cause = entryFailures[first] {
+            return .refused(AddSkillCopy.batchEntryUnread(failed, cause: ErrorCopy.message(for: cause)))
+        }
+        return unread.isEmpty ? .ready : .checking
+    }
+
+    /// The batch's state can change while the selection stays: a `github:` result's skills.toml entry is read,
+    /// or may be read again when skills.toml changes. Only then does the pane hold room for what may come.
+    var batchReadsEntries: Bool {
+        !entryTargets(named: namedPackages).isEmpty
+    }
+
+    /// The batch's packages skills.toml names, the scope has, or this sheet added, in batch order: every package a
+    /// refusal or the updates line may come to name.
+    var batchKnownPackages: [String] {
+        let named = namedPackages
+        let installed = installedPackages
+        var packages: [String] = []
+        for spec in batch.compactMap(PackageSpec.parse)
+        where named.contains(spec.package) || installed.contains(spec.package) || addedKinds[spec.package] != nil {
+            if !packages.contains(spec.package) {
+                packages.append(spec.package)
+            }
+        }
+        return packages
+    }
+
+    /// What the single preview warns about is refused, without reading anything:
     /// - a custom repository's results with results of another source: `--repository` applies to every spec (D72);
     /// - two results of one package, other than different skills of one GitHub repository (which `add` merges
     ///   into one entry): `add` would keep one of them, and counts would claim two;
-    /// - results whose skills.toml entry `add` may replace (`replacesEntry`), all of them named.
-    var batchProblem: UserMessage? {
-        let specs = batch.compactMap { name in PackageSpec.parse(name).map { (name, $0) } }
-        if Set(specs.map { repository(for: $0.1, from: $0.0) }).count > 1 {
+    /// - results whose skills.toml entry `add` may replace (`replacesEntry`), each one known named; a `github:` one
+    ///   is known once its entry was read, and no read starts after one refused the batch.
+    private func batchRefusal(named: Set<String>) -> UserMessage? {
+        let sources = batchSources
+        let specs = batch.compactMap { name in
+            PackageSpec.parse(name)
+                .map {
+                    (name: name, spec: $0, repository: repository(for: $0, source: sources[name] ?? nil))
+                }
+        }
+        if Set(specs.map(\.repository)).count > 1 {
             return AddSkillCopy.batchMixesRepositories
         }
-        let groups = Dictionary(grouping: specs.map(\.1), by: \.package)
+        let groups = Dictionary(grouping: specs.map(\.spec), by: \.package)
         var twice: [String] = []
-        for (_, spec) in specs where !Self.merges(groups[spec.package] ?? []) && !twice.contains(spec.package) {
+        for (_, spec, _) in specs where !Self.merges(groups[spec.package] ?? []) && !twice.contains(spec.package) {
             twice.append(spec.package)
         }
         if !twice.isEmpty {
             return AddSkillCopy.batchSamePackage(twice)
         }
         var replaced: [String] = []
-        for (name, spec) in specs
-        where replacesEntry(spec, repository: repository(for: spec, from: name)) && !replaced.contains(spec.package) {
-            replaced.append(spec.package)
+        var results: [String] = []
+        for (name, spec, repository) in specs
+        where replacesEntry(spec, repository: repository, named: named) {
+            results.append(name)
+            if !replaced.contains(spec.package) {
+                replaced.append(spec.package)
+            }
         }
-        if !replaced.isEmpty {
-            return AddSkillCopy.batchHasEntry(replaced)
-        }
-        let unread = unreadEntries.filter { !entryQueue.contains($0) }
-        return unread.isEmpty ? nil : AddSkillCopy.batchEntryUnread(unread)
+        return replaced.isEmpty
+            ? nil : AddSkillCopy.batchHasEntry(replaced, results: results, all: results.count == batch.count)
     }
 
-    /// The skills.toml entries of the batch's `github:` results are being read: Add waits for them.
-    var isCheckingBatch: Bool {
-        unreadEntries.contains(where: entryQueue.contains)
-    }
-
-    /// The packages of the batch that skills.toml already names or the scope already has, in batch order: `add`
-    /// resolves their entries again, also when a result joins another skill to one (`add_vcs`), which may move
-    /// their locks to a newer version.
+    /// The packages of the batch the scope already has (skills.toml names none it lacks), in batch order, while
+    /// the batch can be added: `add` resolves their entries again, also when a result joins another skill to one
+    /// (`add_vcs`), which may move their locks to a newer version. Empty under a refusal, which may name the same
+    /// package, and during a check, after which one may come.
     var batchUpdates: [String] {
-        let known = namedPackages.union(installedPackages)
+        guard batchState == .ready else { return [] }
+        let known = installedPackages
         var packages: [String] = []
         for name in batch {
             let package = PackageSpec.packageName(of: name)
@@ -702,16 +760,32 @@ import SkillcaskDomain
         return packages
     }
 
-    /// The entries of the batch's `github:` results whose source is not known yet (`readBatchEntries`), in batch
-    /// order: what this sheet added is known without them.
-    private var unreadEntries: [String] {
+    /// The shown source of each batch result, by name: nil for a result without one, no key for one not shown.
+    /// Read once per batch computation rather than per row: `filteredResults` sorts every time it is read.
+    var batchSources: [String: String?] {
+        let wanted = Set(batch)
+        var sources: [String: String?] = [:]
+        for result in filteredResults where wanted.contains(result.name) {
+            sources[result.name] = result.source
+        }
+        return sources
+    }
+
+    /// The entries of the batch's `github:` results that `readBatchEntries` reads, in batch order: what this sheet
+    /// added is known without them.
+    private func entryTargets(named: Set<String>) -> [String] {
         var targets: [String] = []
         for spec in batch.compactMap(PackageSpec.parse) where addedKinds[spec.package] == nil {
-            if let target = entryTarget(for: spec), entrySources[target] == nil, !targets.contains(target) {
+            if let target = entryTarget(for: spec, named: named), !targets.contains(target) {
                 targets.append(target)
             }
         }
         return targets
+    }
+
+    /// The `entryTargets` whose source is not known yet.
+    private func unreadEntries(named: Set<String>) -> [String] {
+        entryTargets(named: named).filter { entrySources[$0] == nil }
     }
 
     /// One result of a package, or different skills of one GitHub repository.
@@ -727,15 +801,16 @@ import SkillcaskDomain
     /// - `github:` merges only into a GitHub entry; its kind is read by `readBatchEntries` (one not read yet is
     ///   `unreadEntries`), and a pinned spec, whose entry is not asked, counts as replaced.
     /// - `git:` fails on an entry of another source.
-    private func replacesEntry(_ spec: PackageSpec, repository: String?) -> Bool {
+    /// `named` is `namedPackages`, built once per pass.
+    private func replacesEntry(_ spec: PackageSpec, repository: String?, named: Set<String>) -> Bool {
         let added = addedKinds[spec.package]
-        guard added != nil || namedPackages.contains(spec.package) else { return false }
+        guard added != nil || named.contains(spec.package) else { return false }
         switch spec.kind {
         case .registry:
             return repository != nil && (added != .registry || addedRepositories[spec.package] != repository)
         case .github:
             if let added { return added != .github }
-            guard let target = entryTarget(for: spec) else { return true }
+            guard let target = entryTarget(for: spec, named: named) else { return true }
             return entrySources[target].map { $0 != "github" } ?? false
         case .git: return added != .git
         }
@@ -801,8 +876,11 @@ import SkillcaskDomain
     /// not whichever repository the CLI tries first. Packagist, GitHub and git sources take no flag.
     private func repository(for spec: PackageSpec, from name: String? = nil) -> String? {
         let result = name.map { name in filteredResults.first { $0.name == name } } ?? selectedResult
-        guard spec.kind == .registry, let source = result?.source,
-            case .custom = SourceKind(parsing: source)
+        return repository(for: spec, source: result?.source)
+    }
+
+    private func repository(for spec: PackageSpec, source: String?) -> String? {
+        guard spec.kind == .registry, let source, case .custom = SourceKind(parsing: source)
         else { return nil }
         return source
     }
@@ -905,6 +983,11 @@ import SkillcaskDomain
             results = .loaded(document)
             skillsSh = document.skillsSh
             clearHiddenSelection()
+            // A batch the reload kept as it was is judged again: while the list was empty no refusal that needs
+            // the results' sources could stand, and no read started.
+            if !batch.isEmpty {
+                readBatchEntries()
+            }
         case .failure(.cancelled):
             break
         case .failure(let error):
@@ -928,7 +1011,8 @@ import SkillcaskDomain
         }
         // A result that failed before is read again: its old error would stand beside (or over) the new answer.
         infoErrors[selection] = nil
-        let entryTarget = selectedSpec.flatMap(entryTarget)
+        let named = namedPackages
+        let entryTarget = selectedSpec.flatMap { self.entryTarget(for: $0, named: named) }
         let target = entryTarget ?? selectedSpec?.infoTarget ?? selection
         infoTask = Task { [weak self] in
             guard let outcome = await self?.read(InfoDocument.self, .info(.package(target))), let self,
@@ -952,23 +1036,41 @@ import SkillcaskDomain
     }
 
     /// Reads, one at a time, the `unreadEntries` for their source (`replacesEntry`). A read answers for its
-    /// package in later batches too; a failed one is read again on the next call. The read in flight is never
-    /// restarted: `info` downloads the dist, and a new batch or a refresh that wants the same entries waits for it.
+    /// package in later batches too; a failed one is read again on the next call. No read starts for a batch
+    /// refused anyway, nor after an answer refused it. The read in flight is never restarted: `info` downloads
+    /// the dist, and a new batch, a refresh, or a refusal that lifts again, which still want the same entry, wait
+    /// for it; one no longer wanted is cancelled, so the next starts now.
     private func readBatchEntries() {
-        entryQueue = isEnded ? [] : unreadEntries
+        let named = namedPackages
+        let unread = isEnded ? [] : unreadEntries(named: named)
+        entryQueue = batchRefusal(named: named) == nil ? unread : unread.filter { $0 == entryInFlight }
+        for target in entryQueue {
+            entryFailures[target] = nil
+        }
+        if let entryInFlight, !entryQueue.contains(entryInFlight) {
+            batchTask?.cancel()
+            batchTask = nil
+            self.entryInFlight = nil
+        }
         guard batchTask == nil, !entryQueue.isEmpty else { return }
         batchTask = Task { [weak self] in
             while let target = self?.entryQueue.first, let generation = self?.manifestGeneration {
+                self?.entryInFlight = target
                 guard let outcome = await self?.read(InfoDocument.self, .info(.package(target))), let self,
                     !Task.isCancelled
                 else { return }
+                entryInFlight = nil
                 // skills.toml changed while `info` ran: the answer may be the old entry's, and `snapshotChanged`
                 // queued the entry again.
                 guard generation == manifestGeneration else { continue }
-                if case .success(let document) = outcome {
-                    entrySources[target] = document.source ?? ""
+                switch outcome {
+                case .success(let document): entrySources[target] = document.source ?? ""
+                case .failure(let error): entryFailures[target] = error
                 }
                 entryQueue.removeAll { $0 == target }
+                if batchRefusal(named: namedPackages) != nil {
+                    entryQueue = []
+                }
             }
             self?.batchTask = nil
         }
@@ -987,6 +1089,7 @@ import SkillcaskDomain
             manifestKey = key
             manifestGeneration += 1
             entrySources = [:]
+            entryFailures = [:]
         }
         if !batch.isEmpty {
             readBatchEntries()
@@ -1028,7 +1131,8 @@ import SkillcaskDomain
     func preload(
         query: String, results: Results = .idle, skillsSh: SearchDocument.SkillsSh = .unknown,
         consentAnswered: Bool = false, selection: String? = nil, batch: [String] = [], info: InfoDocument? = nil,
-        infoError: UserMessage? = nil, entrySources: [String: String] = [:], checkingEntries: Bool = false
+        infoError: UserMessage? = nil, entrySources: [String: String] = [:], checkingEntries: Bool = false,
+        failedEntries: CLIError? = nil
     ) {
         isPreloading = true
         hasBegun = true
@@ -1042,7 +1146,12 @@ import SkillcaskDomain
         self.selection = selection
         self.batch = batch
         self.entrySources.merge(entrySources) { $1 }
-        entryQueue = checkingEntries ? unreadEntries : []
+        entryQueue = checkingEntries ? unreadEntries(named: namedPackages) : []
+        if let failedEntries {
+            for target in unreadEntries(named: namedPackages) {
+                entryFailures[target] = failedEntries
+            }
+        }
         if let selection {
             infos[selection] = info
             infoErrors[selection] = infoError

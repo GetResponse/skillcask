@@ -38,6 +38,9 @@ struct AddSkillSheet: View {
     @State private var visit: AddSkillVisit
     /// The spec of the Add whose failure is on screen; nil once the field or the selection moved on.
     @State private var failedSpec: String?
+    /// The batch refusal VoiceOver heard last, until the batch can be added: Retry, or a selection that keeps the
+    /// same refusal, says nothing again.
+    @State private var announcedRefusal: UserMessage?
     @FocusState private var focus: AddSkillVisit.Focus?
     private let previewState: PreviewState?
     /// The size the sheet opens at.
@@ -134,9 +137,19 @@ struct AddSkillSheet: View {
             search.snapshotChanged()
             visit.settle()
         }
-        .onChange(of: search.isCheckingBatch) { _, checking in
-            if checking {
-                AccessibilityNotification.Announcement(AddSkillCopy.batchChecking).post()
+        .onChange(of: search.batchState) { _, state in
+            switch state {
+            case .checking:
+                if announcedRefusal == nil {
+                    AccessibilityNotification.Announcement(AddSkillCopy.batchChecking).post()
+                }
+            case .refused(let problem):
+                guard problem != announcedRefusal else { return }
+                announcedRefusal = problem
+                let said = [problem.title, problem.reason].compactMap(\.self).joined(separator: " ")
+                AccessibilityNotification.Announcement(said).post()
+            case .ready:
+                announcedRefusal = nil
             }
         }
     }

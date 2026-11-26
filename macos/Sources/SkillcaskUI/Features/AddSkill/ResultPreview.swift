@@ -87,14 +87,11 @@ struct ResultPreview: View {
     /// Several selected results (D72): their names and sources, and how Add treats them. While skills.toml is read,
     /// the spinner stands where a refusal would, next to the disabled Add's reason.
     private var batch: some View {
-        ScrollView {
+        let sources = search.batchSources
+        return ScrollView {
             VStack(alignment: .leading, spacing: Spacing.m) {
                 failureBlock
-                if search.isCheckingBatch {
-                    Spinner(label: AddSkillCopy.batchChecking)
-                } else if let problem = search.batchProblem {
-                    FailureBanner(problem, onRetry: search.retryBatchEntries)
-                }
+                batchSlot
                 Text(AddSkillCopy.batchHeading(search.batch.count))
                     .font(Font.Token.calloutSemibold)
                     .foregroundStyle(Color.textPrimary)
@@ -105,7 +102,7 @@ struct ResultPreview: View {
                             .foregroundStyle(Color.textPrimary)
                             .lineLimit(1)
                             .truncationMode(.middle)
-                        if let source = search.filteredResults.first(where: { $0.name == name })?.source {
+                        if let source = sources[name] ?? nil {
                             Pill(source: SourceKind(parsing: source))
                         }
                     }
@@ -114,18 +111,56 @@ struct ResultPreview: View {
                     .font(Font.Token.caption)
                     .foregroundStyle(Color.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                // Not under a refusal, which may name the same package, nor while one may still come.
-                if search.batchProblem == nil, !search.isCheckingBatch, !search.batchUpdates.isEmpty {
-                    Text(AddSkillCopy.batchUpdates(search.batchUpdates))
-                        .font(Font.Token.caption)
-                        .foregroundStyle(Color.statusWarningText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
             .padding(.vertical, Size.cardPaddingH)
             .padding(.horizontal, Spacing.l)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    /// The spinner, the refusal, or which packages Add resolves again. While a `github:` result's skills.toml entry
+    /// is read (`batchReadsEntries`), the state changes with the selection unchanged: the slot then holds room for
+    /// the longest of them at the pane's width, so the list below does not move when the read ends. Otherwise it
+    /// is as tall as what it says, and absent when it says nothing.
+    @ViewBuilder private var batchSlot: some View {
+        let state = search.batchState
+        let updates = search.batchUpdates
+        let reserves = search.batchReadsEntries
+        if reserves || state != .ready || !updates.isEmpty {
+            ZStack(alignment: .topLeading) {
+                if reserves {
+                    batchSlotReserve.hidden().accessibilityHidden(true)
+                }
+                switch state {
+                case .ready:
+                    if !updates.isEmpty {
+                        batchUpdatesLine(updates)
+                    }
+                case .checking:
+                    Spinner(label: AddSkillCopy.batchChecking)
+                case .refused(let problem):
+                    FailureBanner(problem, onRetry: search.retryBatchEntries)
+                }
+            }
+        }
+    }
+
+    /// Everything a read may bring, each naming every package and result it could.
+    private var batchSlotReserve: some View {
+        let known = search.batchKnownPackages
+        return ZStack(alignment: .topLeading) {
+            Spinner(label: AddSkillCopy.batchChecking)
+            FailureBanner(AddSkillCopy.batchHasEntry(known, results: search.batch, all: false))
+            FailureBanner(AddSkillCopy.batchEntryUnread(known), onRetry: {})
+            batchUpdatesLine(known)
+        }
+    }
+
+    private func batchUpdatesLine(_ packages: [String]) -> some View {
+        Text(AddSkillCopy.batchUpdates(packages))
+            .font(Font.Token.callout)
+            .foregroundStyle(Color.statusWarningText)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     // MARK: - Summary

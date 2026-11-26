@@ -35,6 +35,8 @@ public struct UserMessage: Hashable, Sendable {
     public var monoFragment: String?
     /// A read the app stopped at its time limit (`CLIError.timedOut`): Retry, but a clock, not the network mark.
     public var isTimeout = false
+    /// The CLI exited with its network code: the banner draws the network mark.
+    public var isNetwork = false
 
     public init(
         title: String, reason: String? = nil, action: String? = nil, details: String? = nil,
@@ -261,7 +263,10 @@ public enum ErrorCopy {
         case .signIn:
             return UserMessage(title: title, action: hintAction ?? signInAction, details: transcript, remedy: .signIn)
         case .network:
-            return UserMessage(title: title, action: hintAction ?? networkAction, details: transcript, remedy: .retry)
+            var message = UserMessage(
+                title: title, action: hintAction ?? networkAction, details: transcript, remedy: .retry)
+            message.isNetwork = true
+            return message
         case .problem:
             let policy = isPolicyRefusal(message)
             return UserMessage(

@@ -4,12 +4,12 @@ import SwiftUI
 
 /// The failure banner of a run (S11; Running, Components and AddSkill-States boards): a status-tinted callout
 /// with a 16 pt symbol, the bold title, the reason and the action as 12 pt sentences, then the buttons the
-/// failure allows: Open Settings (sign-in), Retry (network), Details, and Dismiss at the trailing end. The
-/// integrity variant adds the red border and "Not retried automatically" and never offers Retry. The caller
-/// places it at the top of the list column or inside a sheet.
+/// failure allows: Open Settings (sign-in), Retry (a network failure, a time limit, or a read to try again),
+/// Details, and Dismiss at the trailing end. The integrity variant adds the red border and "Not retried
+/// automatically" and never offers Retry. The caller places it at the top of the list column or inside a sheet.
 ///
 /// Two layouts, decided by `layout(for:hasRetry:hasDetails:)`: the Running board stacks title, body and an
-/// action row (sign-in, integrity, anything with Details); AddSkill-States draws the network failure on one
+/// action row (sign-in, integrity, anything with Details); AddSkill-States draws a failure with Retry on one
 /// line, title then body, with Retry as the trailing control in the slot Dismiss takes elsewhere.
 public struct FailureBanner: View {
     /// How the banner lays itself out.
@@ -52,12 +52,13 @@ public struct FailureBanner: View {
         self.onSignIn = onSignIn
     }
 
-    /// The symbol a message draws: the shield for integrity, the crossed wifi for a network failure, the cross
-    /// for any other error, the triangle for a warning, the circle for anything quieter.
+    /// The symbol a message draws by its cause: the shield for integrity, the clock for a time limit, the crossed
+    /// wifi for a network failure; otherwise by severity: the cross for an error, the triangle for a warning, the
+    /// circle for anything quieter.
     nonisolated static func symbol(for message: UserMessage) -> String {
         if message.isIntegrity { return integritySymbol }
         if message.isTimeout { return timeoutSymbol }
-        if message.remedy == .retry { return networkSymbol }
+        if message.isNetwork { return networkSymbol }
         switch message.severity {
         case .error: return errorSymbol
         case .warning: return warningSymbol
@@ -65,7 +66,8 @@ public struct FailureBanner: View {
         }
     }
 
-    /// Retry is offered for a network failure only, and never for an integrity failure (the board's note).
+    /// Retry is offered where the message asks for it (`remedy == .retry`), never for an integrity failure (the
+    /// board's note).
     nonisolated static func showsRetry(_ message: UserMessage) -> Bool {
         message.remedy == .retry && !message.isIntegrity
     }
