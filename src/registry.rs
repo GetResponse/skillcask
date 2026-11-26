@@ -180,7 +180,7 @@ fn expand(versions: &[Value], minified: bool) -> Vec<Map<String, Value>> {
 
 /// Composer writes `time` with or without an offset; without one it is UTC.
 fn release_time(t: &str) -> Option<Timestamp> {
-    t.parse().ok().or_else(|| t.parse::<jiff::civil::DateTime>().ok()?.to_zoned(jiff::tz::TimeZone::UTC).ok().map(|z| z.timestamp()))
+    t.parse().ok().or_else(|| jiff::tz::TimeZone::UTC.to_timestamp(t.parse().ok()?).ok())
 }
 
 fn candidates(package: &str, versions: Vec<Map<String, Value>>, base: &Url) -> Vec<Candidate> {
